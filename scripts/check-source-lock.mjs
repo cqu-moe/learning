@@ -55,7 +55,7 @@ for (const repo of lock.repositories ?? []) {
     continue;
   }
   let head;
-  let detached = false;
+  let detached;
   try {
     head = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     const branch = execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim();
