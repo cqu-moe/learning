@@ -87,7 +87,7 @@ export async function advanceHikeStudy(input: { job: Job; action: Extract<Action
     const now = clock.nowMs();
     const finish = (state: ItemResult['state'], message: string | null) => {
       const items: ItemResult[] = [...job.items, { key: next.key, state, message, artifacts: [] }];
-      return { completed: items.length === action.resources.length, items };
+      return { completed: items.length === action.resources.length, items, ...(state === 'needs-input' ? { status: 'needs-input' as const } : {}) };
     };
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'hike study duration budget expired');
     const progress = await zhsHikeReadProgress(http, clock, next, true);
@@ -231,7 +231,7 @@ export async function advanceShareStudy(input: {
     const now = clock.nowMs();
     const finish = (state: ItemResult['state'], message: string | null) => {
       const items: ItemResult[] = [...job.items, { key: next.key, state, message, artifacts: [] }];
-      return { completed: items.length === action.resources.length, items };
+      return { completed: items.length === action.resources.length, items, ...(state === 'needs-input' ? { status: 'needs-input' as const } : {}) };
     };
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'share study duration budget expired');
     const observed = await input.readState();
@@ -269,8 +269,8 @@ export async function advanceShareStudy(input: {
     await runner.setCursor(job.id, JSON.stringify({ ...cursor, baseline: seconds, awaiting: true, stalls: 0 }));
     await runner.setPendingOperation(job.id, pending);
     await input.save({ played, lastSubmit: seconds, watchPoint: wp.get(), noteId: cursor.noteId, ids: { ...identity, videoSec: identity.videoSec } });
-    await runner.setPendingOperation(job.id, null);
     const after = (await input.readState()).progress;
+    await runner.setPendingOperation(job.id, null);
     if (after.serverCompleted || (after.serverSeconds ?? 0) >= target) return finish('succeeded', after.serverCompleted ? 'server completed' : 'target reached; server completion is not claimed');
     await runner.setCursor(job.id, JSON.stringify({ resourceKey: next.key, noteId: cursor.noteId, startedAtMs: now, baseline: Math.max(seconds, after.serverSeconds ?? 0), awaiting: (after.serverSeconds ?? 0) <= seconds, stalls: 0 } satisfies ShareCursor));
     return { completed: false, status: 'waiting' as const, nextRunAtMs: now + 1000 };
