@@ -17,3 +17,19 @@ export interface StateStore {
     changes: { key: string; value: Json | null }[];
   }): Promise<boolean>;
 }
+
+export interface Socket {
+  send(message: string): Promise<void>;
+  messages: AsyncIterable<string | Uint8Array>;
+  close(): Promise<void>;
+}
+
+export interface Transport {
+  fetch(input: Request): Promise<Response>;
+  connect(input: { url: string; headers: Record<string, string>; signal: AbortSignal }): Promise<Socket>;
+}
+
+export interface Clock {
+  nowMs(): number;
+  sleep(ms: number, signal: AbortSignal): Promise<void>;
+}

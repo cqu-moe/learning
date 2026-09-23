@@ -8,7 +8,7 @@
 | T01 | 两包工作区与本地构建入口 | done | pnpm install --frozen-lockfile / typecheck / build / lint / node scripts/check-boundaries.mjs → 全部 exit 0 | — |
 | T02 | DTO、稳定标识与测试内存存储 | done | pnpm --filter @learning/sdk exec vitest run tests/types.test.ts → 20/20 exit 0 | — |
 | T03 | 本地StateStore和加密会话记录 | done | vitest tests/store.test.ts → 19/19, typecheck/build/lint/boundaries exit 0 | E08 Node24 本机实测已由本任务覆盖 SQLite/crypto 部分 |
-| T04 | HTTP、Cookie、重定向与协议fixture工具 | not-started | 未运行 | — |
+| T04 | HTTP、Cookie、重定向与协议fixture工具 | done | vitest tests/http.test.ts → 14/14; 全套 53/53, typecheck/build/lint/boundaries exit 0 | — |
 | T05 | 统一登录生命周期、WS和SDK工厂 | not-started | 未运行 | — |
 | T06 | 雨课堂登录、课程与两类大纲 | not-started | 未运行 | — |
 | T07 | 雨课堂资源、课件及考试只读 | not-started | 未运行 | — |
@@ -77,6 +77,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 实际命令（Node v24.11.1）：vitest run tests/store.test.ts → 19 passed；根 typecheck/build/lint → exit 0；check-boundaries → exit 0（./node 出口有真实源文件对应，public 图不含 Node 实现）。修复过程：SQLite LIKE 前缀转义 bug（通配符被转义）、CryptoKey 类型与 union 判别。
 - 未运行项：无网络/平台操作；node:sqlite ExperimentalWarning 已观察，属 Node 24 已知状态。
 - 下一个当前任务：T04。
+
+### 2026-09-23 · T04 HTTP、Cookie、重定向与协议fixture工具（done）
+
+- 实际改动：packages/sdk/src/http/{client.ts,cookies.ts,retry.ts,errors.ts}、src/runtime/types.ts（补 Transport/Socket/Clock 声明）、tests/helpers/replay.ts（FakeClock/FakeTransport/replay 工具）、tests/http.test.ts、tests/fixtures/http/simple-read.json、package.json（新增 tough-cookie 6.0.2）、docs/toolchain.md 未变（版本已记 PROGRESS）。
+- 测试先行：先运行 vitest tests/http.test.ts 按预期失败（http 模块缺失，exit 1）；实现后 14/14，全套 53/53。
+- 实现：tough-cookie 完整 jar（domain/path/hostOnly/Expires 逗号/多 Set-Cookie）；SessionHttp 每跳 redirect:'manual'、allowlist 点边界后缀校验、私网/环回跳转拒绝、跨源剥除 authorization/x-csrf-token/x-client-st/x-access-token 后按目标重选 Cookie；读请求最多 3 次总尝试（500ms 起 10s 封顶，Retry-After 秒/HTTP-date），写请求不重试、响应丢失 UNCERTAIN；200 错误 body 原样交给 provider envelope；replay 工具逐条校验 method/host/path/query/headers/body 与顺序、未登记请求立即失败、结束断言全部消费。
+- 验收对照：A041（同名不同 domain/path/hostOnly、Expires 逗号、多 Set-Cookie、恶意后缀 evilyuketang.cn/私网 127.0.0.1 拒绝）；A042（写响应丢失仅 1 次请求且 UNCERTAIN、读取消立即 CANCELED、HTTP200 错误 body 不变空）。
+- 实际命令（Node v24.11.1）：pnpm install（tough-cookie 6.0.2 save-exact）→ exit 0，二次 --frozen-lockfile → exit 0；vitest run tests/http.test.ts → 14 passed；根 typecheck/lint/build → exit 0；check-boundaries → exit 0。修复过程：SessionCookieJar 未再导出、hostOnly 跨子域测试场景修正、LIKE/类型细节。
+- 未运行项：真实网络请求未执行（fixture 均为 synthetic 且标注 source ref）。
+- 下一个当前任务：T05。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

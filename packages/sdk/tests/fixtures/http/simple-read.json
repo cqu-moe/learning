@@ -1,0 +1,28 @@
+{
+  "id": "http/simple-read",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/core/api.py",
+    "symbol": "fetch_courses"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/api/v3/learn/courses",
+        "headers": { "xtbz": "ykt" }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "courses": [], "teachclasses": [] }
+      }
+    }
+  ],
+  "entry": { "service": "http", "method": "request", "input": { "kind": "read" } },
+  "expected": { "courses": [], "teachclasses": [] }
+}
