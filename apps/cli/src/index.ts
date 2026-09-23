@@ -14,6 +14,8 @@ import { registerHomeworkCommands } from './commands/homework.js';
 import { registerSlideCommand } from './commands/slide.js';
 import { registerAnswersCommands } from './commands/answers.js';
 import { registerDiscussCommands } from './commands/discuss.js';
+import { registerLiveCommand } from './commands/live.js';
+import { registerOperationsCommands } from './commands/operations.js';
 import { LearningError } from '@learning/sdk/public';
 
 const program = new Command();
@@ -36,13 +38,15 @@ registerHomeworkCommands(program);
 registerSlideCommand(program);
 registerAnswersCommands(program);
 registerDiscussCommands(program);
+registerLiveCommand(program);
+registerOperationsCommands(program);
 program.parseAsync(process.argv).catch((error: unknown) => {
   if (error instanceof CommanderError) {
     process.exitCode = error.exitCode === 0 ? 0 : 2;
     return;
   }
   if (error instanceof LearningError) {
-    process.stderr.write(`learning: ${error.data.message}\n`);
+    process.stderr.write(`learning: ${error.data.message}${error.data.code === 'UNCERTAIN' && error.data.operationId !== null ? ` (operation ${error.data.operationId})` : ''}\n`);
     if (error.data.code === 'INVALID_INPUT' || error.data.code === 'PREVIEW_EXPIRED' || error.data.code === 'PRECONDITION_CHANGED') process.exitCode = 2;
     else if (error.data.code === 'UNCERTAIN') process.exitCode = 5;
     else if (['AUTH_REQUIRED', 'AUTH_EXPIRED', 'FORBIDDEN', 'INTERACTION_REQUIRED', 'UNSUPPORTED', 'MISSING_RUNTIME', 'CONFLICT', 'CANCELED'].includes(error.data.code)) process.exitCode = 3;

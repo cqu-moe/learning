@@ -1,11 +1,61 @@
 import type { Command } from 'commander';
-import { createLearningClient, LearningError, ResourceRefSchema } from '@learning/sdk';
+import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
 
 export function registerExamCommands(program: Command): void {
   const exam = program.command('exam').description('exam draft operations');
+  const draftCommand = exam.command('draft <resource>')
+    .description('create an editable YAML draft from a permitted exam paper')
+    .requiredOption('-o, --output <file>', 'new output file');
+  draftCommand.action(async (key: string) => {
+    const output = draftCommand.opts<{ output: string }>().output;
+    await withCliRuntime(program, true, async (runtime) => {
+      const profile = await selectProfile(program, runtime);
+      if (profile === null) return;
+      const stored = await runtime.state.get(resourceCacheKey(key));
+      if (stored === null) throw new LearningError({ code: 'INVALID_INPUT', message: 'unknown exam resource; run outline first', retryAfterMs: null, operationId: null });
+      const resource = ResourceRefSchema.parse(stored.value);
+      if (resource.course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'exam resource belongs to another profile', retryAfterMs: null, operationId: null });
+      const client = createLearningClient({ scope: profile.scope, runtime });
+      try {
+        const refs = (await client.assessments.resolve(resource)).filter((ref) => ref.kind === 'exam');
+        if (refs.length !== 1) throw new LearningError({ code: 'UNSUPPORTED', message: 'expected one exam for this resource', retryAfterMs: null, operationId: null });
+        const draft = await client.assessments.draft(refs[0]!);
+        try { await writeFile(output, exportDraftYaml(draft), { flag: 'wx', mode: 0o600 }); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null });
+          throw error;
+        }
+        printResult(program, { path: output, draftId: draft.id, questions: draft.entries.length }, `${output}: ${draft.entries.length} questions`);
+      } finally { await client.close(); }
+    });
+  });
+  const save = exam.command('save <draft>')
+    .description('cache verified choice/judgement answers without final submission')
+    .option('--yes', 'confirm saving answers')
+    .option('--dry-run', 'preview without saving');
+  save.action(async (path: string) => {
+    const options = save.opts<{ yes?: boolean; dryRun?: boolean }>();
+    if (!options.yes && !options.dryRun) { process.stderr.write('learning: exam save requires --yes or --dry-run\n'); process.exitCode = 2; return; }
+    await withCliRuntime(program, true, async (runtime) => {
+      const profile = await selectProfile(program, runtime);
+      if (profile === null) return;
+      const info = await lstat(path);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
+      const client = createLearningClient({ scope: profile.scope, runtime });
+      try {
+        const draft = (await client.assessments.importDraft(await readFile(path, 'utf8'), 'learning')).value;
+        if (draft.ref.kind !== 'exam') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not an exam', retryAfterMs: null, operationId: null });
+        const preview = await client.actions.prepare({ kind: 'exam.save', draft });
+        if (options.dryRun) { printResult(program, preview, `exam ${draft.ref.assessmentId} save previewed; no final submission`); return; }
+        const receipt = await client.actions.execute(preview.id);
+        printResult(program, receipt, `exam answers saved: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
+      } finally { await client.close(); }
+    });
+  });
   const start = exam.command('start <resource>')
     .description('explicitly start an unstarted exam; this may begin a timer')
     .option('--yes', 'confirm beginning a possible countdown')
@@ -55,18 +105,38 @@ export function registerExamCommands(program: Command): void {
         } finally { await client.close(); }
       });
     });
-  exam
-    .command('submit <draft>')
+  const submit = exam.command('submit <draft>')
     .description('finalize an exam draft (requires --yes --final)')
     .option('--yes', 'explicit confirmation')
     .option('--final', 'final submission (not just a save)')
-    .action((draft: string, options: { yes?: boolean; final?: boolean }) => {
-      if (!options.yes || !options.final) {
+    .option('--dry-run', 'show the final-submission blockers without sending');
+  submit.action(async (path: string) => {
+      const options = submit.opts<{ yes?: boolean; final?: boolean; dryRun?: boolean }>();
+      if ((!options.yes || !options.final) && !options.dryRun) {
         process.stderr.write('learning: exam submit requires --yes --final\n');
         process.exitCode = 2;
         return;
       }
-      process.stderr.write(`learning: exam submit for ${draft} is not connected to the SDK; no submission was sent\n`);
-      process.exitCode = 3;
+      await withCliRuntime(program, true, async (runtime) => {
+        const profile = await selectProfile(program, runtime);
+        if (profile === null) return;
+        const info = await lstat(path);
+        if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
+        const client = createLearningClient({ scope: profile.scope, runtime });
+        try {
+          const draft = (await client.assessments.importDraft(await readFile(path, 'utf8'), 'learning')).value;
+          if (draft.ref.kind !== 'exam') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not an exam', retryAfterMs: null, operationId: null });
+          const preview = await client.actions.prepare({ kind: 'exam.finalize', draft });
+          if (preview.blockers.length > 0) {
+            process.exitCode = 3;
+            process.stderr.write(`learning: ${preview.blockers.join('; ')}\n`);
+            printResult(program, preview, `final submission blocked: ${preview.blockers.join('; ')}`);
+            return;
+          }
+          if (options.dryRun) { printResult(program, preview, 'final submission previewed'); return; }
+          const receipt = await client.actions.execute(preview.id);
+          printResult(program, receipt, `final submission: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
+        } finally { await client.close(); }
+      });
     });
 }

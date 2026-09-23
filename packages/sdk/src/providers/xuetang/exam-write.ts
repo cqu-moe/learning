@@ -16,10 +16,8 @@ export async function xtxReadStartCover(http: SessionHttp, ref: AssessmentRef): 
   return { status, userId };
 }
 
-export async function xtxStartExam(http: SessionHttp, ref: AssessmentRef, userId: string): Promise<void> {
+export async function xtxEstablishExamSession(http: SessionHttp, ref: AssessmentRef, userId: string): Promise<string> {
   if (ref.resource.course.native.kind !== 'xuetang') throw new LearningError({ code: 'INVALID_INPUT', message: 'Xuetang exam ref is invalid', retryAfterMs: null, operationId: null });
-  const examId = Number(ref.assessmentId);
-  if (!Number.isSafeInteger(examId) || examId <= 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam id is not a safe integer', retryAfterMs: null, operationId: null });
   const token = await http.request({ kind: 'write', method: 'POST', url: `${XTX_BASE}/api/v1/lms/exam/gen_token`,
     headers: { ...XTX_BASE_HEADERS, 'content-type': 'application/json;charset=utf-8' },
     body: JSON.stringify({ exam_id: ref.assessmentId, classroom_id: ref.resource.course.native.classroomId, is_teacher: 0 }) });
@@ -30,10 +28,28 @@ export async function xtxStartExam(http: SessionHttp, ref: AssessmentRef, userId
   const host = validateExamHost(outer.data?.data?.exam_host ?? 'https://examination.xuetangx.com');
   const query = new URLSearchParams({ exam_id: ref.assessmentId, user_id: userId, crypt, next: `${host}/result/${ref.assessmentId}?isFrom=0`, language: 'zh' });
   await http.request({ kind: 'read', method: 'GET', url: `${host}/login?${query.toString()}` });
+  return host;
+}
+
+export async function xtxStartExam(http: SessionHttp, ref: AssessmentRef, userId: string): Promise<void> {
+  const examId = Number(ref.assessmentId);
+  if (!Number.isSafeInteger(examId) || examId <= 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam id is not a safe integer', retryAfterMs: null, operationId: null });
+  const host = await xtxEstablishExamSession(http, ref, userId);
   const result = await http.request({ kind: 'write', method: 'POST', url: `${host}/exam_room/start_paper`,
     headers: { xtbz: 'cloud', 'x-client': 'web', 'content-type': 'application/json;charset=utf-8' }, body: JSON.stringify({ exam_id: examId }) });
   const payload = await result.json() as { errcode?: number; errmsg?: string };
   if (payload.errcode !== 0) throw new LearningError({ code: 'PROTOCOL', message: `start_paper errcode=${String(payload.errcode ?? 'missing')}`, retryAfterMs: null, operationId: null });
+}
+
+export async function xtxSaveExam(http: SessionHttp, ref: AssessmentRef, userId: string, results: Array<{ problem_id: number; result: string[]; time: number }>): Promise<void> {
+  const examId = Number(ref.assessmentId);
+  if (!Number.isSafeInteger(examId) || examId <= 0 || results.length === 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam save needs a safe id and at least one answer', retryAfterMs: null, operationId: null });
+  const host = await xtxEstablishExamSession(http, ref, userId);
+  const response = await http.request({ kind: 'write', method: 'POST', url: `${host}/exam_room/answer_problem`,
+    headers: { xtbz: 'cloud', 'x-client': 'web', 'content-type': 'application/json;charset=utf-8' },
+    body: JSON.stringify({ results, exam_id: examId, record: [] }) });
+  const payload = await response.json() as { errcode?: number };
+  if (payload.errcode !== 0) throw new LearningError({ code: 'PROTOCOL', message: `answer_problem errcode=${String(payload.errcode ?? 'missing')}`, retryAfterMs: null, operationId: null });
 }
 
 /** E05: only choice/judgement encodings are evidenced; others refuse before any write. */

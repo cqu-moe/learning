@@ -7,6 +7,7 @@ import { SqliteStateStore } from '@learning/sdk/node';
 import { JobRunner } from '../../../packages/sdk/src/services/jobs.js';
 import { writeSession } from '../../../packages/sdk/src/session/store.js';
 import { SessionCookieJar } from '../../../packages/sdk/src/http/client.js';
+import { sha256Hex } from '../../../packages/sdk/src/types/sha256.js';
 
 const cli = resolve(import.meta.dirname, '../dist/index.js');
 const preload = resolve(import.meta.dirname, 'fixture-fetch.mjs');
@@ -70,6 +71,25 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const outline = run(dir, ['outline', page.items[0]!.ref.key, '--profile', 'alpha', '--json'], 'ykt/nested-outline');
     expect(outline.code).toBe(0);
     expect(JSON.parse(outline.stdout).value.roots.length).toBeGreaterThan(0);
+  });
+
+  it('runs default ZHS WeChat QR entirely through allowlisted API requests', () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'zhs']).code).toBe(0);
+    const fixture = JSON.parse(readFileSync(resolve(fixtureRoot, 'zhs/wechat-qr.json'), 'utf8')) as { interactions: Array<{ request: { query?: Record<string, string> } }> };
+    const service = 'https://onlineservice-api.zhihuishu.com/gateway/f/v1/login/gologin?fromurl=https://onlineweb.zhihuishu.com/onlinestuh5';
+    const redirect = `https://user.zhihuishu.com/zhsuser/oauth/weixin/wxLogin?service=${encodeURIComponent(service)}`;
+    const state = 'https://login.zhihuishu.com/wxTransit/0';
+    fixture.interactions[0]!.request.query = { appid: 'wx3f96cd4b1dc1f574', scope: 'snsapi_login', redirect_uri: redirect, state, login_type: 'jssdk', self_redirect: 'false' };
+    for (const row of fixture.interactions.slice(2, 5)) row.request.query = { uuid: 'WXUUID1', _: '__NOW_MS__' };
+    fixture.interactions[5]!.request.query = { service, code: 'CODE1', state };
+    const path = resolve(dir, 'wechat-fixture.json');
+    writeFileSync(path, JSON.stringify(fixture));
+    const result = run(dir, ['login', '--profile', 'alpha', '--json'], path);
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).identityVerified).toBe(false);
+    expect(result.stdout + result.stderr).not.toContain('CASLOGC');
   });
 
   it('requires explicit selection with multiple profiles and never calls the network', () => {
@@ -188,6 +208,34 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(parsed.job.status).toBe('succeeded');
     expect(parsed.files).toHaveLength(1);
     expect(readFileSync(parsed.files[0]!)).toEqual(body);
+  });
+
+  it('resumes a stopped MP4 process from a verified Range checkpoint', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'xuetang']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'xuetang' } }).scope;
+    const ref = { course: { scope, key: 'fixture-course', native: { kind: 'xuetang', classroomId: '100', courseSign: 'SIGN-A', skuId: '1' } }, key: 'fixture-video', native: { kind: 'xuetang', leafId: '7', leafInfoId: null } };
+    expect(await state.commit({ expected: [{ key: 'cli:resource:fixture-video', revision: null }], changes: [{ key: 'cli:resource:fixture-video', value: ref }] })).toBe(true);
+    state.close();
+    const fixture = JSON.parse(readFileSync(resolve(fixtureRoot, 'xuetang/media.json'), 'utf8')) as { interactions: unknown[] };
+    const first = resolve(dir, 'first-mp4.json');
+    writeFileSync(first, JSON.stringify({ interactions: [...fixture.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4' }, response: { status: 200, headers: { etag: '"v1"', 'content-type': 'video/mp4' }, chunks: [Buffer.from('abc').toString('base64')], failAfterChunks: true } }] }));
+    const interrupted = run(dir, ['download', 'fixture-video', '--types', 'video', '--profile', 'alpha', '--json'], first);
+    expect(interrupted.code).not.toBe(0);
+    expect(interrupted.stdout).toBe('');
+    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout) as Array<{ id: string; status: string }>;
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.status).toBe('paused');
+    const second = resolve(dir, 'second-mp4.json');
+    writeFileSync(second, JSON.stringify({ interactions: [...fixture.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4', headers: { range: 'bytes=3-', 'if-range': '"v1"' } }, response: { status: 206, headers: { etag: '"v1"', 'content-range': 'bytes 3-5/6', 'content-type': 'video/mp4' }, base64: Buffer.from('def').toString('base64') } }] }));
+    const resumed = run(dir, ['jobs', 'resume', jobs[0]!.id, '--profile', 'alpha', '--json'], second);
+    expect(resumed.code, resumed.stderr).toBe(0);
+    const result = JSON.parse(resumed.stdout) as { job: { status: string }; files: string[] };
+    expect(result.job.status).toBe('succeeded');
+    expect(readFileSync(result.files[0]!, 'utf8')).toBe('abcdef');
   });
 
   it('downloads an unencrypted HLS media playlist in order', async () => {
@@ -354,6 +402,123 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const actual = run(dir, ['exam', 'start', 'exam-resource', '--yes', '--profile', 'alpha', '--json'], fixture);
     expect(actual.code, actual.stderr).toBe(0);
     expect(JSON.parse(actual.stdout).receipt.state).toBe('confirmed');
+  });
+
+  it('saves an in-progress exam draft without finalizing the paper', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'xuetang']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'xuetang' } }).scope;
+    await writeSession(state, new Uint8Array(readFileSync(resolve(dir, 'master.key'))), { schemaVersion: 1, scope, generation: 1, platformUserId: '77', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: Date.now() });
+    state.close();
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang', classroomId: '100', courseSign: 'SIGN-A', skuId: '1' } }, key: 'exam-resource', native: { kind: 'xuetang', leafId: '30', leafInfoId: null } };
+    const q1 = sha256Hex(JSON.stringify([1, 'SingleChoice', '<p>选对的</p>']));
+    const q9 = sha256Hex(JSON.stringify([9, 'WeirdNewType', '<p>?</p>']));
+    const draft = { schemaVersion: 1, id: 'draft-3908258', ref: { resource, kind: 'exam', assessmentId: '3908258' }, fingerprint: sha256Hex(JSON.stringify([q1, q9])), entries: [
+      { questionId: '1', fingerprint: q1, answer: { kind: 'choice', keys: ['A'] }, evidence: null },
+      { questionId: '9', fingerprint: q9, answer: { kind: 'unset' }, evidence: null },
+    ] };
+    const file = resolve(dir, 'exam-draft.json');
+    writeFileSync(file, JSON.stringify(draft));
+    const withoutYes = run(dir, ['exam', 'save', file, '--profile', 'alpha', '--json']);
+    expect(withoutYes.code).toBe(2);
+    expect(withoutYes.stdout).toBe('');
+    const original = JSON.parse(readFileSync(resolve(fixtureRoot, 'xuetang/exam-read.json'), 'utf8')) as { interactions: Array<{ request: { path: string }; response: { body: { data?: { data?: { result?: { status: number } } } } } }> };
+    const reads = original.interactions.slice(1);
+    reads[0]!.response.body.data!.data!.result!.status = 1;
+    const final = JSON.parse(JSON.stringify(reads.slice(0, 4))) as typeof reads;
+    final[0]!.response.body.data!.data!.result!.status = 1;
+    const save = { request: { method: 'POST', host: 'examination.xuetangx.com', path: '/exam_room/answer_problem', headers: { xtbz: 'cloud', 'x-client': 'web', 'content-type': 'application/json;charset=utf-8' }, body: { results: [{ problem_id: 1, result: ['A'], time: '__NOW_NUMBER__' }], exam_id: 3908258, record: [] } }, response: { status: 200, body: { errcode: 0, data: { saved: true } } } };
+    const fixture = resolve(dir, 'exam-save.json');
+    writeFileSync(fixture, JSON.stringify({ interactions: [...reads, ...final, save] }));
+    const result = run(dir, ['exam', 'save', file, '--yes', '--profile', 'alpha', '--json'], fixture);
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).receipt.state).toBe('confirmed');
+  });
+
+  it('writes an editable exam draft from a permitted paper without starting it', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'xuetang']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'xuetang' } }).scope;
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang', classroomId: '100', courseSign: 'SIGN-A', skuId: '1' } }, key: 'exam-resource', native: { kind: 'xuetang', leafId: '30', leafInfoId: null } };
+    expect(await state.commit({ expected: [{ key: 'cli:resource:exam-resource', revision: null }], changes: [{ key: 'cli:resource:exam-resource', value: resource }] })).toBe(true);
+    state.close();
+    const path = resolve(dir, 'exam-draft.yaml');
+    const result = run(dir, ['exam', 'draft', 'exam-resource', '-o', path, '--profile', 'alpha', '--json'], 'xuetang/exam-read');
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).questions).toBe(2);
+    expect(readFileSync(path, 'utf8')).toContain('schemaVersion: 1');
+  });
+
+  it('shows the E05 final-submission blocker without any upstream request', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'xuetang']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'xuetang' } }).scope;
+    await writeSession(state, new Uint8Array(readFileSync(resolve(dir, 'master.key'))), { schemaVersion: 1, scope, generation: 1, platformUserId: '77', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: Date.now() });
+    state.close();
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang', classroomId: '100', courseSign: 'SIGN-A', skuId: '1' } }, key: 'exam', native: { kind: 'xuetang', leafId: '30', leafInfoId: null } };
+    const file = resolve(dir, 'final.json');
+    writeFileSync(file, JSON.stringify({ schemaVersion: 1, id: 'draft-final', ref: { resource, kind: 'exam', assessmentId: '3908258' }, fingerprint: 'fp', entries: [] }));
+    const result = run(dir, ['exam', 'submit', file, '--yes', '--final', '--profile', 'alpha', '--json']);
+    expect(result.code).toBe(3);
+    expect(JSON.parse(result.stdout).blockers.join(' ')).toContain('E05');
+    expect(result.stderr).toContain('E05');
+  });
+
+  it('checks in to a fixture live lesson, records a question and closes the socket', () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
+    const withoutYes = run(dir, ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--profile', 'alpha', '--json']);
+    expect(withoutYes.code).toBe(2);
+    expect(withoutYes.stdout).toBe('');
+    const fixture = resolve(dir, 'live-fixture.json');
+    writeFileSync(fixture, JSON.stringify({ interactions: [
+      { request: { method: 'POST', host: 'www.yuketang.cn', path: '/api/v3/lesson/checkin', headers: { 'content-type': 'application/json;charset=utf-8' }, body: { source: 1, lessonId: '9000' } }, response: { status: 200, headers: { 'set-auth': 'fixture-jwt' }, body: { code: 0, data: { lessonToken: 'fixture-live-token' } } } },
+    ], websocket: { url: 'wss://www.yuketang.cn/wsapp/', hello: { op: 'hello', userid: '424242', role: 'student', auth: 'fixture-live-token', lessonid: '9000' }, frames: [
+      { op: 'hello' }, { op: 'unlockproblem', problem: { prob: 11, problemType: 1, limit: 30 }, msgid: 2 }, { op: 'lessonfinished' },
+    ] } }));
+    const result = run(dir, ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--yes', '--profile', 'alpha', '--json'], fixture);
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).status).toBe('succeeded');
+    expect(result.stderr).toContain('live question 11');
+  });
+
+  it('resumes the same paused live job only after a fresh --yes checkin', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+    await writeSession(state, new Uint8Array(readFileSync(resolve(dir, 'master.key'))), { schemaVersion: 1, scope, generation: 1, platformUserId: '77', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: Date.now() });
+    const runner = new JobRunner(state, { nowMs: () => Date.now(), sleep: async () => {} });
+    const job = await runner.create(scope, 'live', { total: null, generation: 1, payload: { kind: 'live.join', lesson: { scope, course: null, lessonId: '9000' }, maxDurationSeconds: 60 } });
+    await runner.pause(job.id);
+    state.close();
+    const withoutYes = run(dir, ['jobs', 'resume', job.id, '--profile', 'alpha', '--json']);
+    expect(withoutYes.code).toBe(2);
+    expect(withoutYes.stdout).toBe('');
+    const fixture = resolve(dir, 'live-resume.json');
+    writeFileSync(fixture, JSON.stringify({ interactions: [
+      { request: { method: 'POST', host: 'www.yuketang.cn', path: '/api/v3/lesson/checkin', headers: { 'content-type': 'application/json;charset=utf-8' }, body: { source: 1, lessonId: '9000' } }, response: { status: 200, body: { code: 0, data: { lessonToken: 'fixture-rejoin-token' } } } },
+    ], websocket: { url: 'wss://www.yuketang.cn/wsapp/', hello: { op: 'hello', userid: '77', role: 'student', auth: 'fixture-rejoin-token', lessonid: '9000' }, frames: [{ op: 'hello' }, { op: 'lessonfinished' }] } }));
+    const result = run(dir, ['jobs', 'resume', job.id, '--yes', '--profile', 'alpha', '--json'], fixture);
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout).job).toMatchObject({ id: job.id, status: 'succeeded' });
+    const reopened = new SqliteStateStore(resolve(dir, 'state.db'));
+    const events = await new JobRunner(reopened, { nowMs: () => Date.now(), sleep: async () => {} }).events(job.id, 0);
+    expect(events.some((event) => event.type === 'gap')).toBe(true);
+    reopened.close();
   });
 
   it('runs Xuetang start, ratechange and heartbeat with real elapsed intervals', async () => {

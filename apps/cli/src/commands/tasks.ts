@@ -67,9 +67,10 @@ export function registerJobsCommands(program: Command): void {
         } finally { await client.close(); }
       });
     });
-  jobs
-    .command('resume <jobId>')
+  const resume = jobs.command('resume <jobId>')
     .description('resume an interrupted export under its profile')
+    .option('--yes', 'confirm a new live checkin when resuming a live job');
+  resume
     .action(async (jobId: string) => {
       await withCliRuntime(program, true, async (runtime, dataDir) => {
         const profile = await selectProfile(program, runtime);
@@ -77,8 +78,11 @@ export function registerJobsCommands(program: Command): void {
         const client = createLearningClient({ scope: profile.scope, runtime });
         try {
           const before = await client.jobs.get(jobId);
-          if (before.kind !== 'export' && before.kind !== 'study') { process.stderr.write('learning: this job type has no CLI resume handler\n'); process.exitCode = 3; return; }
-          if (before.status === 'paused') await client.jobs.resume(jobId);
+          if (before.kind !== 'export' && before.kind !== 'study' && before.kind !== 'live') { process.stderr.write('learning: this job type has no CLI resume handler\n'); process.exitCode = 3; return; }
+          if (before.kind === 'live') {
+            if (!resume.opts<{ yes?: boolean }>().yes) { process.stderr.write('learning: live resume requires --yes for a new checkin\n'); process.exitCode = 2; return; }
+            await client.jobs.resume(jobId);
+          } else if (before.status === 'paused') await client.jobs.resume(jobId);
           else if (!['queued', 'waiting', 'succeeded'].includes(before.status)) { process.stderr.write(`learning: ${before.status} job cannot resume without reconciliation\n`); process.exitCode = before.status === 'uncertain' || before.status === 'running' ? 5 : 3; return; }
           const job = await runJobForeground(client, runtime, jobId);
           const files = job.kind === 'export' ? await publishJobArtifacts(runtime, job, dataDir) : [];

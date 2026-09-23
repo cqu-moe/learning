@@ -28,10 +28,11 @@ learning --profile school jobs show <job-id>
 learning --profile school jobs resume <job-id>
 learning --profile school jobs cancel <job-id>
 learning --profile school jobs reconcile <job-id>
+learning --profile school operations reconcile <operation-id>
 ```
 
-学习目前接通雨课堂、学堂的视频 fixture；智慧树保存、图文和弹题继续尚未接通。导出写入 `LEARNING_HOME/exports/<job-id>/`，既有同名文件不会被覆盖。历史课件 PDF 不依赖浏览器；字体解码与旧课件受控浏览器仍缺。`doctor` 会准确报告本机能力，不自动安装浏览器。
+学习的雨课堂、学堂视频及智慧树 share/hike 保存均有离线 fixture；图文访问和弹题自动继续尚未接通。智慧树默认 `login` 为微信纯 API 扫码，`login --variant native` 使用次级原生二维码；扫码后须运行 `whoami` 在线核验身份，未核验时写任务拒绝。导出写入 `LEARNING_HOME/exports/<job-id>/`，既有同名文件不会被覆盖。历史课件 PDF 不依赖浏览器；字体解码与旧课件受控浏览器仍缺。`doctor` 不自动安装浏览器。
 
-学堂讨论用 `discuss draft <resource-key> -o draft.json` 创建可编辑文件；`discuss post draft.json --dry-run` 预览，`--yes` 才发送。试卷可用 `exam export <resource-key>` 只读导出；`exam start <resource-key> --yes` 可能启动计时。`exam save` 尚未接通，`exam submit` 即使带 `--yes --final` 也因 E05 验证闸门拒绝。真实平台操作需单独授权；本轮仅在离线合成响应中运行这些写链。
+学堂讨论用 `discuss draft <resource-key> -o draft.json` 创建可编辑文件；`discuss post draft.json --dry-run` 预览，`--yes` 才发送。试卷可用 `exam export <resource-key>` 只读导出、`exam draft <resource-key> -o draft.yaml` 建草稿；`exam start <resource-key> --yes` 可能启动计时，`exam save draft.yaml --yes` 只缓存已验证的选择/判断答案。`exam submit` 即使带 `--yes --final` 也因 E05 验证闸门拒绝。`live <lesson-url> --yes` 在当前终端监听；当前题的手工答案会再次要求逐题确认，`jobs resume <id> --yes` 会重新签到并标记离线 gap。真实平台操作需单独授权；本轮仅在离线合成响应中运行这些写链。
 
 任务默认在当前终端运行，Ctrl+C 请求暂停并释放本机写锁。响应丢失造成的 `uncertain` 任务不能直接 resume；先用 `jobs reconcile <job-id>` 只读核对。确认原 PID 已退出后才可 `profile unlock` 清理遗留锁。升级前备份整个 `LEARNING_HOME`，尤其是 `master.key`、SQLite 状态库和 `artifacts`。

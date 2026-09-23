@@ -23,12 +23,14 @@ export function registerRunCommands(program: Command): void {
     const options = run.opts<{ speed: string; target: string; dryRun?: boolean; yes?: boolean }>();
     const speed = Number(options.speed);
     const targetFraction = Number(options.target);
-    if (!Number.isSafeInteger(speed) || speed < 1 || speed > 5 || !Number.isFinite(targetFraction) || targetFraction <= 0 || targetFraction > 1) {
+    if (!Number.isFinite(speed) || speed < 1 || speed > 5 || !Number.isFinite(targetFraction) || targetFraction <= 0 || targetFraction > 1) {
       throw new LearningError({ code: 'INVALID_INPUT', message: 'speed must be 1..5 and target must be within (0,1]', retryAfterMs: null, operationId: null });
     }
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
       if (profile === null) return;
+      if (profile.scope.platform !== 'zhs' && !Number.isSafeInteger(speed)) throw new LearningError({ code: 'INVALID_INPUT', message: 'Yuketang and Xuetang speed must be an integer', retryAfterMs: null, operationId: null });
+      if (profile.scope.platform === 'zhs' && speed > 1.5) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS speed cannot exceed 1.5', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         const cachedResource = await runtime.state.get(resourceCacheKey(key));
@@ -48,6 +50,7 @@ export function registerRunCommands(program: Command): void {
         if (resources.length === 0 || resources.some((resource) => resource.course.scope.profileId !== profile.scope.profileId)) {
           throw new LearningError({ code: 'INVALID_INPUT', message: 'no videos in this profile were selected', retryAfterMs: null, operationId: null });
         }
+        if (profile.scope.platform === 'zhs' && resources.some((resource) => resource.native.kind === 'zhs-hike') && speed > 1.25) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS hike speed cannot exceed 1.25', retryAfterMs: null, operationId: null });
         const preview = await client.actions.prepare({ kind: 'study', resources, settings: { speed, targetFraction, questionMode: 'pause', maxDurationSeconds: 24 * 60 * 60 } });
         if (options.dryRun || !options.yes) {
           if (!options.dryRun) { process.stderr.write('learning: preview only; rerun with --yes to start\n'); process.exitCode = 3; }

@@ -1,0 +1,16 @@
+{
+  "id": "zhs/wechat-qr",
+  "platform": "zhs",
+  "source": { "repo": "cqu-moe/zhs-cli", "ref": "56d02171cf73c45694d69f886c902d2ecedadaaa", "path": "src/client.py", "symbol": "wx_qr_start/wx_qr_poll/wx_login_finish" },
+  "synthetic": true,
+  "interactions": [
+    { "request": { "method": "GET", "host": "open.weixin.qq.com", "path": "/connect/qrconnect" }, "response": { "status": 200, "body": "<img src=\"/connect/qrcode/WXUUID1\">" } },
+    { "request": { "method": "GET", "host": "open.weixin.qq.com", "path": "/connect/qrcode/WXUUID1" }, "response": { "status": 200, "body": "SYNTHETIC-PNG" } },
+    { "request": { "method": "GET", "host": "lp.open.weixin.qq.com", "path": "/connect/l/qrconnect" }, "response": { "status": 200, "body": "window.wx_errcode=408;" } },
+    { "request": { "method": "GET", "host": "lp.open.weixin.qq.com", "path": "/connect/l/qrconnect" }, "response": { "status": 200, "body": "window.wx_errcode=404;" } },
+    { "request": { "method": "GET", "host": "lp.open.weixin.qq.com", "path": "/connect/l/qrconnect" }, "response": { "status": 200, "body": "window.wx_errcode=405;window.wx_code='CODE1';" } },
+    { "request": { "method": "GET", "host": "user.zhihuishu.com", "path": "/zhsuser/oauth/weixin/wxLogin", "query": { "code": "CODE1", "state": "https://login.zhihuishu.com/wxTransit/0" } }, "response": { "status": 200, "headers": { "set-cookie": ["CASLOGC=%7B%22uuid%22%3A%22u1%22%7D; Domain=zhihuishu.com; Path=/"] }, "body": {} } }
+  ],
+  "entry": { "service": "auth", "method": "begin", "input": { "method": "qr", "variant": "default" } },
+  "expected": { "identityVerified": false }
+}

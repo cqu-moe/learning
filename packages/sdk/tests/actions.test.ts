@@ -3,8 +3,10 @@ import { ActionStore, digestOf } from '../src/services/actions.js';
 import { MemoryStateStore } from './helpers/memory.js';
 import { FakeClock } from './helpers/replay.js';
 import type { ActionInput, Receipt } from '../src/public.js';
+import { LearningError } from '../src/public.js';
 
 const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
+const masterKey = new Uint8Array(32).fill(7);
 const draft = {
   schemaVersion: 1 as const,
   id: 'd1',
@@ -19,7 +21,7 @@ const draft = {
 const input: ActionInput = { kind: 'homework.apply', draft, questionIds: ['q1'] };
 
 function makeStore() {
-  return new ActionStore(new MemoryStateStore(), new FakeClock());
+  return new ActionStore(new MemoryStateStore(), new FakeClock(), masterKey);
 }
 
 describe('action store (T14, A141/A142)', () => {
@@ -38,7 +40,7 @@ describe('action store (T14, A141/A142)', () => {
 
   it('expired previews are rejected', async () => {
     const clock = new FakeClock();
-    const store = new ActionStore(new MemoryStateStore(), clock);
+    const store = new ActionStore(new MemoryStateStore(), clock, masterKey);
     const preview = await store.prepare(input, 1, async () => ({ operationId: 'op2', state: 'confirmed', message: '', result: null }));
     clock.setNow(clock.nowMs() + 11 * 60 * 1000);
     await expect(store.execute(preview.id)).rejects.toMatchObject({ data: { code: 'PREVIEW_EXPIRED' } });
@@ -87,11 +89,11 @@ describe('action store (T14, A141/A142)', () => {
   it('persists a confirmed receipt across instances and never repeats its write', async () => {
     const state = new MemoryStateStore();
     const clock = new FakeClock();
-    const first = new ActionStore(state, clock);
+    const first = new ActionStore(state, clock, masterKey);
     let writes = 0;
     const preview = await first.prepare(input, 1, async () => { writes += 1; return { operationId: 'ignored', state: 'confirmed', message: 'saved', result: null }; });
     const receipt = await first.execute(preview.id);
-    const reopened = new ActionStore(state, clock);
+    const reopened = new ActionStore(state, clock, masterKey);
     expect(await reopened.execute(preview.id)).toEqual(receipt);
     expect(writes).toBe(1);
   });
@@ -99,11 +101,11 @@ describe('action store (T14, A141/A142)', () => {
   it('never resends a persisted sending operation after process restart', async () => {
     const state = new MemoryStateStore();
     const clock = new FakeClock();
-    const first = new ActionStore(state, clock);
+    const first = new ActionStore(state, clock, masterKey);
     const preview = await first.prepare(input, 1, async () => new Promise<Receipt>(() => {}));
     const pending = first.execute(preview.id);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const reopened = new ActionStore(state, clock);
+    const reopened = new ActionStore(state, clock, masterKey);
     await expect(reopened.execute(preview.id)).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
     const receipt = await reopened.reconcile(preview.id, async () => null);
     expect(receipt.state).toBe('uncertain');
@@ -113,12 +115,57 @@ describe('action store (T14, A141/A142)', () => {
   it('reconciles by operation id after restart but refuses an unsent preview', async () => {
     const state = new MemoryStateStore();
     const clock = new FakeClock();
-    const first = new ActionStore(state, clock);
+    const first = new ActionStore(state, clock, masterKey);
     const preview = await first.prepare(input, 1, async () => { throw new Error('lost response'); });
     const index = await state.list('operation:', null, 10);
     const operationId = index.items[0]!.key.slice('operation:'.length);
-    await expect(new ActionStore(state, clock).reconcile(operationId, async () => null)).rejects.toMatchObject({ data: { code: 'PRECONDITION_CHANGED' } });
+    await expect(new ActionStore(state, clock, masterKey).reconcile(operationId, async () => null)).rejects.toMatchObject({ data: { code: 'PRECONDITION_CHANGED' } });
     await expect(first.execute(preview.id)).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
-    expect((await new ActionStore(state, clock).reconcile(operationId, async () => ({ operationId, state: 'confirmed', message: 'checked', result: null }))).state).toBe('confirmed');
+    expect((await new ActionStore(state, clock, masterKey).reconcile(operationId, async () => ({ operationId, state: 'confirmed', message: 'checked', result: null }))).state).toBe('confirmed');
+  });
+
+  it('refuses a blocked preview before any executor can send', async () => {
+    const store = makeStore();
+    let writes = 0;
+    const preview = await store.prepare(input, 1, async () => { writes += 1; return { operationId: 'ack', state: 'confirmed', message: 'ok', result: null }; }, { blockers: ['independent verification missing'] });
+    expect(preview.blockers).toHaveLength(1);
+    await expect(store.execute(preview.id)).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
+    expect(writes).toBe(0);
+  });
+
+  it('runs a read-only preflight before recording sending', async () => {
+    const store = makeStore();
+    let writes = 0;
+    const preview = await store.prepare(input, 1, async () => { writes += 1; return { operationId: 'ack', state: 'confirmed', message: 'ok', result: null }; },
+      { preflight: async () => { throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'question closed', retryAfterMs: null, operationId: null }); } });
+    await expect(store.execute(preview.id)).rejects.toMatchObject({ data: { code: 'PRECONDITION_CHANGED' } });
+    expect((await store.inspect(preview.id)).phase).toBe('preview');
+    expect(writes).toBe(0);
+  });
+
+  it('encrypts the answer draft inside the saved operation record', async () => {
+    const state = new MemoryStateStore();
+    const store = new ActionStore(state, new FakeClock(), masterKey);
+    const preview = await store.prepare(input, 1, async () => ({ operationId: 'ack', state: 'confirmed', message: 'ok', result: null }));
+    const raw = JSON.stringify((await state.get(`preview:${preview.id}`))?.value);
+    expect(raw).not.toContain('questionId');
+    expect(raw).not.toContain('ex1');
+    expect(raw).not.toContain('"keys":["A"]');
+    expect(raw).toContain('inputCiphertext');
+  });
+
+  it('migrates an old plaintext sending record without replaying its write', async () => {
+    const state = new MemoryStateStore();
+    const clock = new FakeClock();
+    const first = new ActionStore(state, clock, masterKey);
+    const preview = await first.prepare(input, 1, async () => ({ operationId: 'ack', state: 'confirmed', message: 'ok', result: null }));
+    const operationId = (await first.inspect(preview.id)).operationId;
+    const old = await state.get(`preview:${preview.id}`);
+    expect(old).not.toBeNull();
+    expect(await state.commit({ expected: [{ key: `preview:${preview.id}`, revision: old!.revision }], changes: [{ key: `preview:${preview.id}`, value: { preview, operationId, input, phase: 'sending', receipt: null } }] })).toBe(true);
+    const reopened = new ActionStore(state, clock, masterKey);
+    expect((await reopened.inspect(preview.id)).phase).toBe('sending');
+    await expect(reopened.execute(preview.id)).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+    expect(JSON.stringify((await state.get(`preview:${preview.id}`))?.value)).not.toContain('questionId');
   });
 });

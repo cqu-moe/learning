@@ -14,24 +14,24 @@
 | T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
-| T10 | 智慧树编码与登录 | done | vitest tests/zhs-auth-crypto.test.ts → 7/7; 全套 97/97, typecheck/lint/build/boundaries exit 0 | 参考仓库 HOME 向量多一个 = 属笔误，已修正记录 |
-| T11 | 智慧树两类课程树和权威进度 | partial | 当前 zhs catalog 7/7；share/hike 进度只读 fixture；见最新记录 | QR 后账号在线核验与真机端点仍缺证据 |
+| T10 | 智慧树编码与登录 | done | 默认微信 QR/原生 QR、在线 UUID probe 合成 fixture；见最新记录 | E04 真实账号字段待核验 |
+| T11 | 智慧树两类课程树和权威进度 | done | share/hike 树与权威进度只读 fixture；见最新记录 | E04/E06 真机端点仍缺证据 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
 | T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
 | T15 | 雨课堂作业与内嵌题写入 | partial | `actions-client` 单题作业 fixture；`ykt-write` 4/4 | 内嵌题执行链未接入；真实写入未授权 |
 | T16 | 学堂作业与讨论发布 | partial | `discussions-client`、`actions-client` 与 CLI 讨论进程 fixture | 学堂作业执行链未接入；真实写入未授权 |
-| T17 | 学堂考试的三个独立动作 | partial | 开卷 preview/start_paper fixture；原 `xuetang-exam-write` 3/3 | save/finalize 未接线；E05 最终交卷独立验证缺失 |
-| T18 | 固定任务模型、暂停恢复与事件 | partial | 当前 `jobs.test.ts` 9/9，SQLite 跨进程 fixture | 未覆盖所有 job kind、items 分页与崩溃恢复矩阵 |
+| T17 | 学堂考试的三个独立动作 | partial | 开卷、单独缓存选择/判断题与阻断最终交卷的 SDK/CLI fixture | E05 最终交卷独立验证缺失；填空/主观题写入未验证 |
+| T18 | 固定任务模型、暂停恢复与事件 | partial | 持久化、作用域分页、进程恢复与 wake fixture | 20 秒工作片硬期限与全部 job kind 边界仍需核对 |
 | T19 | 雨课堂学习任务 | partial | 当前 `ykt-study.test.ts` 6/6；CLI 一拍与只读核对 fixture | 图文、内嵌题继续未接线；真实心跳未授权 |
 | T20 | 学堂学习任务 | partial | 当前 `xuetang-study.test.ts` 5/5；CLI 实际间隔 fixture | 长任务和统计延迟验收不足；真实心跳未授权 |
-| T21 | 智慧树share/hike学习任务 | partial | share/hike 权威进度只读 fixture；`zhs-study.test.ts` 3/3 纯函数 | 两套保存任务 handler 未接线；E06 真机回读缺口 |
-| T22 | 雨课堂实时会话与事件缺口 | partial | `live.test.ts` 2/2 仅 mailbox | checkin/WS/job/CLI 未接线；真实直播未授权 |
-| T23 | 流式下载、持久产物与断点恢复 | partial | NodeArtifactStore 与 MP4/HLS CLI 进程 fixture | Range/validator 恢复与多 GiB、字幕部分失败验收不足 |
+| T21 | 智慧树share/hike学习任务 | partial | 两套保存 handler、题闸/停滞/签名、权威回读 fixture | E04/E06 真机身份与回读时延缺口；真实学习未授权 |
+| T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
+| T23 | 流式下载、持久产物与断点恢复 | partial | MP4 206/200/416/ETag 恢复、CLI 双进程与字幕降级 fixture | HLS 分段断点及多 GiB 预算实测未完成 |
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
-| T25 | CLI基础命令与本地运行装配 | partial | profile/login/catalog/doctor CLI 进程 fixture，当前 CLI 单测 35/35 | runtime.wake 仍为空；并发与恢复矩阵未闭合 |
-| T26 | CLI完整功能入口与恢复操作 | partial | 下载、历史课件、作业、匹配、讨论、两平台视频学习、考试开卷 fixture | exam save/finalize、live、学堂作业、智慧树学习及完整恢复仍缺 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 182/182、CLI 35/35、E2E 4/4、lint/构建/boundaries exit 0 | 正式 pnpm 门禁与打包消费者、A312 全命令矩阵未完成 |
+| T25 | CLI基础命令与本地运行装配 | done | profile/login/catalog/doctor、独占锁与 wake CLI 进程 fixture；当前 CLI 45/45 | 真实平台登录未授权，fixture 不代替账号验收 |
+| T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、草稿、讨论、三平台学习、考试 start/save、直播 fixture | E05 最终交卷阻断；学堂作业/图文、部分恢复与模型配置未闭合 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 208/208、CLI 45/45、E2E 4/4；第一次合并后正式 pnpm 五门禁 exit 0 | 第二阶段需重跑正式门禁；干净消费者打包和 A312 全矩阵未完成 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -303,3 +303,12 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 测试先行：新增跨进程/异常测试先观察 UNSUPPORTED、错误协议、错误锁状态等预期失败，再实现。Node v24.11.1，隔离工作树实际命令：`node packages/sdk/node_modules/vitest/vitest.mjs run`（在 SDK 目录）→ 182/182 exit 0；`node apps/cli/node_modules/vitest/vitest.mjs run`（在 CLI 目录）→ 35/35 exit 0；CLI `vitest --config vitest.e2e.config.ts` → 4/4 exit 0；`node node_modules/typescript/bin/tsc -p packages/sdk/tsconfig.build.json` 与 CLI 对应命令 → exit 0；`node node_modules/eslint/bin/eslint.js .`、`node scripts/check-boundaries.mjs`、`git diff --check` → exit 0。上述 `node` 使用绝对路径 `/Users/uu/.nvm/versions/node/v24.11.1/bin/node`。
 - 未通过/未运行：隔离工作树复制了原仓库的已安装 `node_modules`，`pnpm lint` 先触发安装并以 `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 退出 1；原仓库合并后须用正式 pnpm 门禁重跑。真实平台登录/学习/答题/发帖/开卷/交卷未运行（本期无单独授权）；E07 参考字体的 3 份独立样本/200 人工核实字形缺失；E05 最终交卷独立验证仍缺，不能标记可用。
 - 下一当前工作：继续 T21/T22 与 T26 剩余能力，修复 Range 恢复/字幕及任务恢复边缘；然后完成 T31 打包消费者和全命令矩阵。T27–T30 保持延期。
+
+### 2026-09-23 · 第二阶段检查点（继续 T17–T26；T31 尚未完成）
+
+- SDK/CLI 改动：MP4 分段检查点及 `206`+偏移+ETag/Last-Modified 续传，`200`、`416`、验证器变化重下；`jobs resume` 双进程文件内容验收。字幕失败保留主视频。学堂考试新增 `exam draft/save`，最终 `submit` 形成带 E05 blocker 的预览，任何情况下无证据均不发送 `submit_paper`。
+- 智慧树：默认 QR 改为纯 API 微信 OAuth 链，`--variant native` 保留旧原生流程；whoami 在线 UUID 读回成功后才提升 `identityVerified`。share/hike 任务按实际经过时间分别使用 VIDEO_KEY 加密 save / 固定顺序 MD5 签名，弹题无答案 `needs-input`、权威回读后才达目标。真实身份字段与风控仍未验收。
+- 雨课堂直播：明确确认后 checkin，WS hello 使用 lessonToken；题目、gap 持久入 job events；同 jobId 的 `jobs resume --yes` 重签到并标注离线事件缺口，手工输入当前题答案仍逐题确认，过期/断线旧题拒绝。CLI runtime.wake 已能打断前台等待，Ctrl+C 关闭连接。旧的 WS 纯 mailbox 结论不能替代真机验收。
+- 安全修复：新建 LEARNING_HOME 0700，SQLite/master.key 0600；操作预览的答题/讨论正文改为 AES-GCM 密文，旧明文 sending 记录在读取时原地迁移且保持 uncertain、不重交。新增 `operations reconcile <operation-id>`，无法权威核对时返回 uncertain/退出码 5。
+- 本阶段离线实际命令（Node v24.11.1、隔离工作树）：SDK `vitest run` → 208/208 exit 0；CLI `vitest run` → 45/45 exit 0；CLI 独立 E2E → 4/4 exit 0；SDK/CLI `tsc -p tsconfig.json` → exit 0；ESLint、boundaries、source-lock、`git diff --check` → exit 0。因隔离工作树的 `node_modules` 为复用拷贝，pnpm 在此处会触发重建依赖目录；合并后须在主仓库重跑正式 pnpm 五门禁。
+- 未完成：T24 的 E07 三份独立参考字体和 200 个人工核实字形（用户确认暂无），字体 Canvas/旧课件受控浏览器不能报通过；E05 最终交卷独立真机验证缺失；平台真实登录/学习/写入/直播未授权，均未运行。T31 的干净消费者打包、全命令正常/异常矩阵仍未完成。下一步先做正式合并后门禁与消费者安装，再继续剩余工程与证据缺口。
