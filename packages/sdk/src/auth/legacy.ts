@@ -3,7 +3,7 @@ import type { Warning } from '../types/errors.js';
 import type { SessionView } from '../types/models.js';
 import type { Scope } from '../types/refs.js';
 import type { Runtime } from '../runtime/types.js';
-import { readSession, writeSession } from '../session/store.js';
+import { readSessionGeneration, writeSession } from '../session/store.js';
 
 export interface LegacyCookie {
   name: string;
@@ -24,8 +24,7 @@ export async function importLegacyCookies(
     const line = `${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${path}`;
     await jar.absorb(new URL(`https://${cookie.domain}/`), [line]);
   }
-  const current = await readSession(runtime.state, runtime.masterKey, scope);
-  const generation = (current?.generation ?? 0) + 1;
+  const generation = (await readSessionGeneration(runtime.state, runtime.masterKey, scope)) + 1;
   const checkedAtMs = runtime.clock.nowMs();
   await writeSession(runtime.state, runtime.masterKey, {
     schemaVersion: 1,

@@ -1,11 +1,89 @@
 import type { Command } from 'commander';
+import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
+import type { AssessmentRef, CourseRef, ResourceRef, OutlineNode } from '@learning/sdk/public';
+import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { resourceCacheKey, resourceKindCacheKey } from './catalog.js';
+import { publishJobArtifacts, runJobForeground } from '../foreground.js';
+
+const TYPES = new Set(['video', 'homework', 'exam']);
+function flatten(nodes: OutlineNode[]): Array<{ kind: string; ref: ResourceRef }> {
+  return nodes.flatMap((node) => [
+    ...node.resources.map((resource) => ({ kind: resource.kind, ref: resource.ref })),
+    ...flatten(node.children),
+  ]);
+}
 
 export function registerDownloadCommands(program: Command): void {
-  program
-    .command('download')
-    .description('export media/slides/assessments locally')
-    .option('--dry-run', 'resolve without transferring')
-    .action((options: { dryRun?: boolean }) => {
-      process.stdout.write(JSON.stringify({ command: 'download', dryRun: options.dryRun === true }) + '\n');
+  const download = program.command('download <course-or-resource>')
+    .description('export permitted videos and assessments locally')
+    .option('--types <types>', 'comma-separated video,homework,exam', 'video,homework,exam')
+    .option('--quality <quality>', 'best, hd or sd', 'best')
+    .option('--subtitles', 'include available transcript')
+    .option('--dry-run', 'resolve planned exports without transferring');
+  download.action(async (key: string) => {
+    const options = download.opts<{ types: string; quality: string; subtitles?: boolean; dryRun?: boolean }>();
+    const types = options.types.split(',').map((item) => item.trim());
+    if (types.length === 0 || types.some((item) => !TYPES.has(item)) || new Set(types).size !== types.length) {
+      throw new LearningError({ code: 'INVALID_INPUT', message: 'download types must be unique video,homework,exam values', retryAfterMs: null, operationId: null });
+    }
+    if (!['best', 'hd', 'sd'].includes(options.quality)) throw new LearningError({ code: 'INVALID_INPUT', message: 'quality must be best, hd or sd', retryAfterMs: null, operationId: null });
+    await withCliRuntime(program, true, async (runtime, dataDir) => {
+      const profile = await selectProfile(program, runtime);
+      if (profile === null) return;
+      const client = createLearningClient({ scope: profile.scope, runtime });
+      try {
+        const cachedResource = await runtime.state.get(resourceCacheKey(key));
+        let resources: Array<{ kind: string; ref: ResourceRef }>;
+        if (cachedResource !== null) {
+          const ref = ResourceRefSchema.parse(cachedResource.value);
+          const savedKind = (await runtime.state.get(resourceKindCacheKey(key)))?.value;
+          if (typeof savedKind === 'string') resources = types.includes(savedKind) ? [{ kind: savedKind, ref }] : [];
+          else if (download.getOptionValueSource('types') === 'default') {
+            throw new LearningError({ code: 'INVALID_INPUT', message: 'cached resource has no kind; pass --types explicitly', retryAfterMs: null, operationId: null });
+          } else resources = types.map((kind) => ({ kind, ref }));
+        } else {
+          let course: CourseRef;
+          if (/^https:\/\//i.test(key)) course = await client.catalog.resolveCourse(key);
+          else {
+            const cachedCourse = await runtime.state.get(`cli:course:${key}`);
+            if (cachedCourse === null) throw new LearningError({ code: 'INVALID_INPUT', message: 'unknown course or resource; run courses and outline first', retryAfterMs: null, operationId: null });
+            course = CourseSchema.parse(cachedCourse.value).ref;
+          }
+          if (course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'course belongs to another profile', retryAfterMs: null, operationId: null });
+          resources = flatten((await client.catalog.outline(course)).value.roots).filter((item) => types.includes(item.kind));
+        }
+        if (resources.some((item) => item.ref.course.scope.profileId !== profile.scope.profileId)) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
+        const media = resources.filter((item) => item.kind === 'video').map((item) => item.ref);
+        const assessments: AssessmentRef[] = [];
+        for (const item of resources.filter((entry) => entry.kind === 'homework' || entry.kind === 'exam')) {
+          assessments.push(...(await client.assessments.resolve(item.ref)).filter((ref) => ref.kind === item.kind));
+        }
+        if (media.length === 0 && assessments.length === 0) throw new LearningError({ code: 'UNSUPPORTED', message: 'no matching downloadable resources', retryAfterMs: null, operationId: null });
+        if (options.dryRun) {
+          const plan = { media: media.map((ref) => ref.key), assessments: assessments.map((ref) => ref.assessmentId) };
+          printResult(program, plan, `${plan.media.length} videos, ${plan.assessments.length} assessments`);
+          return;
+        }
+        const jobs = [];
+        const files: string[] = [];
+        if (media.length > 0) {
+          const created = await client.jobs.createExport({ type: 'media', resources: media, quality: options.quality as 'best' | 'hd' | 'sd', subtitles: options.subtitles === true });
+          const job = await runJobForeground(client, runtime, created.id);
+          jobs.push(job);
+          files.push(...await publishJobArtifacts(runtime, job, dataDir));
+        }
+        if (assessments.length > 0) {
+          const created = await client.jobs.createExport({ type: 'assessments', refs: assessments, format: 'json' });
+          const job = await runJobForeground(client, runtime, created.id);
+          jobs.push(job);
+          files.push(...await publishJobArtifacts(runtime, job, dataDir));
+        }
+        if (jobs.some((job) => job.status === 'uncertain')) process.exitCode = 5;
+        else if (jobs.some((job) => job.status === 'partial')) process.exitCode = 4;
+        else if (jobs.some((job) => job.status !== 'succeeded')) process.exitCode = 3;
+        const result = jobs.length === 1 ? { job: jobs[0], files } : { jobs, files };
+        printResult(program, result, `${jobs.map((job) => `${job.id}: ${job.status}`).join('\n')}\n${files.join('\n')}`);
+      } finally { await client.close(); }
     });
+  });
 }

@@ -3,7 +3,7 @@ import type { ErrorData } from '../types/errors.js';
 import type { AuthEvent, Probe, SessionView } from '../types/models.js';
 import type { Scope } from '../types/refs.js';
 import type { Clock, StateStore } from '../runtime/types.js';
-import { readSession, writeSession } from '../session/store.js';
+import { readSession, readSessionGeneration, writeSession } from '../session/store.js';
 import type { SessionRecord } from '../session/store.js';
 
 export type { AuthEvent } from '../types/models.js';
@@ -176,10 +176,16 @@ export class AuthLifecycle {
     return flow;
   }
 
+  async seedGeneration(): Promise<void> {
+    this.generationCounter = Math.max(
+      this.generationCounter,
+      await readSessionGeneration(this.state, this.masterKey, this.scope),
+    );
+  }
+
   /** Next generation to use, seeded from any stored session. */
   async currentGeneration(): Promise<number> {
-    const record = await readSession(this.state, this.masterKey, this.scope);
-    return record?.generation ?? 0;
+    return Math.max(this.generationCounter, await readSessionGeneration(this.state, this.masterKey, this.scope));
   }
 }
 

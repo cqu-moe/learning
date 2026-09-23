@@ -33,6 +33,5 @@ node apps/cli/dist/index.js init --home ~/.learning
 
 ## 解锁与恢复
 
-- 多进程写冲突：CLI 会拒绝并提示占用 PID；确认原进程已退出后运行 unlock 语义（删除 learning.lock）。
-- Ctrl+C：学习/导出任务持久暂停，重跑 `run` / `download` 从检查点恢复。
-- uncertain 写：`jobs reconcile <jobId>` 只读核对；仍不确定时拒绝 resume 且不重交。
+- 多进程写冲突：CLI 会拒绝并提示占用 PID。确认原进程已退出后运行 `node apps/cli/dist/index.js --home <dir> profile unlock`；活跃 PID 不会被抢锁。
+- 已保存的导出及雨课堂/学堂视频任务可用 `jobs show/resume/cancel` 管理；带 pending heartbeat 的雨课堂/学堂任务须先 `jobs reconcile <job-id>` 只读核对，仍为 uncertain 时不会重交。其他 job kind 和动作的恢复尚未完成，见 [FEATURE-STATUS.md](FEATURE-STATUS.md)。

@@ -185,6 +185,30 @@ describe('session http client', () => {
     expect(result.status).toBe(200);
     expect(await result.json()).toEqual({ success: false, msg: 'not logged in' });
   });
+
+  it('reads binary assets with a strict size ceiling', async () => {
+    const transport = {
+      fetch: async () => new Response(new Uint8Array([1, 2, 3, 4])),
+      connect: async () => { throw Error('unused'); },
+    };
+    const http = createSessionHttp({ transport, clock: new FakeClock(), jar: new SessionCookieJar(), allowHosts });
+    const body = await http.request({ kind: 'read', method: 'GET', url: 'https://www.yuketang.cn/slide.png' });
+    expect(await body.bytes(4)).toEqual(new Uint8Array([1, 2, 3, 4]));
+    const oversized = await http.request({ kind: 'read', method: 'GET', url: 'https://www.yuketang.cn/slide.png' });
+    await expect(oversized.bytes(3)).rejects.toMatchObject({ data: { code: 'BUDGET' } });
+  });
+
+  it('streams binary responses without buffering past the budget', async () => {
+    const transport = { fetch: async () => new Response(new Uint8Array([1, 2, 3, 4])), connect: async () => { throw Error('unused'); } };
+    const http = createSessionHttp({ transport, clock: new FakeClock(), jar: new SessionCookieJar(), allowHosts });
+    const response = await http.request({ kind: 'read', method: 'GET', url: 'https://www.yuketang.cn/video.mp4' });
+    const reader = response.stream(4).getReader();
+    expect((await reader.read()).value).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect((await reader.read()).done).toBe(true);
+    const oversized = await http.request({ kind: 'read', method: 'GET', url: 'https://www.yuketang.cn/video.mp4' });
+    const limited = oversized.stream(3).getReader();
+    await expect(limited.read()).rejects.toMatchObject({ data: { code: 'BUDGET' } });
+  });
 });
 
 describe('replay tool', () => {

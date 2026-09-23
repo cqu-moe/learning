@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { importLegacyDraft, importFeedbackSet, MAX_DRAFT_BYTES } from '../src/services/drafts.js';
+import { importLegacyDraft, importFeedbackSet, MAX_DRAFT_BYTES, exportDraftYaml } from '../src/services/drafts.js';
 import { matchDraft } from '../src/content/match.js';
 import { proposeMatches } from '../src/services/model.js';
 import { sha256Hex } from '../src/types/sha256.js';
@@ -59,6 +59,13 @@ describe('draft import (T13)', () => {
     await expect(importLegacyDraft('x'.repeat(MAX_DRAFT_BYTES + 1), 'ykt', scope)).rejects.toMatchObject({ data: { code: 'INVALID_INPUT' } });
     await expect(importLegacyDraft('a: !bomb 1', 'ykt', scope)).rejects.toMatchObject({ data: { code: 'INVALID_INPUT' } });
     await expect(importLegacyDraft('{broken', 'learning', scope)).rejects.toMatchObject({ data: { code: 'INVALID_INPUT' } });
+  });
+
+  it('round-trips a learning draft and rejects a different profile', async () => {
+    const draft: AnswerDraft = { schemaVersion: 1, id: 'd1', ref, fingerprint: 'fingerprint', entries: [{ questionId: '11', fingerprint: 'question-fp', answer: { kind: 'unset' }, evidence: null }] };
+    const text = exportDraftYaml(draft);
+    expect((await importLegacyDraft(text, 'learning', scope)).value).toEqual(draft);
+    await expect(importLegacyDraft(text, 'learning', { ...scope, profileId: 'another' })).rejects.toMatchObject({ data: { code: 'FORBIDDEN' } });
   });
 
   it('imports a ykt feedback set with official answers', async () => {

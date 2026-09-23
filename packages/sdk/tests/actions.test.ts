@@ -79,8 +79,46 @@ describe('action store (T14, A141/A142)', () => {
     const store = makeStore();
     const preview = await store.prepare(input, 1, async () => ({ operationId: 'op6', state: 'confirmed', message: '', result: null }));
     await store.execute(preview.id);
-    store.cancelAll();
+    await store.cancelAll();
     const again = await store.execute(preview.id);
     expect(again).toMatchObject({ state: 'confirmed' });
+  });
+
+  it('persists a confirmed receipt across instances and never repeats its write', async () => {
+    const state = new MemoryStateStore();
+    const clock = new FakeClock();
+    const first = new ActionStore(state, clock);
+    let writes = 0;
+    const preview = await first.prepare(input, 1, async () => { writes += 1; return { operationId: 'ignored', state: 'confirmed', message: 'saved', result: null }; });
+    const receipt = await first.execute(preview.id);
+    const reopened = new ActionStore(state, clock);
+    expect(await reopened.execute(preview.id)).toEqual(receipt);
+    expect(writes).toBe(1);
+  });
+
+  it('never resends a persisted sending operation after process restart', async () => {
+    const state = new MemoryStateStore();
+    const clock = new FakeClock();
+    const first = new ActionStore(state, clock);
+    const preview = await first.prepare(input, 1, async () => new Promise<Receipt>(() => {}));
+    const pending = first.execute(preview.id);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reopened = new ActionStore(state, clock);
+    await expect(reopened.execute(preview.id)).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+    const receipt = await reopened.reconcile(preview.id, async () => null);
+    expect(receipt.state).toBe('uncertain');
+    void pending;
+  });
+
+  it('reconciles by operation id after restart but refuses an unsent preview', async () => {
+    const state = new MemoryStateStore();
+    const clock = new FakeClock();
+    const first = new ActionStore(state, clock);
+    const preview = await first.prepare(input, 1, async () => { throw new Error('lost response'); });
+    const index = await state.list('operation:', null, 10);
+    const operationId = index.items[0]!.key.slice('operation:'.length);
+    await expect(new ActionStore(state, clock).reconcile(operationId, async () => null)).rejects.toMatchObject({ data: { code: 'PRECONDITION_CHANGED' } });
+    await expect(first.execute(preview.id)).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+    expect((await new ActionStore(state, clock).reconcile(operationId, async () => ({ operationId, state: 'confirmed', message: 'checked', result: null }))).state).toBe('confirmed');
   });
 });

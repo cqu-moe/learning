@@ -5,10 +5,10 @@
   "synthetic": true,
   "interactions": [
     {
-      "request": { "method": "POST", "host": "studyresources.zhihuishu.com", "path": "/studyResources/stuResouce/queryResourceMenuTree", "query": { "courseId": "77" } },
+      "request": { "method": "GET", "host": "studyresources.zhihuishu.com", "path": "/studyResources/stuResouce/queryResourceMenuTree", "query": { "courseId": "77", "_": "1728000000000" } },
       "response": { "status": 200, "headers": {}, "body": { "code": 0, "rt": [
-        { "id": "f1", "name": "讲义目录", "dataType": null, "children": [
-          { "id": "f2", "name": "第一视频", "dataType": 1, "children": [] }
+        { "id": "f1", "name": "讲义目录", "dataType": null, "childList": [
+          { "id": "f2", "name": "第一视频", "dataType": 3, "childList": [] }
         ] }
       ] } }
     }

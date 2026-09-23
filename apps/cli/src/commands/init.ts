@@ -5,16 +5,20 @@ export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description('initialize the local data directory and master key')
-    .option('--home <dir>', 'LEARNING_HOME override')
-    .action((options: { home?: string }) => {
-      const dataDir = resolveDataDir(options.home);
+    .action(() => {
+      const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
       const lock = acquireDataDirLock(dataDir, process.pid);
       if (!lock.ok) {
         process.stderr.write(`learning: ${lock.reason}\n`);
         process.exitCode = 3;
         return;
       }
-      createCliRuntime(dataDir);
-      process.stdout.write(`initialized ${dataDir}\n`);
+      try {
+        const runtime = createCliRuntime(dataDir);
+        runtime.state.close();
+        process.stdout.write(`initialized ${dataDir}\n`);
+      } finally {
+        lock.release();
+      }
     });
 }

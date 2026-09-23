@@ -9,6 +9,11 @@ export class SessionCookieJar {
     return this.jar.getCookieString(url.toString());
   }
 
+  async cookieValue(url: URL, name: string): Promise<string | null> {
+    const cookies = await this.jar.getCookies(url.toString());
+    return cookies.find((cookie) => cookie.key === name)?.value ?? null;
+  }
+
   async absorb(url: URL, setCookies: string[]): Promise<void> {
     for (const line of setCookies) {
       await this.jar.setCookie(line, url.toString());

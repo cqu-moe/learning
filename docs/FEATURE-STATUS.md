@@ -1,28 +1,22 @@
-# learning 特性状态矩阵（T31）
+# learning 功能状态
 
-状态含义：implemented（代码+fixture 测试）/ unverified（实现但无真机证据）/ not-run（需用户授权）/ deferred（延期）。分母只含本期 28 项。
+版本 1.1 的范围仅为共享 SDK 与本地 CLI。以下“fixture 通过”指严格离线合成响应，不代表真实账号已验收。
 
-| 能力 | 状态 | 证据 |
+| 能力 | 当前状态 | 证据与缺口 |
 |---|---|---|
-| ykt 扫码登录/课程/双大纲 | implemented | tests/ykt-catalog.test.ts 7/7（synthetic fixtures, source-locked refs） |
-| ykt 媒体/字幕/课件/考试读 | implemented | tests/ykt-resources.test.ts 6/6 |
-| ykt 作业/内嵌题写入 | implemented（fixture） | tests/ykt-write.test.ts 4/4；真实写入 not-run（未授权） |
-| ykt 学习心跳/watch progress | implemented（纯函数） | tests/ykt-study.test.ts 3/3；真实心跳 not-run |
-| ykt 实时 mailbox/gap | implemented | tests/live.test.ts 2/2；真实 WS join not-run |
-| xtx WS 登录/课程/大纲 | implemented | tests/xuetang-catalog.test.ts 6/6 |
-| xtx 媒体/讲稿/考试读 | implemented | tests/xuetang-resources.test.ts 4/4 |
-| xtx 作业/讨论写 | implemented（fixture） | tests/xuetang-write.test.ts 4/4；真实写 not-run |
-| xtx 考试三动作 | implemented（fixture） | tests/xuetang-exam-write.test.ts 3/3；真实交卷 not-run（E05） |
-| xtx 学习心跳/schedule 回读 | implemented（纯函数） | tests/xuetang-study.test.ts 2/2 |
-| zhs 加密向量/QR 登录 | implemented | tests/zhs-auth-crypto.test.ts 7/7（官方向量+修正记录） |
-| zhs share/hike 课程树 | implemented | tests/zhs-catalog.test.ts 5/5；进度读 not-run（证据缺口） |
-| zhs 学习 ev/watchPoint/hike 停滞 | implemented（纯函数） | tests/zhs-study.test.ts 3/3；真实 save not-run |
-| 富文本/Markdown/答案规范化 | implemented | tests/content.test.ts 7/7 |
-| 草稿导入/反馈匹配/模型建议 | implemented | tests/drafts.test.ts 6/6 |
-| 操作预览/幂等/uncertain | implemented | tests/actions.test.ts 6/6 |
-| 任务模型/事件/恢复 | implemented | tests/jobs.test.ts 5/5 |
-| 下载决策/文件名/manifest | implemented | tests/download.test.ts 3/3 |
-| PDF/字形匹配/HeavyRenderer | implemented（合成样本） | tests/render.test.ts 4/4；E07 黄金样本缺失阻塞质量验收 |
-| CLI init/doctor/lock/命令组 | implemented | apps/cli tests 8/8 + e2e 4/4 |
-| 三平台真实登录/学习/写入 | not-run | 需用户逐项授权；无授权不触发 |
-| Web/Cloudflare | deferred | docs/deferred/WEB.md；不计本期分母 |
+| 三平台 QR、课程树与资料读取 | partial | SDK fixture；CLI 已接登录、课程、大纲。智慧树 QR 后在线身份核验尚缺。 |
+| 本机 profile、密钥、锁、doctor | partial | CLI 进程测试；`runtime.wake` 与完整并发恢复矩阵未闭合。 |
+| 雨课堂作业单题提交 | fixture 通过 | SDK/CLI 进程测试；内嵌题与真实写入未验收。 |
+| 学堂讨论草稿与发帖 | fixture 通过 | SDK/CLI 进程测试；真实发帖未授权。学堂作业提交仍未接线。 |
+| 学堂考试 | partial | 只读导出与独立开卷 fixture；save/finalize 未接线，最终交卷 E05 闸门未满足。 |
+| 雨课堂、学堂视频学习 | partial | 前台 job、权威进度、心跳/统计 fixture；图文、弹题继续、长任务延迟统计与真实学习未验收。 |
+| 智慧树 share/hike 学习 | partial | 两类进度只读与纯函数 fixture；保存任务、在线身份核验及 E06 真机回读仍缺。 |
+| 历史课件与本地 PDF | partial | 历史课件图片/PDF 进程 fixture；字体 Canvas 与受控旧页面浏览器未实现，E07 黄金样本缺失。 |
+| MP4/HLS 下载 | partial | 流式本机文件与摘要的进程 fixture；Range/validator 恢复、多 GiB、字幕部分失败未验收。 |
+| 答案匹配 | fixture 通过 | 只把精确匹配写到新的草稿，绝不自动提交。 |
+| 任务持久化与不确定写入 | partial | 跨进程 JobRunner/ActionStore fixture；所有 job kind 的恢复与核对矩阵未完成。 |
+| 雨课堂直播 | partial | mailbox/gap 纯函数；checkin、WS/job/CLI 未接线。 |
+| CLI 安装打包验收 | partial | SDK 182、CLI 35、进程 E2E 4 项通过；正式 pnpm 门禁与干净消费者安装未完成。 |
+| Web 与 Cloudflare | deferred | [WEB.md](deferred/WEB.md)；不计本期范围。 |
+
+真实平台的登录、学习、答题、发帖、开卷、交卷均未在本轮执行。详见 [PROGRESS.md](PROGRESS.md) 的实际命令、退出码和下一任务。

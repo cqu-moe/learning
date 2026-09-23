@@ -4,7 +4,9 @@ import type { ResourceRef } from '../../types/refs.js';
 import type { SessionHttp } from '../../http/client.js';
 import { XTX_BASE, XTX_BASE_HEADERS } from './schemas.js';
 
-export async function xtxLeafInfo(http: SessionHttp, ref: ResourceRef): Promise<{ leaf_type?: number; content_info?: { media?: { ccid?: string }; leaf_type_id?: number } }> {
+export interface XtxLeafInfo { id?: number | string; leaf_type?: number; course_id?: number | string; user_id?: number | string; sku_id?: number | string; content_info?: { media?: { ccid?: string; duration?: number; exercise_id?: number }; leaf_type_id?: number } }
+
+export async function xtxLeafInfo(http: SessionHttp, ref: ResourceRef): Promise<XtxLeafInfo> {
   if (ref.native.kind !== 'xuetang' || ref.course.native.kind !== 'xuetang') {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'xtx resources require xtx refs', retryAfterMs: null, operationId: null });
   }
@@ -14,7 +16,7 @@ export async function xtxLeafInfo(http: SessionHttp, ref: ResourceRef): Promise<
     url: `${XTX_BASE}/api/v1/lms/learn/leaf_info/${ref.course.native.classroomId}/${ref.native.leafId}/?sign=${ref.course.native.courseSign}`,
     headers: XTX_BASE_HEADERS,
   });
-  const payload = (await response.json()) as { success?: boolean; msg?: string; data?: { leaf_type?: number; content_info?: { media?: { ccid?: string }; leaf_type_id?: number } } };
+  const payload = (await response.json()) as { success?: boolean; msg?: string; data?: XtxLeafInfo };
   if (payload.success === false) {
     throw new LearningError({ code: 'PROTOCOL', message: `leaf_info failed: ${payload.msg ?? 'success=false'}`, retryAfterMs: null, operationId: null });
   }

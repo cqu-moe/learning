@@ -1,6 +1,6 @@
 # learning — SDK + CLI 本期实施状态
 
-版本1.1。此文档包只完成规范修改，没有产品实现。以下是**新项目初始模板**；如果已有真实PROGRESS与代码，按任务编号合并，绝不覆盖完成记录或把已完成任务重置。当前分母为28项，T27–T30延期。
+版本1.1。记录已实施代码与实际验证；2026-09-23 继续复核后，早期多项“done”仅覆盖纯函数或合成 fixture，未形成完整 CLI 执行链。下表采用当前状态，历史记录保留为当时证据。当前分母为28项，T27–T30延期。
 
 | 任务 | 内容 | 状态 | 实际测试命令/退出码 | 阻塞 |
 |---|---|---|---|---|
@@ -15,23 +15,23 @@
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
 | T10 | 智慧树编码与登录 | done | vitest tests/zhs-auth-crypto.test.ts → 7/7; 全套 97/97, typecheck/lint/build/boundaries exit 0 | 参考仓库 HOME 向量多一个 = 属笔误，已修正记录 |
-| T11 | 智慧树两类课程树和权威进度 | done | vitest tests/zhs-catalog.test.ts → 5/5; 全套 102/102, typecheck/lint/build/boundaries exit 0 | zhs progress 读取端点形状未取证，能力未实现未伪造 |
+| T11 | 智慧树两类课程树和权威进度 | partial | 当前 zhs catalog 7/7；share/hike 进度只读 fixture；见最新记录 | QR 后账号在线核验与真机端点仍缺证据 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
 | T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
-| T15 | 雨课堂作业与内嵌题写入 | done | vitest tests/ykt-write.test.ts → 4/4; 全套 125/125, typecheck/lint/build exit 0 | — |
-| T16 | 学堂作业与讨论发布 | done | vitest tests/xuetang-write.test.ts → 4/4; 全套 129/129, typecheck/lint/build exit 0 | — |
-| T17 | 学堂考试的三个独立动作 | done | vitest tests/xuetang-exam-write.test.ts → 3/3; 全套 132/132, typecheck/lint/build exit 0 | E05 填空/主观考试写形状拒绝 |
-| T18 | 固定任务模型、暂停恢复与事件 | done | vitest tests/jobs.test.ts → 5/5; 全套 137/137, typecheck/lint/build exit 0 | — |
-| T19 | 雨课堂学习任务 | done | vitest tests/ykt-study.test.ts → 3/3; 全套 145/145 | 真实心跳未发送（无授权） |
-| T20 | 学堂学习任务 | done | vitest tests/xuetang-study.test.ts → 2/2; 全套 145/145 | 真实心跳未发送（无授权） |
-| T21 | 智慧树share/hike学习任务 | done | vitest tests/zhs-study.test.ts → 3/3; 全套 145/145 | E06 回读时延待真机 |
-| T22 | 雨课堂实时会话与事件缺口 | done | vitest tests/live.test.ts → 2/2; 全套 147/147, typecheck/lint/build exit 0 | 真实 WS join/checkin 未执行（无授权） |
-| T23 | 流式下载、持久产物与断点恢复 | done | vitest tests/download.test.ts → 3/3; 全套 150/150, typecheck/lint/build/boundaries exit 0 | Node ArtifactStore 文件层在 CLI 组装时接入 |
-| T24 | 本地PDF与字体重型实现 | done | vitest tests/render.test.ts → 4/4; 全套 154/154, typecheck/lint/build/boundaries exit 0 | E07 字体黄金样本缺失，unresolved 不伪造 |
-| T25 | CLI基础命令与本地运行装配 | done | vitest tests/basic.test.ts → 4/4; 全套 SDK 154/154 + CLI 4/4, typecheck/lint/build/boundaries exit 0 | — |
-| T26 | CLI完整功能入口与恢复操作 | done | vitest tests/commands.test.ts → 4/4; CLI 8/8, SDK 154/154, typecheck/lint/build/boundaries exit 0 | 写入口需真实会话，not-run 不伪造 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | done | pnpm lint/typecheck/test/build/test:e2e 全部 exit 0；e2e 4/4 | 真机/字体证据缺口如实记录 |
+| T15 | 雨课堂作业与内嵌题写入 | partial | `actions-client` 单题作业 fixture；`ykt-write` 4/4 | 内嵌题执行链未接入；真实写入未授权 |
+| T16 | 学堂作业与讨论发布 | partial | `discussions-client`、`actions-client` 与 CLI 讨论进程 fixture | 学堂作业执行链未接入；真实写入未授权 |
+| T17 | 学堂考试的三个独立动作 | partial | 开卷 preview/start_paper fixture；原 `xuetang-exam-write` 3/3 | save/finalize 未接线；E05 最终交卷独立验证缺失 |
+| T18 | 固定任务模型、暂停恢复与事件 | partial | 当前 `jobs.test.ts` 9/9，SQLite 跨进程 fixture | 未覆盖所有 job kind、items 分页与崩溃恢复矩阵 |
+| T19 | 雨课堂学习任务 | partial | 当前 `ykt-study.test.ts` 6/6；CLI 一拍与只读核对 fixture | 图文、内嵌题继续未接线；真实心跳未授权 |
+| T20 | 学堂学习任务 | partial | 当前 `xuetang-study.test.ts` 5/5；CLI 实际间隔 fixture | 长任务和统计延迟验收不足；真实心跳未授权 |
+| T21 | 智慧树share/hike学习任务 | partial | share/hike 权威进度只读 fixture；`zhs-study.test.ts` 3/3 纯函数 | 两套保存任务 handler 未接线；E06 真机回读缺口 |
+| T22 | 雨课堂实时会话与事件缺口 | partial | `live.test.ts` 2/2 仅 mailbox | checkin/WS/job/CLI 未接线；真实直播未授权 |
+| T23 | 流式下载、持久产物与断点恢复 | partial | NodeArtifactStore 与 MP4/HLS CLI 进程 fixture | Range/validator 恢复与多 GiB、字幕部分失败验收不足 |
+| T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
+| T25 | CLI基础命令与本地运行装配 | partial | profile/login/catalog/doctor CLI 进程 fixture，当前 CLI 单测 35/35 | runtime.wake 仍为空；并发与恢复矩阵未闭合 |
+| T26 | CLI完整功能入口与恢复操作 | partial | 下载、历史课件、作业、匹配、讨论、两平台视频学习、考试开卷 fixture | exam save/finalize、live、学堂作业、智慧树学习及完整恢复仍缺 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 182/182、CLI 35/35、E2E 4/4、lint/构建/boundaries exit 0 | 正式 pnpm 门禁与打包消费者、A312 全命令矩阵未完成 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -247,7 +247,7 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest render → 4 passed；全套 154/154；typecheck/lint/build/boundaries → 0。
 - 下一个当前任务：T25。
 
-### 2026-09-23 · T25 CLI基础命令与本地运行装配（done）
+### 2026-09-23 · T25 CLI基础命令与本地运行装配（原记录；下方复核修正为 partial）
 
 - 实际改动：apps/cli/src/{index.ts,runtime.ts,commands/{init.ts,doctor.ts}}、tests/basic.test.ts、package.json（commander 15.0.0、qrcode 1.5.4 冻结）、packages/sdk/src/runtime/node/index.ts（导出 NodeFetchTransport/NodeSocket）。
 - 实现：Commander 装配 --version/init/doctor；resolveDataDir（--home/LEARNING_HOME）；createCliRuntime（master.key 0600、SQLite state.db、Node transport、LocalHeavyRenderer 注入、无 daemon/无监听）；acquireDataDirLock（PID lockfile、二次写拒绝 exit 3 提示 Ctrl+C 或 unlock）；doctor 报告浏览器缺失不自动安装；init 不打印密钥。
@@ -256,7 +256,7 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 未运行项：真实 login/courses 命令在 T26 接入；profile/login/whoami 命令组在 T26 补齐。
 - 下一个当前任务：T26。
 
-### 2026-09-23 · T26 CLI完整功能入口与恢复操作（done）
+### 2026-09-23 · T26 CLI完整功能入口与恢复操作（原记录；下方复核修正为 partial）
 
 - 实际改动：apps/cli/src/commands/{tasks.ts,exams.ts,run.ts,download.ts}、src/index.ts 装配、tests/commands.test.ts。
 - 实现：jobs list（只读结构化输出）/jobs reconcile（对 pending operation 只读核对、uncertain 拒绝 resume 语义在 SDK 层）；exam submit 强制 --yes --final（缺一 exit 2 零上游写）；run/download --dry-run；命令只组参数/显示/调 SDK，不复制平台 URL。真实 login/courses/写命令需已验证平台会话（not-run，见未运行项）。
@@ -271,7 +271,7 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 
 初始无。未授权不触发平台操作；没有实际执行不得写入虚构结果。
 
-### 2026-09-23 · T31 SDK与CLI集成验收、安装说明与本机证据（done）
+### 2026-09-23 · T31 SDK与CLI集成验收、安装说明与本机证据（原记录；下方复核修正为 partial）
 
 - 实际改动：docs/{INSTALL.md,USAGE.md,FEATURE-STATUS.md,PROGRESS.md}、.github/workflows/ci.yml、package.json（test:e2e 指向独立配置）、apps/cli/{vitest.e2e.config.ts,vitest.config.ts（排除 e2e）}、tests/e2e.test.ts。
 - 验收命令（Node v24.11.1）：pnpm lint → 0；pnpm typecheck → 0；pnpm test → 0（SDK 154/154 + CLI 8/8）；pnpm build → 0；pnpm test:e2e → 0（构建产物 --help/--version/init/doctor/run --dry-run，零平台域名输出）；node scripts/check-boundaries.mjs → 0；node scripts/check-source-lock.mjs → 0。CI 仅两包边界+单测+构建+CLI E2E，无 Web/云测试。
@@ -284,3 +284,22 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 问题：apps/cli 的 typecheck/build/test 通过正式 exports（@learning/sdk/node、@learning/sdk/render-node → packages/sdk/dist/*.d.ts）解析类型，全新 checkout 下 CI 先跑 `pnpm typecheck` 后跑 `pnpm build`，SDK dist 不存在 → TS2307。
 - 修复：apps/cli 脚本自足化——typecheck/build 前置 `pnpm --filter @learning/sdk build`，test 前置自身 `pnpm run build`（其内先建 SDK 再建 CLI dist，进程测试需要）。未用 tsconfig paths 伪造包可用性（SPEC §3 禁止），保持正式 exports 消费。
 - 验证（Node v24.11.1，先删除两包 dist 复现 CI）：`pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e` → 全部 exit 0（SDK 154/154 + CLI 8/8 + e2e 4/4）；`pnpm install --frozen-lockfile` → exit 0。root 脚本名与 T31 规定的 test:e2e 内容未变。
+
+### 2026-09-23 · 用户要求修复本地 CLI 并完整复核（T25/T26/T31 partial）
+
+- 引用任务的本机演示暴露 `init --home <dir>` 实际写入 `~/.learning`：根与子命令重复定义 `--home`，Commander 解析到根选项，原 action 读取子选项为空；原测试同时设置 `LEARNING_HOME` 为同一路径，掩盖错误。新增不同目录的前置/后置 `--home` 与环境变量回退进程测试，修复为读取根选项。
+- `init` 原来正常退出仍留下锁，且 lock 写入非原子。现在使用排他创建、唯一 token，正常退出释放；增加 `profile unlock`，只在 PID 不存在时删除遗留锁，活跃或无法判定的 PID 拒绝。master.key 0600、重复 init 不改密钥与锁冲突均由实际 CLI 进程测试覆盖。
+- 原 `run/download`、`exam submit --yes --final` 和 `jobs reconcile` 返回固定“成功”输出，`jobs list` 返回固定空数组。现在 run/download 缺 course 为参数错误 exit 2；实际任务链未接入时 exit 3 且不写 stdout；exam submit 无 SDK 执行链时 exit 3；jobs list 从 SQLite 读取并校验真实 job 记录，未知 jobId 的 reconcile 为 exit 2，已有任务的核对链未接入时 exit 3。参数错误统一 exit 2。没有把这些拒绝路径记为功能实现。
+- APPS A02 的 28 个计划命令路径逐一检查构建产物的 help usage：仅 `init`、`doctor`、`profile unlock`、`jobs list/reconcile`、`run`、`download`、`exam submit` 8 个注册；其余 20 个未注册。`@learning/sdk` 的 `actions.*`、`jobs.*` facade 仍返回 UNSUPPORTED，CLI ArtifactStore 仍是占位错误；A251/A252/A261/A262/A312 不能凭当前测试判为完成。真实平台操作未执行（无授权）；字体黄金样本 E07 仍缺失。
+- 改动：apps/cli/src/{index.ts,runtime.ts,commands/{init,profile,tasks,exams,run,download}.ts}、apps/cli/tests/{basic,commands,e2e}.test.ts、docs/{PROGRESS,FEATURE-STATUS,USAGE,INSTALL}.md。保留前一任务留下的源代码改动并合并修复；删除两份仅用于调查 Commander 参数的临时 probe 脚本。
+- 测试先行：新增 CLI 进程测试后，`pnpm --filter @learning/cli test` 先因目录、锁与固定成功输出失败；修复后通过。最终 Node v24.11.1：`pnpm lint` → 0；`pnpm typecheck` → 0；`pnpm test` → 0（SDK 154/154、CLI 15/15）；`pnpm build` → 0；`pnpm test:e2e` → 0（4/4）；`node scripts/check-boundaries.mjs` → 0；`node scripts/check-source-lock.mjs` → 0；`git diff --check` → 0。未运行真机平台登录/学习/答题/交卷、付费模型、部署。
+- 下一当前任务：继续 T25 的 profile/login/catalog 真正装配，再做 T26 完整命令与恢复，最后重新完成 T31 本机验收；T27–T30 仍延期。
+
+### 2026-09-23 · SDK/CLI 续作检查点（T11、T14–T26、T31 仍按上表追踪）
+
+- 隔离工作树 `codex/cli-complete`。补齐 profile CRUD、QR/导入登录、whoami、课程/大纲缓存、真实 doctor；SDK 会话 generation 跨进程递增。NodeArtifactStore 实现受控 `.part`、摘要与原子发布；JobRunner 记录、事件、输入、游标、待核对操作持久化。ActionStore 的 preview→sending→receipt 现在跨进程保留，响应丢失不重交。
+- CLI 已通过严格离线进程 fixture 的执行链：试卷只读导出、作业 YAML 草稿与单题确认、精确反馈匹配、历史课件图片/PDF、MP4 与未加密 HLS 下载、雨课堂及学堂视频学习、学堂讨论草稿/发帖、学堂开卷。`jobs list/show/resume/cancel/reconcile` 有真实本机记录；雨课堂不确定心跳通过平台进度只读核对。上述 fixture 不等于真实账号验收。
+- 本轮复核纠正先前误标 done 的问题：旧 `render-node` 曾将 PDF 请求返回 `font.decode` 假成功，现 PDF 真正读写本机 Artifact，缺参考字体/受控浏览器时明确失败；智慧树 hike `childList`/`dataType=3`、GET 课程树及 studyservice VIDEO_KEY、`/gateway/t/v1` 与加密表单均按固定源码修正了错误 fixture；share/hike 权威进度只读已接入，保存学习任务仍未接。
+- 测试先行：新增跨进程/异常测试先观察 UNSUPPORTED、错误协议、错误锁状态等预期失败，再实现。Node v24.11.1，隔离工作树实际命令：`node packages/sdk/node_modules/vitest/vitest.mjs run`（在 SDK 目录）→ 182/182 exit 0；`node apps/cli/node_modules/vitest/vitest.mjs run`（在 CLI 目录）→ 35/35 exit 0；CLI `vitest --config vitest.e2e.config.ts` → 4/4 exit 0；`node node_modules/typescript/bin/tsc -p packages/sdk/tsconfig.build.json` 与 CLI 对应命令 → exit 0；`node node_modules/eslint/bin/eslint.js .`、`node scripts/check-boundaries.mjs`、`git diff --check` → exit 0。上述 `node` 使用绝对路径 `/Users/uu/.nvm/versions/node/v24.11.1/bin/node`。
+- 未通过/未运行：隔离工作树复制了原仓库的已安装 `node_modules`，`pnpm lint` 先触发安装并以 `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 退出 1；原仓库合并后须用正式 pnpm 门禁重跑。真实平台登录/学习/答题/发帖/开卷/交卷未运行（本期无单独授权）；E07 参考字体的 3 份独立样本/200 人工核实字形缺失；E05 最终交卷独立验证仍缺，不能标记可用。
+- 下一当前工作：继续 T21/T22 与 T26 剩余能力，修复 Range 恢复/字幕及任务恢复边缘；然后完成 T31 打包消费者和全命令矩阵。T27–T30 保持延期。

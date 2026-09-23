@@ -117,11 +117,13 @@ export async function zhsShareOutline(http: SessionHttp, clock: Clock, ref: Cour
   return { value: { course: ref, roots, completeness: 'complete' }, warnings: [] };
 }
 
-export async function zhsHikeCourses(http: SessionHttp, scope: Scope): Promise<Page<Course>> {
+export async function zhsHikeCourses(http: SessionHttp, clock: Clock, scope: Scope, uuid: string): Promise<Page<Course>> {
+  if (uuid === '') throw new LearningError({ code: 'AUTH_REQUIRED', message: 'zhs hike course list requires an account UUID', retryAfterMs: null, operationId: null });
+  const query = new URLSearchParams({ uuid, date: new Date(clock.nowMs()).toISOString() });
   const response = await http.request({
     kind: 'read',
-    method: 'POST',
-    url: 'https://hikeservice.zhihuishu.com/student/course/aided/getMyCourseList',
+    method: 'GET',
+    url: `https://hikeservice.zhihuishu.com/student/course/aided/getMyCourseList?${query.toString()}`,
   });
   const payload = (await response.json()) as { code?: number; result?: { startInngcourseList?: Array<{ courseId?: number; courseName?: string }> } };
   if (payload.code !== undefined && payload.code !== 0) {
@@ -144,32 +146,38 @@ export async function zhsHikeCourses(http: SessionHttp, scope: Scope): Promise<P
   return { items, nextCursor: null, completeness: 'complete', warnings: [] };
 }
 
-export interface HikeNodeFlat { fileId: string; name: string; kind: ResourceKind; children: HikeNodeFlat[] }
+export interface HikeNodeFlat { fileId: string; name: string; kind: ResourceKind; studyTime: number; totalTime: number; children: HikeNodeFlat[] }
 
 export function parseHikeTree(payload: { rt?: Array<Record<string, unknown>> }): { nodes: HikeNodeFlat[] } {
   const walk = (raw: Record<string, unknown>): HikeNodeFlat => {
     const dataType = raw.dataType ?? null;
-    const kind: ResourceKind = dataType === 1 ? 'video' : dataType === 2 ? 'document' : 'unknown';
+    const kind: ResourceKind = dataType === 3 ? 'video' : dataType === 1 || dataType === 2 ? 'document' : 'unknown';
     return {
       fileId: String(raw.id ?? ''),
       name: String(raw.name ?? ''),
       kind,
-      children: ((raw.children ?? []) as Array<Record<string, unknown>>).map(walk),
+      studyTime: Number(raw.studyTime ?? 0),
+      totalTime: Number(raw.totalTime ?? 0),
+      children: ((raw.childList ?? []) as Array<Record<string, unknown>>).map(walk),
     };
   };
   return { nodes: (payload.rt ?? []).map(walk) };
 }
 
-export async function zhsHikeOutline(http: SessionHttp, ref: CourseRef): Promise<{ value: Outline; warnings: [] }> {
+export async function zhsHikeOutline(http: SessionHttp, clock: Clock, ref: CourseRef): Promise<{ value: Outline; warnings: [] }> {
   if (ref.native.kind !== 'zhs-hike') {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'zhs hike outline requires a zhs-hike ref', retryAfterMs: null, operationId: null });
   }
   const response = await http.request({
     kind: 'read',
-    method: 'POST',
-    url: `${STUDYRESOURCES}/studyResources/stuResouce/queryResourceMenuTree?courseId=${ref.native.courseId}`,
+    method: 'GET',
+    url: `${STUDYRESOURCES}/studyResources/stuResouce/queryResourceMenuTree?courseId=${ref.native.courseId}&_=${clock.nowMs()}`,
   });
-  const parsed = parseHikeTree((await response.json()) as { rt?: Array<Record<string, unknown>> });
+  const payload = await response.json() as { code?: number; status?: number; rt?: Array<Record<string, unknown>> };
+  if ((payload.code !== undefined && payload.code !== 0) || (payload.status !== undefined && payload.status !== 200) || !Array.isArray(payload.rt)) {
+    throw new LearningError({ code: 'PROTOCOL', message: 'hike resource tree returned an invalid envelope', retryAfterMs: null, operationId: null });
+  }
+  const parsed = parseHikeTree(payload);
   let counter = 0;
   const build = (node: HikeNodeFlat): OutlineNode => {
     counter += 1;
@@ -184,7 +192,7 @@ export async function zhsHikeOutline(http: SessionHttp, ref: CourseRef): Promise
         kind: node.kind,
         path: [],
         order: counter,
-        durationSeconds: null,
+        durationSeconds: node.totalTime > 0 ? node.totalTime : null,
         locked: null,
       } satisfies Resource],
     };
