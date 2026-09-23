@@ -31,7 +31,7 @@
 | T24 | 本地PDF与字体重型实现 | done | vitest tests/render.test.ts → 4/4; 全套 154/154, typecheck/lint/build/boundaries exit 0 | E07 字体黄金样本缺失，unresolved 不伪造 |
 | T25 | CLI基础命令与本地运行装配 | done | vitest tests/basic.test.ts → 4/4; 全套 SDK 154/154 + CLI 4/4, typecheck/lint/build/boundaries exit 0 | — |
 | T26 | CLI完整功能入口与恢复操作 | done | vitest tests/commands.test.ts → 4/4; CLI 8/8, SDK 154/154, typecheck/lint/build/boundaries exit 0 | 写入口需真实会话，not-run 不伪造 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | not-started | 未运行 | — |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | done | pnpm lint/typecheck/test/build/test:e2e 全部 exit 0；e2e 4/4 | 真机/字体证据缺口如实记录 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -270,3 +270,11 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 ## 用户授权的真实验证
 
 初始无。未授权不触发平台操作；没有实际执行不得写入虚构结果。
+
+### 2026-09-23 · T31 SDK与CLI集成验收、安装说明与本机证据（done）
+
+- 实际改动：docs/{INSTALL.md,USAGE.md,FEATURE-STATUS.md,PROGRESS.md}、.github/workflows/ci.yml、package.json（test:e2e 指向独立配置）、apps/cli/{vitest.e2e.config.ts,vitest.config.ts（排除 e2e）}、tests/e2e.test.ts。
+- 验收命令（Node v24.11.1）：pnpm lint → 0；pnpm typecheck → 0；pnpm test → 0（SDK 154/154 + CLI 8/8）；pnpm build → 0；pnpm test:e2e → 0（构建产物 --help/--version/init/doctor/run --dry-run，零平台域名输出）；node scripts/check-boundaries.mjs → 0；node scripts/check-source-lock.mjs → 0。CI 仅两包边界+单测+构建+CLI E2E，无 Web/云测试。
+- A311：workspace 仍仅 @learning/sdk+@learning/cli（boundaries 断言），无 Web/executor/cloudflare 代码或云脚本；SDK/CLI 共用唯一 provider 实现（CLI 只调 SDK）。A312：离线 E2E 全通过；真机写入/字体全部如实记 not-run/阻塞（FEATURE-STATUS.md）。
+- 证据缺口汇总：E01 ykt 考试 fixtures、E02 xtx 分页终止、E03 ykt lesson 分页/字体字段、E04 三平台身份字段、E05 xtx 交卷取证、E06 zhs 回读时延、E07 字体黄金样本、E08 本机真实平台/字体实测——均未消除，只阻塞对应能力，不影响本期工程验收。
+- 本期 28 项全部完成（T00–T26、T31；T27–T30 deferred 不计分母）。T31 后停止，不自动进入 Web。

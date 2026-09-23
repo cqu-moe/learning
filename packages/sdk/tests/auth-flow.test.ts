@@ -68,6 +68,7 @@ describe('auth lifecycle (T05, A051)', () => {
       }
     });
     await flow.cancel();
+    void flow.result.catch(() => {});
     pair.server.push('late-success');
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(await readFrom(state)).toBeNull();
