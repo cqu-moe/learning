@@ -52,6 +52,24 @@ export async function xtxSaveExam(http: SessionHttp, ref: AssessmentRef, userId:
   if (payload.errcode !== 0) throw new LearningError({ code: 'PROTOCOL', message: `answer_problem errcode=${String(payload.errcode ?? 'missing')}`, retryAfterMs: null, operationId: null });
 }
 
+/** E05 remains gated at the client facade; this wire path is exercised only with offline fixtures. */
+export async function xtxFinalizeExam(http: SessionHttp, ref: AssessmentRef, userId: string, results: Array<{ problem_id: number; result: string[]; time: number }>): Promise<void> {
+  const examId = Number(ref.assessmentId);
+  if (ref.kind !== 'exam' || !Number.isSafeInteger(examId) || examId <= 0 || results.length === 0 || results.some((item) =>
+    !Number.isSafeInteger(item.problem_id) || item.problem_id <= 0 || item.result.length === 0 || item.result.some((key) => typeof key !== 'string' || key === '') || !Number.isSafeInteger(item.time) || item.time < 0)) {
+    throw new LearningError({ code: 'INVALID_INPUT', message: 'final exam request has invalid answers or id', retryAfterMs: null, operationId: null });
+  }
+  const cover = await xtxReadStartCover(http, ref);
+  if (cover.status !== 1 || cover.userId !== userId) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'exam is no longer in progress for this user', retryAfterMs: null, operationId: null });
+  const host = await xtxEstablishExamSession(http, ref, userId);
+  const response = await http.request({ kind: 'write', method: 'POST', url: `${host}/exam_room/submit_paper`,
+    headers: { xtbz: 'cloud', 'x-client': 'web', 'content-type': 'application/json;charset=utf-8' },
+    body: JSON.stringify({ results, exam_id: examId }) });
+  if (response.status !== 200) throw new LearningError({ code: 'UNCERTAIN', message: `final submission returned HTTP ${response.status}; do not resend`, retryAfterMs: null, operationId: null });
+  const payload = await response.json() as { errcode?: number };
+  if (payload.errcode !== 0) throw new LearningError({ code: 'UNCERTAIN', message: 'final submission acknowledgement is not confirmed; do not resend', retryAfterMs: null, operationId: null });
+}
+
 /** E05: only choice/judgement encodings are evidenced; others refuse before any write. */
 export function encodeExamAnswer(answer: Answer): string[] {
   switch (answer.kind) {
