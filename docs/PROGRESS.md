@@ -7,7 +7,7 @@
 | T00 | 固定源码与证据目录 | done | node scripts/check-source-lock.mjs → exit 0 | — |
 | T01 | 两包工作区与本地构建入口 | done | pnpm install --frozen-lockfile / typecheck / build / lint / node scripts/check-boundaries.mjs → 全部 exit 0 | — |
 | T02 | DTO、稳定标识与测试内存存储 | done | pnpm --filter @learning/sdk exec vitest run tests/types.test.ts → 20/20 exit 0 | — |
-| T03 | 本地StateStore和加密会话记录 | not-started | 未运行 | — |
+| T03 | 本地StateStore和加密会话记录 | done | vitest tests/store.test.ts → 19/19, typecheck/build/lint/boundaries exit 0 | E08 Node24 本机实测已由本任务覆盖 SQLite/crypto 部分 |
 | T04 | HTTP、Cookie、重定向与协议fixture工具 | not-started | 未运行 | — |
 | T05 | 统一登录生命周期、WS和SDK工厂 | not-started | 未运行 | — |
 | T06 | 雨课堂登录、课程与两类大纲 | not-started | 未运行 | — |
@@ -67,6 +67,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 实际命令（Node v24.11.1）：pnpm --filter @learning/sdk exec vitest run tests/types.test.ts → 20 passed, exit 0；根 pnpm typecheck → exit 0；pnpm build → exit 0；pnpm lint → exit 0；pnpm test → exit 0（SDK 20/20；CLI 无测试文件属预期，T25 落地）；node scripts/check-boundaries.mjs → exit 0（public 图仍干净）；node scripts/check-source-lock.mjs → exit 0。期间修复：测试字面量类型收窄、类型导入、unsafe 数字字面量改用 Number.MAX_SAFE_INTEGER+1。
 - 未运行项：无网络/平台操作；schema 仅覆盖 public 数据契约，provider wire schema 属 T06+。
 - 下一个当前任务：T03。
+
+### 2026-09-23 · T03 本地StateStore和加密会话记录（done）
+
+- 实际改动：packages/sdk/src/runtime/types.ts（内部 StateStore/StoredValue 契约）、src/runtime/node/{state.ts,index.ts}、src/session/{crypto.ts,store.ts}、packages/sdk/package.json（新增 ./node 出口）、tests/store.test.ts、docs/PROGRESS.md。
+- 测试先行：先运行 vitest tests/store.test.ts 按预期失败（runtime/node、session 模块缺失，exit 1）；实现后 19/19 通过（内存与 SQLite 跑同一 contract 套件）。
+- 实现：node:sqlite DatabaseSync 单表 records + schema_meta(version=1)，BEGIN IMMEDIATE 事务内先验 expected 再批量写入，冲突整体回滚；LIKE 前缀转义 + 游标分页；AES-GCM（WebCrypto，随机 12 字节 IV，AAD=JSON[version,recordKind,userId,profileId,platform]，iv.ct base64）；readSession/writeSession/revokeSession 私有模块，tombstone 拒绝旧 generation 复活（CONFLICT），错误 user/platform 同 key 解密失败；loadOrCreateMasterKey 0600。
+- 验收对照：A031（一组 revision 冲突全部不改、双 key 原子、null 删除约定）由内存+SQLite 双套件断言；A032（错误 user/profile AAD 解密失败、旧 generation 不能覆盖 tombstone、存储失败抛 STORAGE/CONFLICT 不静默成功）。
+- 实际命令（Node v24.11.1）：vitest run tests/store.test.ts → 19 passed；根 typecheck/build/lint → exit 0；check-boundaries → exit 0（./node 出口有真实源文件对应，public 图不含 Node 实现）。修复过程：SQLite LIKE 前缀转义 bug（通配符被转义）、CryptoKey 类型与 union 判别。
+- 未运行项：无网络/平台操作；node:sqlite ExperimentalWarning 已观察，属 Node 24 已知状态。
+- 下一个当前任务：T04。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

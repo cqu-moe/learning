@@ -14,6 +14,10 @@
     "./public": {
       "import": "./dist/public.js",
       "types": "./dist/public.d.ts"
+    },
+    "./node": {
+      "import": "./dist/runtime/node/index.js",
+      "types": "./dist/runtime/node/index.d.ts"
     }
   },
   "main": "./dist/index.js",
