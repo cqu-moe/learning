@@ -13,6 +13,22 @@ function runtime(transport: FakeTransport): Runtime {
 }
 
 describe('xuetang discussion facade', () => {
+  it('returns a schema-checked model draft from thread text without posting', async () => {
+    const transport = new FakeTransport();
+    const root = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/forum/unit/discussion/', query: { product_sign: 'SIGN-A', leaf_id: '7', classroom_id: '100', topic_type: '0', channel: 'xt' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { id: 55, user_id: 77, content: { text: '讨论主题' }, commented: 0 } } };
+    const comments = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/forum/comment/list/55/', query: { offset: '0', limit: '10', cid: '100', lid: '7' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { data: { results: [] } } } };
+    transport.scriptInteractions([root, comments]);
+    const rt = runtime(transport);
+    let content = '';
+    rt.model = { propose: async (input) => { content = JSON.stringify(input.content); return { text: '可编辑建议' }; } };
+    const client = createLearningClient({ scope, runtime: rt });
+    const draft = await client.discussions.propose({ resource, topicId: '55' });
+    expect(draft).toMatchObject({ text: '可编辑建议', origin: 'model' });
+    expect(content).toContain('讨论主题');
+    expect(content).not.toContain('sessionid');
+    expect(transport.calls.every((call) => call.method === 'GET')).toBe(true);
+    transport.assertNoExtraScripts();
+  });
   it('resolves a thread, reads one page, and creates an editable draft', async () => {
     const transport = new FakeTransport();
     const root = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/forum/unit/discussion/', query: { product_sign: 'SIGN-A', leaf_id: '7', classroom_id: '100', topic_type: '0', channel: 'xt' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { id: 55, user_id: 77, content: { text: '讨论主题' }, commented: 1 } } };

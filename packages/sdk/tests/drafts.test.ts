@@ -133,6 +133,18 @@ describe('matching (T13, A131/A132)', () => {
 });
 
 describe('model suggestions (T13, A132)', () => {
+  it('does not send unselected or undecoded question content to the model', async () => {
+    const clear = question('11', '可读题', [['A', '甲']], 'clear');
+    const locked = { ...question('12', '不能发送的密文', [['A', '乱码']], 'locked'), body: { markdown: '密文', plainText: '不能发送的密文', decodeState: 'partial' as const, sourceHash: 'locked' } };
+    const draft = makeDraft([clear, locked], [['A', 'A'], ['A', 'A']]);
+    let content = '';
+    const model = { propose: async (input: { content: unknown }) => { content = JSON.stringify(input.content); return { suggestions: [{ questionId: '11', keys: ['A'] }] }; } };
+    const result = await proposeMatches(model, draft, [clear, locked]);
+    expect(result[0]?.state).toBe('suggested');
+    expect(result[1]?.state).toBe('blocked');
+    expect(content).toContain('可读题');
+    expect(content).not.toContain('不能发送的密文');
+  });
   it('without a model client every proposal is blocked; with one, only question text is sent', async () => {
     const q1 = question('11', '题干', [['A', 'a'], ['B', 'b']], 'q1-seed');
     const draft = makeDraft([q1], [['A', 'A']]);

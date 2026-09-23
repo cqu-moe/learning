@@ -20,7 +20,7 @@ function home() {
   return dir;
 }
 
-function run(dir: string, args: string[], fixture?: string, expectedCookie?: string) {
+function run(dir: string, args: string[], fixture?: string, expectedCookie?: string, extraEnv: Record<string, string> = {}) {
   const nodeArgs = fixture ? ['--import', preload, cli] : [cli];
   const result = spawnSync(process.execPath, [...nodeArgs, '--home', dir, ...args], {
     cwd: dir,
@@ -29,6 +29,7 @@ function run(dir: string, args: string[], fixture?: string, expectedCookie?: str
       LEARNING_HOME: resolve(dir, 'ignored-env'),
       ...(fixture ? { LEARNING_FIXTURE_FILE: fixture.startsWith('/') ? fixture : resolve(fixtureRoot, `${fixture}.json`) } : {}),
       ...(expectedCookie ? { LEARNING_ASSERT_COOKIE: expectedCookie } : {}),
+      ...extraEnv,
     },
     encoding: 'utf8',
   });
@@ -464,6 +465,32 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const posted = run(dir, ['discuss', 'post', path, '--yes', '--profile', 'alpha', '--json'], postFixture);
     expect(posted.code, posted.stderr).toBe(0);
     expect(JSON.parse(posted.stdout).receipt.state).toBe('confirmed');
+  });
+
+  it('creates an editable AI discussion draft only when a model is explicitly configured', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'xuetang']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'xuetang' } }).scope;
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang', classroomId: '100', courseSign: 'SIGN-A', skuId: '1' } }, key: 'discussion-ai', native: { kind: 'xuetang', leafId: '7', leafInfoId: null } };
+    expect(await state.commit({ expected: [{ key: 'cli:resource:discussion-ai', revision: null }], changes: [{ key: 'cli:resource:discussion-ai', value: resource }] })).toBe(true);
+    state.close();
+    const root = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/forum/unit/discussion/', query: { product_sign: 'SIGN-A', leaf_id: '7', classroom_id: '100', topic_type: '0', channel: 'xt' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { id: 55, user_id: 77, content: { text: '讨论主题' }, commented: 0 } } };
+    const comments = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/forum/comment/list/55/', query: { offset: '0', limit: '10', cid: '100', lid: '7' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { data: { results: [] } } } };
+    const model = { request: { method: 'POST', host: 'model.example.test', path: '/v1/chat/completions', headers: { authorization: 'Bearer fixture-key', 'content-type': 'application/json' }, body: { model: 'fixture-model', messages: [
+      { role: 'system', content: 'Return only JSON with one nonempty text field containing an editable discussion reply. Do not submit it.' },
+      { role: 'user', content: JSON.stringify({ topic: '讨论主题' }) },
+    ], stream: false } }, response: { status: 200, body: { choices: [{ message: { content: JSON.stringify({ text: '建议正文' }) } }] } } };
+    const fixture = resolve(dir, 'discussion-ai.json');
+    writeFileSync(fixture, JSON.stringify({ interactions: [root, root, comments, model] }));
+    const output = resolve(dir, 'discussion-ai-draft.json');
+    const configured = run(dir, ['discuss', 'draft', 'discussion-ai', '--ai', '-o', output, '--profile', 'alpha', '--json'], fixture, undefined,
+      { LEARNING_MODEL_BASE_URL: 'https://model.example.test/v1', LEARNING_MODEL_NAME: 'fixture-model', LEARNING_MODEL_API_KEY: 'fixture-key' });
+    expect(configured.code, configured.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(output, 'utf8'))).toMatchObject({ text: '建议正文', origin: 'model' });
+    expect(configured.stdout + configured.stderr).not.toContain('fixture-key');
   });
 
   it('requires explicit exam start confirmation and sends one start_paper call', async () => {
