@@ -76,4 +76,58 @@ describe('job runner (T18, A181/A182)', () => {
     const all = await runner.list();
     expect(all.items).toHaveLength(1);
   });
+
+  it('reopens persisted jobs and events from a new runner instance', async () => {
+    const state = new MemoryStateStore();
+    const clock = new FakeClock();
+    const first = new JobRunner(state, clock);
+    const job = await first.create(scope, 'export', { total: 2 });
+    await first.emitProgress(job.id, 'resource-1', 0.5);
+    const reopened = new JobRunner(state, clock);
+    expect((await reopened.get(job.id)).id).toBe(job.id);
+    expect((await reopened.list()).items.map((item) => item.id)).toEqual([job.id]);
+    expect((await reopened.events(job.id, 0)).map((event) => event.sequence)).toEqual([1]);
+    await reopened.cancel(job.id);
+    expect((await new JobRunner(state, clock).get(job.id)).status).toBe('canceled');
+  });
+
+  it('marks an interrupted running slice uncertain before any retry', async () => {
+    const state = new MemoryStateStore();
+    const runner = new JobRunner(state, new FakeClock());
+    const job = await runner.create(scope, 'export', { total: 1 });
+    const pending = runner.advance(job.id, () => new Promise(() => {}));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const reopened = new JobRunner(state, new FakeClock());
+    expect((await reopened.recoverInterrupted(job.id)).status).toBe('uncertain');
+    await expect(reopened.resume(job.id)).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+    void pending;
+  });
+
+  it('does not advance a paused job until explicitly resumed', async () => {
+    const runner = makeRunner();
+    const job = await runner.create(scope, 'export', { total: 1 });
+    expect((await runner.pause(job.id)).status).toBe('paused');
+    let called = false;
+    await expect(runner.advance(job.id, async () => { called = true; return { completed: true }; })).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+    expect(called).toBe(false);
+    expect((await runner.resume(job.id)).status).toBe('queued');
+  });
+
+  it('persists generation, cursor and the next due time for a study slice', async () => {
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const runner = new JobRunner(state, clock);
+    const job = await runner.create(scope, 'study', { total: 1, generation: 7, payload: { kind: 'study' } });
+    expect((await runner.metadata(job.id)).generation).toBe(7);
+    await runner.setCursor(job.id, 'video:1');
+    const waiting = await runner.advance(job.id, async () => ({ completed: false, status: 'waiting' as const, nextRunAtMs: clock.nowMs() + 5000 }));
+    expect(waiting.status).toBe('waiting');
+    expect(waiting.nextRunAtMs).toBe(clock.nowMs() + 5000);
+    const reopened = new JobRunner(state, clock);
+    expect((await reopened.metadata(job.id)).cursor).toBe('video:1');
+    let early = false;
+    const skipped = await reopened.advance(job.id, async () => { early = true; return { completed: true }; });
+    expect(early).toBe(false);
+    expect(skipped.status).toBe('waiting');
+  });
 });

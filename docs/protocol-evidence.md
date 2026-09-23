@@ -53,3 +53,9 @@
 ## 缺口对照（沿用 SOURCES E01–E08，本任务不新增结论）
 
 E01（ykt 考试 fixtures）、E02（学堂分页终止）、E03（ykt lesson 分页/字体字段）、E04（三平台身份字段）、E05（学堂交卷取证）、E06（智慧树回读时延）、E07（字体黄金样本）、E08（Node 24 本机实测）仍按 SOURCES.md 负责 任务 推进；云端取证部分整体延期。T00 只补齐上列 P-E01/P-E02/P-E03 的源码级证据，未做任何网络请求或平台操作。
+
+### P-E04 · 2026-09-23 智慧树协议 fixture 校正（源码对照，非真机）
+
+固定参考 `.reference/zhs-cli` 的 `src/client.py::zhidao_query/hike_query`、`src/share.py::load_course`、`src/hike.py::HikeApi`：共享课 studyservice 使用 `VIDEO_KEY`、`/gateway/t/v1/`、POST 表单 `secretStr` + `dateFormate`；home 列表才使用 `HOME_KEY` 的 GET。原 SDK 的 studyservice 路径/密钥及只校验请求地址的合成 fixture 均错，已更正并逐项校验 body、Origin、Referer。Hike 课程/资源树是 GET；树嵌套字段为 `childList`，视频 `dataType=3`，而非旧 fixture 的 `children`/`1`。对应合成 fixture 和解析器已同改。
+
+此校正不证明智慧树登录后的身份 UUID、真实保存进度、验证码或账号风控可用；E04/E06 仍待授权的实际平台核验。

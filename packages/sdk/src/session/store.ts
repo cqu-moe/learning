@@ -57,6 +57,16 @@ export async function readSession(
   return raw.record;
 }
 
+/** Includes revocation tombstones so a replacement login always advances generation. */
+export async function readSessionGeneration(
+  state: StateStore,
+  masterKey: Uint8Array,
+  scope: Scope,
+): Promise<number> {
+  const raw = await readRaw(state, masterKey, scope);
+  return raw?.record.generation ?? 0;
+}
+
 export async function writeSession(
   state: StateStore,
   masterKey: Uint8Array,

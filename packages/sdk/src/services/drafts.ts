@@ -1,6 +1,7 @@
 import YAML from 'yaml';
 import { LearningError } from '../types/errors.js';
 import { sha256Hex } from '../types/sha256.js';
+import { AnswerDraftSchema } from '../types/models.js';
 import type { Answer, AnswerDraft, FeedbackSet, Question } from '../types/models.js';
 import type { AssessmentRef, Scope } from '../types/refs.js';
 
@@ -52,6 +53,15 @@ function legacyAnswer(raw: unknown): Answer {
 
 export async function importLegacyDraft(text: string, format: 'learning' | 'ykt' | 'xuetang', scope: Scope): Promise<{ value: AnswerDraft; warnings: [] }> {
   const parsed = parseYamlOrJson(text) as Record<string, unknown>;
+  if (format === 'learning') {
+    const result = AnswerDraftSchema.safeParse(parsed);
+    if (!result.success) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid learning draft schema', retryAfterMs: null, operationId: null });
+    const owner = result.data.ref.resource.course.scope;
+    if (owner.userId !== scope.userId || owner.profileId !== scope.profileId || owner.platform !== scope.platform) {
+      throw new LearningError({ code: 'FORBIDDEN', message: 'draft belongs to another profile', retryAfterMs: null, operationId: null });
+    }
+    return { value: result.data, warnings: [] };
+  }
   if (typeof parsed.classroom_id !== 'number' && typeof parsed.classroom_id !== 'string') {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'legacy draft missing classroom_id', retryAfterMs: null, operationId: null });
   }
@@ -88,6 +98,10 @@ export async function importLegacyDraft(text: string, format: 'learning' | 'ykt'
     entries,
   };
   return { value: draft, warnings: [] };
+}
+
+export function exportDraftYaml(draft: AnswerDraft): string {
+  return YAML.stringify(AnswerDraftSchema.parse(draft));
 }
 
 export async function importFeedbackSet(text: string, ref: AssessmentRef): Promise<FeedbackSet> {

@@ -72,6 +72,8 @@ export interface HttpResult {
   headers: Headers;
   json(): Promise<unknown>;
   text(): Promise<string>;
+  bytes(maxBytes: number): Promise<Uint8Array>;
+  stream(maxBytes: number): ReadableStream<Uint8Array>;
 }
 
 export interface SessionHttpOptions {
@@ -191,6 +193,42 @@ export class SessionHttp {
       headers: response.headers,
       json: () => response.json(),
       text: () => response.text(),
+      bytes: async (maxBytes) => {
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid binary size limit', retryAfterMs: null, operationId: null });
+        const declared = Number(response.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+        if (response.body === null) return new Uint8Array();
+        const reader = response.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let total = 0;
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+            chunks.push(value);
+          }
+        } finally { await reader.cancel().catch(() => {}); }
+        const out = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.byteLength; }
+        return out;
+      },
+      stream: (maxBytes) => {
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid binary size limit', retryAfterMs: null, operationId: null });
+        const declared = Number(response.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+        let total = 0;
+        const source = response.body ?? new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
+        return source.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            total += chunk.byteLength;
+            if (total > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+            controller.enqueue(chunk);
+          },
+        }));
+      },
     };
   }
 }

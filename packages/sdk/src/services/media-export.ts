@@ -1,0 +1,121 @@
+import { LearningError } from '../types/errors.js';
+import type { ItemResult, Job, MediaInfo, Transcript, ExportInput } from '../types/models.js';
+import type { ResourceRef, Scope } from '../types/refs.js';
+import type { Runtime } from '../runtime/types.js';
+import type { JobRunner } from './jobs.js';
+import { safeFilename } from './exports.js';
+
+type MediaInput = Extract<ExportInput, { type: 'media' }>;
+type Asset = { mimeType: string; stream: ReadableStream<Uint8Array> };
+
+function error(code: 'BUDGET' | 'PROTOCOL' | 'UNSUPPORTED', message: string, id: string): LearningError {
+  return new LearningError({ code, message, retryAfterMs: null, operationId: id });
+}
+
+async function playlistText(asset: Asset, id: string): Promise<string> {
+  const reader = asset.stream.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 1024 * 1024) throw error('BUDGET', 'HLS playlist exceeds 1 MiB', id);
+      parts.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) { out.set(part, offset); offset += part.byteLength; }
+  return new TextDecoder().decode(out);
+}
+
+function parsePlaylist(text: string, base: string, id: string): { nested: string | null; segments: string[]; extension: 'ts' | 'mp4' } {
+  const lines = text.replace(/\r/g, '').split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines[0] !== '#EXTM3U') throw error('PROTOCOL', 'invalid HLS playlist', id);
+  if (lines.some((line) => /^#EXT-X-(?:KEY|SESSION-KEY|BYTERANGE)/.test(line))) throw error('UNSUPPORTED', 'encrypted or byte-range HLS is not supported', id);
+  const masterIndex = lines.findIndex((line) => line.startsWith('#EXT-X-STREAM-INF'));
+  if (masterIndex >= 0) {
+    const entry = lines.slice(masterIndex + 1).find((line) => !line.startsWith('#'));
+    if (entry === undefined) throw error('PROTOCOL', 'HLS master has no media playlist', id);
+    return { nested: new URL(entry, base).toString(), segments: [], extension: 'ts' };
+  }
+  const mapLine = lines.find((line) => line.startsWith('#EXT-X-MAP:'));
+  const map = mapLine === undefined ? null : /URI="([^"]+)"/.exec(mapLine)?.[1] ?? null;
+  if (mapLine !== undefined && map === null) throw error('PROTOCOL', 'HLS init segment URI missing', id);
+  const segments = lines.filter((line) => !line.startsWith('#')).map((line) => new URL(line, base).toString());
+  if (map !== null) segments.unshift(new URL(map, base).toString());
+  if (segments.length === 0 || segments.length > 20_000) throw error('BUDGET', 'HLS segment count is invalid', id);
+  return { nested: null, segments, extension: map === null ? 'ts' : 'mp4' };
+}
+
+export async function advanceMedia(input: {
+  runner: JobRunner; runtime: Runtime; job: Job; scope: Scope;
+  getMedia: (ref: ResourceRef) => Promise<MediaInfo>;
+  getTranscript: (ref: ResourceRef) => Promise<Transcript>;
+  getAsset: (url: string, maxBytes: number) => Promise<Asset>;
+}, saved: MediaInput): Promise<Job> {
+  const next = saved.resources.find((ref) => !input.job.items.some((item) => item.key === ref.key));
+  if (next === undefined) return input.runner.advance(input.job.id, async () => ({ completed: true }));
+  return input.runner.advance(input.job.id, async () => {
+    const media = await input.getMedia(next);
+    const variant = saved.quality === 'best' ? media.variants.find((item) => item.quality === 'hd') ?? media.variants[0]
+      : media.variants.find((item) => item.quality === saved.quality);
+    if (variant === undefined) throw error('UNSUPPORTED', 'requested media quality is unavailable', input.job.id);
+    const isHls = variant.mimeType === 'application/vnd.apple.mpegurl' || /\.m3u8(?:\?|$)/i.test(variant.id);
+    let urls = [variant.id];
+    let extension: 'mp4' | 'ts' = 'mp4';
+    if (isHls) {
+      let playlistUrl = variant.id;
+      let resolved = false;
+      for (let depth = 0; depth < 2; depth += 1) {
+        const parsed = parsePlaylist(await playlistText(await input.getAsset(playlistUrl, 1024 * 1024), input.job.id), playlistUrl, input.job.id);
+        if (parsed.nested !== null) { playlistUrl = parsed.nested; continue; }
+        urls = parsed.segments;
+        extension = parsed.extension;
+        resolved = true;
+        break;
+      }
+      if (!resolved) throw error('UNSUPPORTED', 'nested HLS master depth exceeded', input.job.id);
+    }
+    const artifactId = `${input.job.id}:${next.key}:media`;
+    const mimeType = extension === 'ts' ? 'video/mp2t' : 'video/mp4';
+    const writer = await input.runtime.artifacts.create({ id: artifactId, mimeType });
+    let total = 0;
+    let result: { bytes: number; sha256: string };
+    try {
+      for (const url of urls) {
+        const asset = await input.getAsset(url, 64 * 1024 * 1024);
+        const reader = asset.stream.getReader();
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > 4 * 1024 * 1024 * 1024) throw error('BUDGET', 'media exceeds 4 GiB', input.job.id);
+            await writer.write(value);
+          }
+        } finally { reader.releaseLock(); }
+      }
+      result = await writer.finish();
+    } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(artifactId); throw cause; }
+    const artifacts: ItemResult['artifacts'] = [{ id: artifactId, scope: input.scope,
+      filename: `${safeFilename(next.key)}.${extension}`, mimeType, bytes: result.bytes, sha256: result.sha256,
+      createdAtMs: input.runtime.clock.nowMs() }];
+    if (saved.subtitles) {
+      const transcript = await input.getTranscript(next);
+      if (transcript.state === 'available') {
+        const id = `${input.job.id}:${next.key}:transcript`;
+        const writer = await input.runtime.artifacts.create({ id, mimeType: 'application/json' });
+        try {
+          await writer.write(new TextEncoder().encode(JSON.stringify(transcript, null, 2) + '\n'));
+          const result = await writer.finish();
+          artifacts.push({ id, scope: input.scope, filename: `${safeFilename(next.key)}.transcript.json`, mimeType: 'application/json', bytes: result.bytes, sha256: result.sha256, createdAtMs: input.runtime.clock.nowMs() });
+        } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(id); throw cause; }
+      }
+    }
+    const items: ItemResult[] = [...input.job.items, { key: next.key, state: 'succeeded', message: null, artifacts }];
+    return { completed: items.length === saved.resources.length, items };
+  });
+}

@@ -5,7 +5,7 @@
   "synthetic": true,
   "interactions": [
     {
-      "request": { "method": "POST", "host": "hikeservice.zhihuishu.com", "path": "/student/course/aided/getMyCourseList" },
+      "request": { "method": "GET", "host": "hikeservice.zhihuishu.com", "path": "/student/course/aided/getMyCourseList", "query": { "uuid": "u-fixture", "date": "2024-10-04T00:00:00.000Z" } },
       "response": { "status": 200, "headers": {}, "body": { "code": 0, "result": { "startInngcourseList": [
         { "courseId": 77, "courseName": "校内课A" }
       ] } } }

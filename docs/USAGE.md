@@ -1,17 +1,37 @@
-# learning 使用说明
+# learning 本机 CLI 用法
+
+构建后在仓库根目录运行 `node apps/cli/dist/index.js`，或将构建后的 CLI 以本机链接方式暴露为 `learning`。下例省略 `node apps/cli/dist/index.js` 前缀。
 
 ```bash
-learning --help
-learning init [--home <dir>]
-learning doctor
-learning jobs list
-learning jobs reconcile <jobId>
-learning exam submit <draft> --yes --final
-learning run --dry-run
-learning download --dry-run
+learning --home ~/.learning init
+learning --home ~/.learning profile add school --platform ykt
+learning --home ~/.learning --profile school login
+learning --home ~/.learning --profile school whoami --json
+learning --home ~/.learning --profile school courses --json
+learning --home ~/.learning --profile school outline <course-key> --json
 ```
 
-- 所有命令本机运行；stdout 为结构化数据，日志/错误走 stderr；无 daemon、无监听端口。
-- 写类操作（作业/考试/讨论/学习）先 preview 后执行；`exam submit` 必须 `--yes --final`；`--dry-run` 不发写。
-- 扫码登录与真实平台操作需要用户逐项授权后开放；未授权能力显示 unverified/not-run，不伪造结果。
-- 浏览器（受控课件）与参考字体为可选本地资源：doctor 报告缺失，不自动安装；字体样本不足时保持 unresolved。
+`--home` 可放在命令前后；省略时使用 `LEARNING_HOME`，再回退到 `~/.learning`。多 profile 的非交互命令须传 `--profile`。`--json` 只在 stdout 输出一个 JSON 结果；二维码与诊断写入 stderr。Cookie 导入只接受本机常规 JSON 文件：`learning --profile school login --import <file>`，导入后身份仍未验证。
+
+```bash
+learning --profile school download <course-or-resource-key> --types video --dry-run
+learning --profile school download <course-or-resource-key> --types video,homework,exam
+learning --profile school slide 'https://www.yuketang.cn/lesson?lesson_id=9000' --format pdf
+learning --profile school homework draft <resource-key> -o draft.yaml
+learning --profile school homework apply draft.yaml --dry-run
+learning --profile school homework apply draft.yaml --yes
+learning --profile school answers match draft.yaml --source feedback.json -o matched.yaml
+learning --profile school run <course-or-resource-key> --speed 1 --target 0.91 --dry-run
+learning --profile school run <course-or-resource-key> --speed 1 --target 0.91 --yes
+learning --profile school jobs list
+learning --profile school jobs show <job-id>
+learning --profile school jobs resume <job-id>
+learning --profile school jobs cancel <job-id>
+learning --profile school jobs reconcile <job-id>
+```
+
+学习目前接通雨课堂、学堂的视频 fixture；智慧树保存、图文和弹题继续尚未接通。导出写入 `LEARNING_HOME/exports/<job-id>/`，既有同名文件不会被覆盖。历史课件 PDF 不依赖浏览器；字体解码与旧课件受控浏览器仍缺。`doctor` 会准确报告本机能力，不自动安装浏览器。
+
+学堂讨论用 `discuss draft <resource-key> -o draft.json` 创建可编辑文件；`discuss post draft.json --dry-run` 预览，`--yes` 才发送。试卷可用 `exam export <resource-key>` 只读导出；`exam start <resource-key> --yes` 可能启动计时。`exam save` 尚未接通，`exam submit` 即使带 `--yes --final` 也因 E05 验证闸门拒绝。真实平台操作需单独授权；本轮仅在离线合成响应中运行这些写链。
+
+任务默认在当前终端运行，Ctrl+C 请求暂停并释放本机写锁。响应丢失造成的 `uncertain` 任务不能直接 resume；先用 `jobs reconcile <job-id>` 只读核对。确认原 PID 已退出后才可 `profile unlock` 清理遗留锁。升级前备份整个 `LEARNING_HOME`，尤其是 `master.key`、SQLite 状态库和 `artifacts`。

@@ -44,18 +44,30 @@ export async function submitXtxProblem(http: SessionHttp, ids: { leafId: string;
   }
 }
 
-export async function fetchUnitDiscussion(http: SessionHttp, classroomId: string, leafId: string, courseSign: string): Promise<{ topicId: string; text: string; commented: number }> {
+export async function fetchUnitDiscussion(http: SessionHttp, classroomId: string, leafId: string, courseSign: string): Promise<{ topicId: string; ownerUserId: number; text: string; commented: number }> {
   const response = await http.request({
     kind: 'read',
     method: 'GET',
     url: `${XTX_BASE}/api/v1/lms/forum/unit/discussion/?product_sign=${courseSign}&leaf_id=${leafId}&classroom_id=${classroomId}&topic_type=0&channel=xt`,
     headers: XTX_BASE_HEADERS,
   });
-  const data = (await response.json()) as { id?: number | string; content?: { text?: string }; commented?: number };
+  const data = (await response.json()) as { id?: number | string; user_id?: number; content?: { text?: string }; commented?: number };
   if (data.id === undefined) {
     throw new LearningError({ code: 'PROTOCOL', message: 'unit discussion returned no thread id', retryAfterMs: null, operationId: null });
   }
-  return { topicId: String(data.id), text: (data.content?.text ?? '').trim(), commented: data.commented ?? 0 };
+  return { topicId: String(data.id), ownerUserId: data.user_id ?? 0, text: (data.content?.text ?? '').trim(), commented: data.commented ?? 0 };
+}
+
+export async function fetchDiscussionComments(http: SessionHttp, input: { classroomId: string; leafId: string; topicId: string; offset: number; limit: number }): Promise<Array<{ id: string; userId: string; text: string }>> {
+  const query = new URLSearchParams({ offset: String(input.offset), limit: String(input.limit), cid: input.classroomId, lid: input.leafId });
+  const response = await http.request({ kind: 'read', method: 'GET', url: `${XTX_BASE}/api/v1/lms/forum/comment/list/${input.topicId}/?${query.toString()}`, headers: XTX_BASE_HEADERS });
+  if (response.status !== 200) throw new LearningError({ code: 'PROTOCOL', message: `comment list returned HTTP ${response.status}`, retryAfterMs: null, operationId: null });
+  const payload = await response.json() as { success?: boolean; data?: { results?: Array<{ id?: number | string; user_id?: number | string; content?: { text?: string } }> } };
+  if (payload.success === false || !Array.isArray(payload.data?.results)) throw new LearningError({ code: 'PROTOCOL', message: 'comment list has invalid envelope', retryAfterMs: null, operationId: null });
+  return payload.data.results.map((row) => {
+    if (row.id === undefined || typeof row.content?.text !== 'string') throw new LearningError({ code: 'PROTOCOL', message: 'comment row is missing id or text', retryAfterMs: null, operationId: null });
+    return { id: String(row.id), userId: String(row.user_id ?? ''), text: row.content.text };
+  });
 }
 
 export async function postComment(http: SessionHttp, input: { classroomId: string; leafId: string; topicId: string; toUser: number; text: string }): Promise<void> {

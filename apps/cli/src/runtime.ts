@@ -1,7 +1,8 @@
-import { loadOrCreateMasterKey, SqliteStateStore } from '@learning/sdk/node';
+import { loadOrCreateMasterKey, NodeArtifactStore, SqliteStateStore } from '@learning/sdk/node';
 import { NodeFetchTransport } from '@learning/sdk/node';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
 
 export function resolveDataDir(explicit?: string): string {
@@ -19,12 +20,7 @@ export function createCliRuntime(dataDir: string) {
   return {
     transport: new NodeFetchTransport(),
     state: new SqliteStateStore(resolve(dataDir, 'state.db')),
-    artifacts: {
-      create: async () => { throw new Error('artifact store wired in export flows'); },
-      resume: async () => { throw new Error('artifact store wired in export flows'); },
-      open: async () => { throw new Error('artifact store wired in export flows'); },
-      remove: async () => {},
-    },
+    artifacts: new NodeArtifactStore(resolve(dataDir, 'artifacts')),
     clock,
     masterKey,
     heavy: new LocalHeavyRenderer(),
@@ -34,14 +30,26 @@ export function createCliRuntime(dataDir: string) {
   };
 }
 
-export function acquireDataDirLock(dataDir: string, pid: number): { ok: boolean; reason?: string } {
+export function acquireDataDirLock(dataDir: string, pid: number):
+  | { ok: true; release: () => void }
+  | { ok: false; reason: string } {
   const lockPath = resolve(dataDir, 'learning.lock');
-  if (existsSync(lockPath)) {
-    const existing = Number(readFileSync(lockPath, 'utf8').trim());
-    if (Number.isInteger(existing) && existing !== pid) {
-      return { ok: false, reason: `another writer holds the lock (pid ${existing}); Ctrl+C it or run learning unlock after verifying it is stale` };
-    }
+  const token = `${pid}\n${randomUUID()}`;
+  try {
+    writeFileSync(lockPath, token, { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    const existing = readFileSync(lockPath, 'utf8').trim().split('\n')[0] ?? 'unknown';
+    return { ok: false, reason: `another writer holds the lock (pid ${existing}); stop it or use profile unlock after verifying it is stale` };
   }
-  writeFileSync(lockPath, String(pid));
-  return { ok: true };
+  return {
+    ok: true,
+    release: () => {
+      try {
+        if (readFileSync(lockPath, 'utf8') === token) unlinkSync(lockPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    },
+  };
 }

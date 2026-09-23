@@ -3,19 +3,19 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { SqliteStateStore } from '@learning/sdk/node';
 
 const cliEntry = resolve(import.meta.dirname, '../dist/index.js');
 const tempRoots: string[] = [];
 
-function runCli(args: string[]) {
-  const home = mkdtempSync(resolve(tmpdir(), 'learning-cmds-'));
-  tempRoots.push(home);
+function runCli(args: string[], home = mkdtempSync(resolve(tmpdir(), 'learning-cmds-'))) {
+  if (!tempRoots.includes(home)) tempRoots.push(home);
   try {
-    const stdout = execFileSync(process.execPath, [cliEntry, ...args, '--home', home], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return { stdout, stderr: '', exitCode: 0 };
+    const stdout = execFileSync(process.execPath, [cliEntry, ...args, '--home', home], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LEARNING_HOME: home } });
+    return { stdout, stderr: '', exitCode: 0, home };
   } catch (error) {
     const failure = error as { stdout?: string; stderr?: string; status?: number };
-    return { stdout: failure.stdout ?? '', stderr: failure.stderr ?? '', exitCode: failure.status ?? 1 };
+    return { stdout: failure.stdout ?? '', stderr: failure.stderr ?? '', exitCode: failure.status ?? 1, home };
   }
 }
 
@@ -38,19 +38,88 @@ describe('cli commands (T26, A261/A262)', () => {
     expect(run.stderr).toContain('--yes --final');
   });
 
-  it('run and download accept --dry-run without writes', () => {
-    const runA = runCli(['run', '--dry-run']);
-    expect(runA.exitCode).toBe(0);
-    expect(JSON.parse(runA.stdout)).toMatchObject({ command: 'run', dryRun: true });
-    const runB = runCli(['download', '--dry-run']);
-    expect(JSON.parse(runB.stdout)).toMatchObject({ command: 'download', dryRun: true });
+  it('run and download do not report success without an initialized course', () => {
+    for (const args of [['run', '--dry-run'], ['download', '--dry-run']]) {
+      const run = runCli(args);
+      expect(run.exitCode).toBe(2);
+      expect(run.stdout).toBe('');
+    }
+    const pendingStudy = runCli(['run', 'course-key', '--dry-run']);
+    expect(pendingStudy.exitCode).toBe(3);
+    expect(pendingStudy.stdout).toBe('');
+    expect(pendingStudy.stderr).toContain('not initialized');
+    const uninitializedDownload = runCli(['download', 'course-key', '--dry-run']);
+    expect(uninitializedDownload.exitCode).toBe(3);
+    expect(uninitializedDownload.stdout).toBe('');
+    expect(uninitializedDownload.stderr).toContain('not initialized');
+    const init = runCli(['init']);
+    expect(init.exitCode).toBe(0);
+    expect(runCli(['profile', 'add', 'alpha', '--platform', 'ykt'], init.home).exitCode).toBe(0);
+    const unknown = runCli(['download', 'course-key', '--dry-run'], init.home);
+    expect(unknown.exitCode).toBe(2);
+    expect(unknown.stdout).toBe('');
   });
 
-  it('jobs list prints structured json and reconcile reports read-only state', () => {
-    const list = runCli(['jobs', 'list']);
+  it('jobs list reads initialized local state and unknown reconcile fails', () => {
+    const init = runCli(['init']);
+    expect(init.exitCode).toBe(0);
+    const list = runCli(['jobs', 'list'], init.home);
     expect(list.exitCode).toBe(0);
-    expect(() => JSON.parse(list.stdout)).not.toThrow();
-    const rec = runCli(['jobs', 'reconcile', 'job-1']);
-    expect(JSON.parse(rec.stdout)).toMatchObject({ jobId: 'job-1', state: 'no-pending-operation' });
+    expect(JSON.parse(list.stdout)).toEqual([]);
+    const rec = runCli(['jobs', 'reconcile', 'missing-job'], init.home);
+    expect(rec.exitCode).not.toBe(0);
+    expect(rec.stdout).toBe('');
+  });
+
+  it('jobs list returns persisted SDK job records instead of a fixed empty array', async () => {
+    const init = runCli(['init']);
+    expect(init.exitCode).toBe(0);
+    const state = new SqliteStateStore(resolve(init.home, 'state.db'));
+    const job = {
+      id: 'job-persisted',
+      scope: { userId: 'local', profileId: 'fixture', platform: 'ykt' },
+      kind: 'export', status: 'paused', createdAtMs: 1, updatedAtMs: 2,
+      nextRunAtMs: null, completed: 0, total: 1, items: [], warnings: [],
+    };
+    try {
+      expect(await state.commit({ expected: [{ key: `job:${job.id}`, revision: null }], changes: [{ key: `job:${job.id}`, value: job }] })).toBe(true);
+    } finally {
+      state.close();
+    }
+    const list = runCli(['jobs', 'list'], init.home);
+    expect(list.exitCode).toBe(0);
+    expect(JSON.parse(list.stdout)).toEqual([job]);
+    const show = runCli(['jobs', 'show', job.id, '--json'], init.home);
+    expect(show.exitCode).toBe(0);
+    expect(JSON.parse(show.stdout)).toEqual(job);
+  });
+
+  it('jobs cancel changes a saved job under its matching profile', async () => {
+    const init = runCli(['init']);
+    expect(init.exitCode).toBe(0);
+    expect(runCli(['profile', 'add', 'alpha', '--platform', 'ykt'], init.home).exitCode).toBe(0);
+    const state = new SqliteStateStore(resolve(init.home, 'state.db'));
+    const profile = (await state.get('cli:profile:alpha'))!.value as { scope: { userId: string; profileId: string; platform: 'ykt' } };
+    const job = { id: 'job-cancel-me', scope: profile.scope, kind: 'export', status: 'paused', createdAtMs: 1, updatedAtMs: 2, nextRunAtMs: null, completed: 0, total: 1, items: [], warnings: [] };
+    expect(await state.commit({ expected: [{ key: `job:${job.id}`, revision: null }], changes: [{ key: `job:${job.id}`, value: job }] })).toBe(true);
+    state.close();
+    const canceled = runCli(['jobs', 'cancel', job.id, '--profile', 'alpha', '--json'], init.home);
+    expect(canceled.exitCode, canceled.stderr).toBe(0);
+    expect(JSON.parse(canceled.stdout).status).toBe('canceled');
+    expect(JSON.parse(runCli(['jobs', 'show', job.id, '--json'], init.home).stdout).status).toBe('canceled');
+  });
+
+  it('final exam submit cannot claim success without a verified session', () => {
+    const run = runCli(['exam', 'submit', 'missing.yaml', '--yes', '--final']);
+    expect(run.exitCode).toBe(3);
+    expect(run.stdout).toBe('');
+  });
+
+  it('missing arguments and unknown commands use parameter exit code 2', () => {
+    for (const args of [['run'], ['download'], ['not-a-command']]) {
+      const run = runCli(args);
+      expect(run.exitCode).toBe(2);
+      expect(run.stdout).toBe('');
+    }
   });
 });
