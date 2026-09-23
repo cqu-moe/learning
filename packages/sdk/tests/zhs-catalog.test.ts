@@ -31,6 +31,15 @@ function shareFixture() {
 }
 
 describe('zhs catalog (T11)', () => {
+  it('uses the observed share-course secret as recruitAndCourseId when that field is absent', async () => {
+    const transport = new FakeTransport();
+    transport.scriptInteractions([{ request: { method: 'GET', host: 'onlineservice-api.zhihuishu.com', path: '/gateway/t/v1/student/course/share/queryShareCourseInfo', query: { secretStr: secret('{"status":0,"pageNo":1,"pageSize":5}'), date: String(DATE) } }, response: { status: 200, body: { code: 200, result: { totalCount: 1, courseOpenDtos: [{ secret: 'fixture-rac', courseId: 55, recruitId: 66, courseName: '课程' }] } } } }]);
+    const { http, clock } = makeContext(transport);
+    const courses = await zhsShareCourses(http, clock, scope);
+    expect(courses.items[0]?.ref.native).toEqual({ kind: 'zhs-share', recruitAndCourseId: 'fixture-rac' });
+    transport.assertNoExtraScripts();
+  });
+
   it('share list pages at pageSize 5 and does not miss the tail (A111)', async () => {
     const transport = new FakeTransport();
     transport.scriptInteractions(shareFixture().interactions);

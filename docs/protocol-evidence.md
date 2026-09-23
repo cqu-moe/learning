@@ -63,3 +63,7 @@ E01（ykt 考试 fixtures）、E02（学堂分页终止）、E03（ykt lesson �
 ### P-E05 · 2026-09-23 已授权本机只读 userinfo 形态校正
 
 使用用户授权的本机旧雨课堂会话，仅调用 `GET https://www.yuketang.cn/v2/api/web/userinfo`。真实响应 HTTP 200、`errcode:0`，但 `data` 是单项数组，元素含 `user_id`（number）、`name`（string）等字段；先前合成 fixture 的 `data:{id,name}` 单对象仍可作为兼容形态，不能把它当唯一真实形态。旧解析器因此抛 ZodError，被探测层误标 `NETWORK`；现以两形态严格解析，并要求可识别 `user_id` 才可升级导入会话。没有保存/提交响应原文、学号、姓名或 Cookie。此项只补 E04 的雨课堂身份字段形态；不证明课程写入或字体质量。
+
+### P-E06 · 2026-09-23 已授权智慧树共享课列表字段校正
+
+经在线 UUID 核验后，只读调用 `queryShareCourseInfo` 第一页。真实 `courseOpenDtos` 有 `secret`（string）、`courseId`（number）、`recruitId`（number）和 `courseName`，没有合成 fixture 唯一使用的 `recruitAndCourseId`。固定参考源码 `.reference/zhs-cli/src/main.py` 也优先取 `secret` 作为 RAC ID；SDK 现按此优先级解析，不拼造 courseId/recruitId。未提交 `secret` 值、课程原始载荷、UUID 或 Cookie。此项仅修复课程定位字段，真实学习保存/回读仍需另验。
