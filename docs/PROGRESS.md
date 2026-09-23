@@ -18,7 +18,7 @@
 | T11 | 智慧树两类课程树和权威进度 | done | vitest tests/zhs-catalog.test.ts → 5/5; 全套 102/102, typecheck/lint/build/boundaries exit 0 | zhs progress 读取端点形状未取证，能力未实现未伪造 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
-| T14 | 操作预览、幂等与不确定写入 | not-started | 未运行 | — |
+| T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
 | T15 | 雨课堂作业与内嵌题写入 | not-started | 未运行 | — |
 | T16 | 学堂作业与讨论发布 | not-started | 未运行 | — |
 | T17 | 学堂考试的三个独立动作 | not-started | 未运行 | — |
@@ -171,6 +171,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest drafts → 6 passed；全套 115/115；typecheck/lint/build/boundaries → 0。
 - 未运行项：真实模型 API（无 key，fake client fixture 级验证）。
 - 下一个当前任务：T14。
+
+### 2026-09-23 · T14 操作预览、幂等与不确定写入（done）
+
+- 实际改动：src/services/actions.ts（ActionStore/digestOf）、tests/actions.test.ts。client.actions 接线延后到 T15+ 各写入口（本任务为存储与语义层）。
+- 实现：prepare 保存精确 input SHA256 digest+generation+10 分钟有效期（preview: key 落 StateStore）；execute 绑定 previewId→operationId 单次执行（重复执行返回同一 receipt、零新增上游写）；sending 后异常→UNCERTAIN 不自动重发；reconcile 仅凭权威上游核对结果确认/保持 uncertain；过期/换 generation/换 digest → PREVIEW_EXPIRED/PRECONDITION_CHANGED；cancel 不回滚已完成 receipt。
+- 验收：A141（同 preview 重复执行 1 次上游写、三项拒绝语义）；A142（sending 崩溃 uncertain 不重放、reconcile 权威确认、取消保留已发生结果）。
+- 命令（Node v24.11.1）：vitest actions → 6 passed；全套 121/121；typecheck/lint/build → 0。
+- 下一个当前任务：T15。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
