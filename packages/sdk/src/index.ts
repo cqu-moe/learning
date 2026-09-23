@@ -177,12 +177,19 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           });
         }
         if (platform === 'xuetang') {
-          return probeSession({
+          const result = await probeSession({
             scope,
             state: runtime.state,
             masterKey: runtime.masterKey,
             provider: xtxProbeProvider({ http: await httpBound(), clock: runtime.clock }),
           });
+          if (result.state === 'valid') {
+            const record = await readSession(runtime.state, runtime.masterKey, scope);
+            if (record !== null && record.generation === result.session.generation && !record.identityVerified) {
+              await writeSession(runtime.state, runtime.masterKey, { ...record, identityVerified: true, checkedAtMs: runtime.clock.nowMs(), cookieJar: await sessionBox.jar.serialize() });
+            }
+          }
+          return result;
         }
         if (platform === 'zhs') {
           const http = await httpBound();
