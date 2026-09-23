@@ -67,3 +67,5 @@ E01（ykt 考试 fixtures）、E02（学堂分页终止）、E03（ykt lesson �
 ### P-E06 · 2026-09-23 已授权智慧树共享课列表字段校正
 
 经在线 UUID 核验后，只读调用 `queryShareCourseInfo` 第一页。真实 `courseOpenDtos` 有 `secret`（string）、`courseId`（number）、`recruitId`（number）和 `courseName`，没有合成 fixture 唯一使用的 `recruitAndCourseId`。固定参考源码 `.reference/zhs-cli/src/main.py` 也优先取 `secret` 作为 RAC ID；SDK 现按此优先级解析，不拼造 courseId/recruitId。未提交 `secret` 值、课程原始载荷、UUID 或 Cookie。此项仅修复课程定位字段，真实学习保存/回读仍需另验。
+
+同次授权的只读 `hikeservice.../getMyCourseList` 响应为 HTTP 200 且业务 `code:200`，`result.startInngcourseList` 为数组；旧合成 fixture 使用 `code:0`。两者均视为成功，但缺失课程数组或其他状态码仍拒绝。未保存课程原文或用户 UUID。
