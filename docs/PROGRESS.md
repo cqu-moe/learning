@@ -21,7 +21,7 @@
 | T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
 | T15 | 雨课堂作业与内嵌题写入 | done | vitest tests/ykt-write.test.ts → 4/4; 全套 125/125, typecheck/lint/build exit 0 | — |
 | T16 | 学堂作业与讨论发布 | done | vitest tests/xuetang-write.test.ts → 4/4; 全套 129/129, typecheck/lint/build exit 0 | — |
-| T17 | 学堂考试的三个独立动作 | not-started | 未运行 | — |
+| T17 | 学堂考试的三个独立动作 | done | vitest tests/xuetang-exam-write.test.ts → 3/3; 全套 132/132, typecheck/lint/build exit 0 | E05 填空/主观考试写形状拒绝 |
 | T18 | 固定任务模型、暂停恢复与事件 | not-started | 未运行 | — |
 | T19 | 雨课堂学习任务 | not-started | 未运行 | — |
 | T20 | 学堂学习任务 | not-started | 未运行 | — |
@@ -195,6 +195,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 验收：A161（主观对象与填空 map 精确 fixture、unset 零写入）；A162（HTTP200 success=false 失败、未知 schema 不成空 thread）。
 - 命令（Node v24.11.1）：vitest xuetang-write → 4 passed；全套 129/129；typecheck/lint/build → 0。
 - 下一个当前任务：T17。
+
+### 2026-09-23 · T17 学堂考试的三个独立动作（done）
+
+- 实际改动：src/providers/xuetang/exam-write.ts、tests/xuetang-exam-write.test.ts。
+- 实现：encodeExamAnswer 仅放行已取证 choice/judgement，填空/主观 UNSUPPORTED 零上游写（E05）；start/save/finalize 三动作独立（save 不能偷偷 start、已终结拒绝、已开始不重复 start）；真实 wire 提交默认不在 CI，需用户单独授权受控验证（SUBMIT_LIVE 历史不直接开启）。
+- 验收：A171（未开始 save 拒绝、已终结不重复操作）；A172（独立操作语义测试覆盖；两试卷串行由 T09 临界区承接；超时不重交由 T14 UNCERTAIN 语义承接）。
+- 命令（Node v24.11.1）：vitest xuetang-exam-write → 3 passed；全套 132/132；typecheck/lint/build → 0。
+- 下一个当前任务：T18。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
