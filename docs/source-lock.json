@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "lockedAt": "2026-09-23",
+  "note": "Refs are fixed by docs/SOURCES.md. Checkouts live under .reference/ (gitignored), detached at the locked commit. Never run the old CLIs; read-only source consultation only. Public forks are not substitutes.",
+  "repositories": [
+    {
+      "name": "cqu-moe/ykt-cli",
+      "directory": "ykt-cli",
+      "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+      "upstream": "https://github.com/cqu-moe/ykt-cli",
+      "localSource": "/Users/uu/Developer/cqu-moe/ykt-cli"
+    },
+    {
+      "name": "cqu-moe/xuetang-cli",
+      "directory": "xuetang-cli",
+      "ref": "628a8fa8a4b90897f285a109aa591a8f6263846d",
+      "upstream": "https://github.com/cqu-moe/xuetang-cli",
+      "localSource": "/Users/uu/Developer/cqu-moe/xuetang-cli"
+    },
+    {
+      "name": "cqu-moe/zhs-cli",
+      "directory": "zhs-cli",
+      "ref": "56d02171cf73c45694d69f886c902d2ecedadaaa",
+      "upstream": "https://github.com/cqu-moe/zhs-cli",
+      "localSource": "/Users/uu/Developer/cqu-moe/zhs-cli"
+    }
+  ]
+}
