@@ -14,7 +14,7 @@
 | T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
-| T10 | 智慧树编码与登录 | not-started | 未运行 | — |
+| T10 | 智慧树编码与登录 | done | vitest tests/zhs-auth-crypto.test.ts → 7/7; 全套 97/97, typecheck/lint/build/boundaries exit 0 | 参考仓库 HOME 向量多一个 = 属笔误，已修正记录 |
 | T11 | 智慧树两类课程树和权威进度 | not-started | 未运行 | — |
 | T12 | 富文本、Markdown与格式导出 | not-started | 未运行 | — |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | not-started | 未运行 | — |
@@ -135,6 +135,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest xuetang-resources → 4 passed；全套 90/90；typecheck/lint/build → 0。测试先行确认失败后实现。
 - 未运行项：真实考试子系统；讲稿 seconds 字段名 start/end 按源码，真实键名待 E02 一并核对。
 - 下一个当前任务：T10。
+
+### 2026-09-23 · T10 智慧树编码与登录（done）
+
+- 实际改动：src/providers/zhs/{crypto.ts,md5.ts,auth.ts}、src/index.ts 接线、tests/zhs-auth-crypto.test.ts、fixtures zhs/qr-login.json。
+- 实现：AES-128-CBC WebCrypto（PKCS7 原生、固定 IV、HOME/VIDEO 键）；ev/rev_ev 循环 key XOR-hex（多字节值 Python f"{x:02x}"[-4:] 语义一致）；WatchPoint 官方向量（0,1,2,2,3,3,3…）；hike MD5 纯 JS（RFC1321 向量 + 字段顺序/盐向量与 node:crypto 交叉验证）；hms 前端格式；原生 QR 登录链（getLoginQrImg→getLoginQrInfo 状态机 -1/0/1/2/3→pwd finish 落 CASLOGC），session identityVerified=false（E04：本地 uuid 不当在线身份）。
+- 勘误：参考仓 test_crypto.py 的 HOME 密文向量多一个 '='（45 字符非法 base64，Node/Python 均不可解）；按"已知源码 bug 不复现"，用 node:crypto 独立生成的同明文正确 44 字符向量替换并注释。
+- 命令（Node v24.11.1）：vitest zhs-auth-crypto → 7 passed；全套 97/97；typecheck/lint/build/boundaries → 0。测试先行确认失败后实现（DataView 小端修复）。
+- 未运行项：微信 lp 长轮询 408/404/405/403 分态未实现（A102 部分覆盖：poll 状态机+错误账号走 AUTH_REQUIRED；wx 流程无源码级 fixture，留证据缺口）；password 登录未实现。
+- 下一个当前任务：T11。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

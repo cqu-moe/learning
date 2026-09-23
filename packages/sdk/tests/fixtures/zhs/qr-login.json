@@ -1,0 +1,22 @@
+{
+  "id": "zhs/qr-login",
+  "platform": "zhs",
+  "source": { "repo": "cqu-moe/zhs-cli", "ref": "56d02171cf73c45694d69f886c902d2ecedadaaa", "path": "src/client.py", "symbol": "qr_login_start/qr_login_poll/qr_login_finish" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "passport.zhihuishu.com", "path": "/qrCodeLogin/getLoginQrImg" },
+      "response": { "status": 200, "headers": {}, "body": { "qrToken": "qt-fixture", "img": "aW1nLWZpeHR1cmU=" } }
+    },
+    {
+      "request": { "method": "GET", "host": "passport.zhihuishu.com", "path": "/qrCodeLogin/getLoginQrInfo", "query": { "qrToken": "qt-fixture" } },
+      "response": { "status": 200, "headers": {}, "body": { "status": 1, "oncePassword": "op-fixture" } }
+    },
+    {
+      "request": { "method": "GET", "host": "passport.zhihuishu.com", "path": "/login", "query": { "service": "https://onlineservice-api.zhihuishu.com/login/gologin", "pwd": "op-fixture" } },
+      "response": { "status": 200, "headers": { "set-cookie": ["CASLOGC=uuid-fixture; Path=/; Domain=zhihuishu.com"] }, "body": "" }
+    }
+  ],
+  "entry": { "service": "auth", "method": "begin", "input": { "method": "qr" } },
+  "expected": null
+}

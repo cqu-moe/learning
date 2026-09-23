@@ -23,6 +23,7 @@ import { xtxCourses, xtxOutline } from './providers/xuetang/catalog.js';
 import { xtxProbeProvider, xtxQrLaunch } from './providers/xuetang/auth.js';
 import { xtxMedia, xtxTranscript } from './providers/xuetang/resources.js';
 import { xtxExamRead, xtxExamResolve } from './providers/xuetang/exam-read.js';
+import { zhsQrLaunch } from './providers/zhs/auth.js';
 import { probeSession } from './auth/flow.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
@@ -66,7 +67,7 @@ const CAPABILITY_IDS = [
 const IMPLEMENTED: Record<Platform, Set<string>> = {
   ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse', 'resources.media', 'resources.transcript', 'resources.lessons', 'resources.slides', 'assessments.resolve', 'assessments.get']),
   xuetang: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'resources.media', 'resources.transcript', 'assessments.resolve', 'assessments.get']),
-  zhs: new Set(['auth.importLegacy']),
+  zhs: new Set(['auth.begin', 'auth.importLegacy']),
 };
 
 function capabilitiesFor(platform: Platform): Capability[] {
@@ -112,6 +113,10 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         if (platform === 'xuetang' && loginInput.method === 'qr') {
           const http = await httpBound();
           return lifecycle.begin(xtxQrLaunch({ http, jar: sessionBox.jar, transport: runtime.transport, clock: runtime.clock }));
+        }
+        if (platform === 'zhs' && loginInput.method === 'qr') {
+          const http = await httpBound();
+          return lifecycle.begin(zhsQrLaunch({ http, jar: sessionBox.jar, clock: runtime.clock }));
         }
         throw unsupported(platform, `auth.begin(${loginInput.method})`);
       },

@@ -206,7 +206,7 @@ describe('SDK factory (A052)', () => {
     const zhsScope: Scope = { userId: 'local', profileId: 'p3', platform: 'zhs' };
     const client = createLearningClient({ scope: zhsScope, runtime: makeRuntime(new FakeTransport()) });
     await expect(client.catalog.courses()).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
-    await expect(client.auth.begin({ method: 'qr' })).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
+    await expect(client.actions.prepare({ kind: 'exam.start', ref: { resource: { course: { scope: zhsScope, key: 'k', native: { kind: 'zhs-hike', courseId: 'c1' } }, key: 'r', native: { kind: 'zhs-hike', fileId: 'f1' } }, kind: 'exam', assessmentId: 'a1' } })).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
   });
 
   it('importLegacy cookie-array writes a session offline', async () => {
