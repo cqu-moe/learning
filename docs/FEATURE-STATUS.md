@@ -4,19 +4,19 @@
 
 | 能力 | 当前状态 | 证据与缺口 |
 |---|---|---|
-| 三平台 QR、课程树与资料读取 | partial | SDK fixture；CLI 已接登录、课程、大纲。智慧树 QR 后在线身份核验尚缺。 |
-| 本机 profile、密钥、锁、doctor | partial | CLI 进程测试；`runtime.wake` 与完整并发恢复矩阵未闭合。 |
+| 三平台 QR、课程树与资料读取 | fixture 通过 | 默认智慧树微信 QR、原生 QR 与在线 UUID probe 均有合成 fixture；真实账号仍待核验。 |
+| 本机 profile、密钥、锁、doctor | fixture 通过 | CLI 进程测试；数据目录 0700，密钥/SQLite 0600，wake 可唤醒前台任务。 |
 | 雨课堂作业单题提交 | fixture 通过 | SDK/CLI 进程测试；内嵌题与真实写入未验收。 |
 | 学堂讨论草稿与发帖 | fixture 通过 | SDK/CLI 进程测试；真实发帖未授权。学堂作业提交仍未接线。 |
-| 学堂考试 | partial | 只读导出与独立开卷 fixture；save/finalize 未接线，最终交卷 E05 闸门未满足。 |
+| 学堂考试 | partial | 只读导出、编辑草稿、独立开卷与选择/判断缓存 fixture；最终交卷被 E05 闸门阻断。 |
 | 雨课堂、学堂视频学习 | partial | 前台 job、权威进度、心跳/统计 fixture；图文、弹题继续、长任务延迟统计与真实学习未验收。 |
-| 智慧树 share/hike 学习 | partial | 两类进度只读与纯函数 fixture；保存任务、在线身份核验及 E06 真机回读仍缺。 |
+| 智慧树 share/hike 学习 | partial | 两类加密/签名保存、弹题暂停、服务端进度回读 fixture；E04/E06 真机核验仍缺。 |
 | 历史课件与本地 PDF | partial | 历史课件图片/PDF 进程 fixture；字体 Canvas 与受控旧页面浏览器未实现，E07 黄金样本缺失。 |
-| MP4/HLS 下载 | partial | 流式本机文件与摘要的进程 fixture；Range/validator 恢复、多 GiB、字幕部分失败未验收。 |
+| MP4/HLS 下载 | partial | MP4 的 Range/validator 及双进程恢复、字幕失败保主文件通过 fixture；HLS 断点和多 GiB 未验收。 |
 | 答案匹配 | fixture 通过 | 只把精确匹配写到新的草稿，绝不自动提交。 |
-| 任务持久化与不确定写入 | partial | 跨进程 JobRunner/ActionStore fixture；所有 job kind 的恢复与核对矩阵未完成。 |
-| 雨课堂直播 | partial | mailbox/gap 纯函数；checkin、WS/job/CLI 未接线。 |
-| CLI 安装打包验收 | partial | SDK 182、CLI 35、进程 E2E 4 项通过；正式 pnpm 门禁与干净消费者安装未完成。 |
+| 任务持久化与不确定写入 | partial | AES-GCM 操作正文、跨进程 JobRunner/ActionStore、分页与核对 fixture；全部 job kind 的崩溃矩阵未闭合。 |
+| 雨课堂直播 | partial | checkin、WS 题目、当前题人工确认、重连 gap 与同 jobId 恢复 fixture；题面不可用时须在官方客户端查看，真实直播未授权。 |
+| CLI 安装打包验收 | partial | SDK/CLI/E2E、类型、lint、边界检查通过；干净消费者安装与最终 A312 矩阵未完成。 |
 | Web 与 Cloudflare | deferred | [WEB.md](deferred/WEB.md)；不计本期范围。 |
 
 真实平台的登录、学习、答题、发帖、开卷、交卷均未在本轮执行。详见 [PROGRESS.md](PROGRESS.md) 的实际命令、退出码和下一任务。

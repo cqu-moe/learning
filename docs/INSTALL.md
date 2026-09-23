@@ -23,7 +23,7 @@ pnpm build
 node apps/cli/dist/index.js init --home ~/.learning
 ```
 
-首次 init 生成 `master.key`（0600 权限）与 SQLite 状态库。密钥与数据库同机存储，不抵御整机失陷；可用 LEARNING_HOME 隔离多套数据。
+首次 init 生成 `master.key` 与 SQLite 状态库；目录权限 0700，密钥和数据库 0600。已有目录打开时也会收紧这些权限。操作草稿正文使用 AES-GCM 保存；旧明文操作记录首次读取时原地迁移，保留不确定写入状态。密钥与数据库同机存储，不抵御整机失陷；可用 LEARNING_HOME 隔离多套数据。
 
 ## 备份/升级/回滚
 
@@ -34,4 +34,5 @@ node apps/cli/dist/index.js init --home ~/.learning
 ## 解锁与恢复
 
 - 多进程写冲突：CLI 会拒绝并提示占用 PID。确认原进程已退出后运行 `node apps/cli/dist/index.js --home <dir> profile unlock`；活跃 PID 不会被抢锁。
-- 已保存的导出及雨课堂/学堂视频任务可用 `jobs show/resume/cancel` 管理；带 pending heartbeat 的雨课堂/学堂任务须先 `jobs reconcile <job-id>` 只读核对，仍为 uncertain 时不会重交。其他 job kind 和动作的恢复尚未完成，见 [FEATURE-STATUS.md](FEATURE-STATUS.md)。
+- 已保存的导出及三平台视频任务可用 `jobs show/resume/cancel` 管理；带 pending heartbeat/save 的任务须先 `jobs reconcile <job-id>` 只读核对，仍为 uncertain 时不会重交。独立作业/考试/讨论动作以错误里的 operationId 使用 `operations reconcile <operation-id>`；若平台无权威核对接口，仍保持 uncertain。
+- 直播任务重启后 `jobs resume <job-id> --yes` 会重新签到同一课时、重握 WS，并报告期间无法恢复的事件缺口；未明确确认时不重新签到。更多能力限制见 [FEATURE-STATUS.md](FEATURE-STATUS.md)。

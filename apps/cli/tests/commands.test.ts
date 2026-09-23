@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { SqliteStateStore } from '@learning/sdk/node';
+import { ActionStore } from '../../../packages/sdk/src/services/actions.js';
+import { readFileSync } from 'node:fs';
 
 const cliEntry = resolve(import.meta.dirname, '../dist/index.js');
 const tempRoots: string[] = [];
@@ -113,6 +115,26 @@ describe('cli commands (T26, A261/A262)', () => {
     const run = runCli(['exam', 'submit', 'missing.yaml', '--yes', '--final']);
     expect(run.exitCode).toBe(3);
     expect(run.stdout).toBe('');
+  });
+
+  it('reconciles a standalone uncertain action by saved operation id without a new write', async () => {
+    const init = runCli(['init']);
+    expect(init.exitCode).toBe(0);
+    const add = runCli(['profile', 'add', 'alpha', '--platform', 'ykt', '--json'], init.home);
+    const profile = JSON.parse(add.stdout) as { scope: { userId: string; profileId: string; platform: 'ykt' } };
+    const scope = profile.scope;
+    const state = new SqliteStateStore(resolve(init.home, 'state.db'));
+    const store = new ActionStore(state, { nowMs: () => Date.now(), sleep: async () => {} }, new Uint8Array(readFileSync(resolve(init.home, 'master.key'))));
+    const ref = { resource: { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '1' } }, key: 'resource', native: { kind: 'ykt' as const, leafId: '2', leafInfoId: null } }, kind: 'homework' as const, assessmentId: '3' };
+    const draft = { schemaVersion: 1 as const, id: 'draft', ref, fingerprint: 'fp', entries: [{ questionId: '4', fingerprint: 'qf', answer: { kind: 'choice' as const, keys: ['A'] }, evidence: null }] };
+    const preview = await store.prepare({ kind: 'homework.apply', draft, questionIds: ['4'] }, 1, async () => { throw Error('lost response'); });
+    await expect(store.execute(preview.id)).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+    const operationId = (await store.inspect(preview.id)).operationId;
+    state.close();
+    const reconciled = runCli(['operations', 'reconcile', operationId, '--profile', 'alpha', '--json'], init.home);
+    expect(reconciled.exitCode, reconciled.stderr).toBe(5);
+    expect(JSON.parse(reconciled.stdout).state).toBe('uncertain');
+    expect(reconciled.stderr).not.toContain('sessionid');
   });
 
   it('missing arguments and unknown commands use parameter exit code 2', () => {

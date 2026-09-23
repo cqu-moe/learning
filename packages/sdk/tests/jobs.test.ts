@@ -130,4 +130,47 @@ describe('job runner (T18, A181/A182)', () => {
     expect(early).toBe(false);
     expect(skipped.status).toBe('waiting');
   });
+
+  it('leaves an interrupted read-only export paused for an explicit resume', async () => {
+    const runner = makeRunner();
+    const job = await runner.create(scope, 'export', { total: 1 });
+    await expect(runner.advance(job.id, async () => { throw new Error('download stream stopped'); })).rejects.toThrow();
+    expect((await runner.get(job.id)).status).toBe('paused');
+    expect((await runner.resume(job.id)).status).toBe('queued');
+  });
+
+  it('requeues only the same live job after an explicit rejoin', async () => {
+    const runner = makeRunner();
+    const job = await runner.create(scope, 'live', { total: null });
+    await runner.pause(job.id);
+    expect((await runner.requeueLive(job.id)).id).toBe(job.id);
+    expect((await runner.get(job.id)).status).toBe('queued');
+    await runner.cancel(job.id);
+    await expect(runner.requeueLive(job.id)).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+  });
+
+  it('moves a waiting live job due when its mailbox wakes', async () => {
+    const clock = new FakeClock();
+    const runner = new JobRunner(new MemoryStateStore(), clock);
+    const job = await runner.create(scope, 'live', { total: null });
+    await runner.advance(job.id, async () => ({ completed: false, status: 'waiting' as const, nextRunAtMs: clock.nowMs() + 5000 }));
+    await runner.wake(job.id);
+    expect((await runner.get(job.id)).nextRunAtMs).toBe(clock.nowMs());
+  });
+
+  it('paginates more than 200 persisted jobs without losing a profile-filtered row', async () => {
+    const runner = makeRunner();
+    for (let index = 0; index < 205; index += 1) await runner.create(index % 3 === 0 ? { ...scope, profileId: 'other' } : scope, 'export', { total: 1 });
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    for (let pageIndex = 0; pageIndex < 10; pageIndex += 1) {
+      const page = await runner.list({ limit: 50, ...(cursor === undefined ? {} : { cursor }) }, scope);
+      expect(page.items.length).toBeLessThanOrEqual(50);
+      ids.push(...page.items.map((job) => job.id));
+      cursor = page.nextCursor ?? undefined;
+      if (page.nextCursor === null) break;
+    }
+    expect(ids).toHaveLength(136);
+    expect(new Set(ids).size).toBe(136);
+  });
 });

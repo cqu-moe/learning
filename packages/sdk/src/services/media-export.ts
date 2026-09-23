@@ -4,9 +4,11 @@ import type { ResourceRef, Scope } from '../types/refs.js';
 import type { Runtime } from '../runtime/types.js';
 import type { JobRunner } from './jobs.js';
 import { safeFilename } from './exports.js';
+import { downloadDirectMedia } from './direct-media.js';
+import type { MediaAsset } from './direct-media.js';
 
 type MediaInput = Extract<ExportInput, { type: 'media' }>;
-type Asset = { mimeType: string; stream: ReadableStream<Uint8Array> };
+type Asset = MediaAsset;
 
 function error(code: 'BUDGET' | 'PROTOCOL' | 'UNSUPPORTED', message: string, id: string): LearningError {
   return new LearningError({ code, message, retryAfterMs: null, operationId: id });
@@ -54,7 +56,7 @@ export async function advanceMedia(input: {
   runner: JobRunner; runtime: Runtime; job: Job; scope: Scope;
   getMedia: (ref: ResourceRef) => Promise<MediaInfo>;
   getTranscript: (ref: ResourceRef) => Promise<Transcript>;
-  getAsset: (url: string, maxBytes: number) => Promise<Asset>;
+  getAsset: (url: string, maxBytes: number, headers?: Record<string, string>) => Promise<Asset>;
 }, saved: MediaInput): Promise<Job> {
   const next = saved.resources.find((ref) => !input.job.items.some((item) => item.key === ref.key));
   if (next === undefined) return input.runner.advance(input.job.id, async () => ({ completed: true }));
@@ -81,41 +83,50 @@ export async function advanceMedia(input: {
     }
     const artifactId = `${input.job.id}:${next.key}:media`;
     const mimeType = extension === 'ts' ? 'video/mp2t' : 'video/mp4';
-    const writer = await input.runtime.artifacts.create({ id: artifactId, mimeType });
-    let total = 0;
     let result: { bytes: number; sha256: string };
-    try {
-      for (const url of urls) {
-        const asset = await input.getAsset(url, 64 * 1024 * 1024);
-        const reader = asset.stream.getReader();
-        try {
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            total += value.byteLength;
-            if (total > 4 * 1024 * 1024 * 1024) throw error('BUDGET', 'media exceeds 4 GiB', input.job.id);
-            await writer.write(value);
-          }
-        } finally { reader.releaseLock(); }
-      }
-      result = await writer.finish();
-    } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(artifactId); throw cause; }
+    if (!isHls) result = await downloadDirectMedia({ runtime: input.runtime, jobId: input.job.id, resourceKey: next.key, artifactId, url: variant.id, getAsset: input.getAsset });
+    else {
+      const writer = await input.runtime.artifacts.create({ id: artifactId, mimeType });
+      let total = 0;
+      try {
+        for (const url of urls) {
+          const asset = await input.getAsset(url, 64 * 1024 * 1024);
+          const reader = asset.stream.getReader();
+          try {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              total += value.byteLength;
+              if (total > 4 * 1024 * 1024 * 1024) throw error('BUDGET', 'media exceeds 4 GiB', input.job.id);
+              await writer.write(value);
+            }
+          } finally { reader.releaseLock(); }
+        }
+        result = await writer.finish();
+      } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(artifactId); throw cause; }
+    }
     const artifacts: ItemResult['artifacts'] = [{ id: artifactId, scope: input.scope,
       filename: `${safeFilename(next.key)}.${extension}`, mimeType, bytes: result.bytes, sha256: result.sha256,
       createdAtMs: input.runtime.clock.nowMs() }];
+    let transcriptWarning: string | null = null;
     if (saved.subtitles) {
-      const transcript = await input.getTranscript(next);
-      if (transcript.state === 'available') {
-        const id = `${input.job.id}:${next.key}:transcript`;
-        const writer = await input.runtime.artifacts.create({ id, mimeType: 'application/json' });
-        try {
-          await writer.write(new TextEncoder().encode(JSON.stringify(transcript, null, 2) + '\n'));
-          const result = await writer.finish();
-          artifacts.push({ id, scope: input.scope, filename: `${safeFilename(next.key)}.transcript.json`, mimeType: 'application/json', bytes: result.bytes, sha256: result.sha256, createdAtMs: input.runtime.clock.nowMs() });
-        } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(id); throw cause; }
+      try {
+        const transcript = await input.getTranscript(next);
+        if (transcript.state === 'available') {
+          const id = `${input.job.id}:${next.key}:transcript`;
+          const writer = await input.runtime.artifacts.create({ id, mimeType: 'application/json' });
+          try {
+            await writer.write(new TextEncoder().encode(JSON.stringify(transcript, null, 2) + '\n'));
+            const result = await writer.finish();
+            artifacts.push({ id, scope: input.scope, filename: `${safeFilename(next.key)}.transcript.json`, mimeType: 'application/json', bytes: result.bytes, sha256: result.sha256, createdAtMs: input.runtime.clock.nowMs() });
+          } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(id); throw cause; }
+        }
+      } catch {
+        transcriptWarning = 'transcript unavailable; video kept';
+        input.runtime.log({ level: 'warn', message: transcriptWarning, fields: { resourceKey: next.key } });
       }
     }
-    const items: ItemResult[] = [...input.job.items, { key: next.key, state: 'succeeded', message: null, artifacts }];
+    const items: ItemResult[] = [...input.job.items, { key: next.key, state: 'succeeded', message: transcriptWarning, artifacts }];
     return { completed: items.length === saved.resources.length, items };
   });
 }

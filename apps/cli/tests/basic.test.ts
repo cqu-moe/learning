@@ -42,8 +42,18 @@ describe('cli basics (T25, A251/A252)', () => {
     expect(first.exitCode).toBe(0);
     expect(existsSync(resolve(first.home, 'master.key'))).toBe(true);
     expect(existsSync(resolve(first.home, 'learning.lock'))).toBe(false);
+    expect(statSync(first.home).mode & 0o777).toBe(0o700);
     expect(statSync(resolve(first.home, 'master.key')).mode & 0o777).toBe(0o600);
+    expect(statSync(resolve(first.home, 'state.db')).mode & 0o777).toBe(0o600);
     expect(first.stdout).not.toContain(readFileSync(resolve(first.home, 'master.key'), 'utf8'));
+  });
+
+  it('creates a new local data directory with owner-only access', () => {
+    const parent = mkdtempSync(resolve(tmpdir(), 'learning-parent-'));
+    tempRoots.push(parent);
+    const target = resolve(parent, 'fresh-home');
+    expect(runCli(['init'], { home: target }).exitCode).toBe(0);
+    expect(statSync(target).mode & 0o777).toBe(0o700);
   });
 
   it('--home overrides LEARNING_HOME explicitly', () => {

@@ -16,6 +16,8 @@ export default tseslint.config(
         Headers: 'readonly',
         Response: 'readonly',
         Buffer: 'readonly',
+        ReadableStream: 'readonly',
+        queueMicrotask: 'readonly',
       },
     },
   },

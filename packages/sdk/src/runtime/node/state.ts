@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { chmodSync, closeSync, openSync } from 'node:fs';
 import { LearningError } from '../../types/errors.js';
 import type { Json } from '../../types/errors.js';
 import type { StateStore, StoredValue } from '../types.js';
@@ -28,6 +29,9 @@ export class SqliteStateStore implements StateStore {
   private closed = false;
 
   constructor(path: string) {
+    try { closeSync(openSync(path, 'wx', 0o600)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    chmodSync(path, 0o600);
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec(

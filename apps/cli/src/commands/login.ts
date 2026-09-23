@@ -37,7 +37,9 @@ async function displayQr(event: Extract<AuthEvent, { type: 'qr' }>, dataDir: str
 }
 
 export function registerLoginCommands(program: Command): void {
-  const login = program.command('login').description('QR login or import a local cookie array').option('--import <file>', 'import a local cookie-array JSON file');
+  const login = program.command('login').description('QR login or import a local cookie array')
+    .option('--import <file>', 'import a local cookie-array JSON file')
+    .option('--variant <variant>', 'ZHS QR variant: default WeChat or native', 'default');
   login.action(async () => {
     await withCliRuntime(program, true, async (runtime, dataDir) => {
       const profile = await selectProfile(program, runtime);
@@ -50,7 +52,10 @@ export function registerLoginCommands(program: Command): void {
           printResult(program, imported.value, `imported session for ${profile.name} (identity unverified)`);
           return;
         }
-        const flow = await client.auth.begin({ method: 'qr' });
+        const variant = login.opts<{ variant: string }>().variant;
+        if (variant !== 'default' && variant !== 'native') throw new LearningError({ code: 'INVALID_INPUT', message: 'QR variant must be default or native', retryAfterMs: null, operationId: null });
+        if (variant === 'native' && profile.scope.platform !== 'zhs') throw new LearningError({ code: 'UNSUPPORTED', message: 'native QR variant is only defined for ZHS', retryAfterMs: null, operationId: null });
+        const flow = await client.auth.begin({ method: 'qr', variant });
         void flow.result.catch(() => {}); // handle rejection before the event consumer reaches result
         const onSignal = () => { void flow.cancel(); };
         process.once('SIGINT', onSignal);

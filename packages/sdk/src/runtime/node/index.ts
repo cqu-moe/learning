@@ -3,7 +3,7 @@ export { SqliteStateStore } from './state.js';
 export { NodeFetchTransport, NodeSocket } from './transport.js';
 export { NodeArtifactStore } from './artifacts.js';
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LearningError } from '../../types/errors.js';
 
@@ -11,9 +11,11 @@ const KEY_BYTES = 32;
 
 /** Loads dataDir/master.key or creates it once with owner-only permissions (SPEC §8). */
 export function loadOrCreateMasterKey(dataDir: string): Uint8Array {
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  chmodSync(dataDir, 0o700);
   const keyPath = resolve(dataDir, 'master.key');
   if (existsSync(keyPath)) {
+    chmodSync(keyPath, 0o600);
     const key = new Uint8Array(readFileSync(keyPath));
     if (key.byteLength !== KEY_BYTES) {
       throw new LearningError({

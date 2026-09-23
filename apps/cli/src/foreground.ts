@@ -2,16 +2,23 @@ import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { LearningClient } from '@learning/sdk';
-import type { Job } from '@learning/sdk/public';
+import type { Job, JobEvent } from '@learning/sdk/public';
 import type { CliRuntime } from './context.js';
 
-export async function runJobForeground(client: LearningClient, runtime: CliRuntime, id: string): Promise<Job> {
+export async function runJobForeground(client: LearningClient, runtime: CliRuntime, id: string, onEvent?: (event: JobEvent) => void | Promise<void>): Promise<Job> {
   const abort = new AbortController();
   const onSignal = () => abort.abort();
+  let afterSequence = 0;
+  const flushEvents = async () => {
+    if (onEvent === undefined) return;
+    const events = await client.jobs.events(id, afterSequence);
+    for (const event of events) { await onEvent(event); afterSequence = Math.max(afterSequence, event.sequence); }
+  };
   process.once('SIGINT', onSignal);
   try {
     for (;;) {
       const job = await client.jobs.get(id);
+      await flushEvents();
       if (abort.signal.aborted) {
         if (['queued', 'running', 'waiting'].includes(job.status)) await client.jobs.pause(id);
         process.exitCode = 3;
@@ -19,11 +26,12 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
       }
       if (!['queued', 'running', 'waiting'].includes(job.status)) return job;
       if (job.nextRunAtMs !== null && job.nextRunAtMs > runtime.clock.nowMs()) {
-        try { await runtime.clock.sleep(job.nextRunAtMs - runtime.clock.nowMs(), abort.signal); }
+        try { await runtime.waitForWake(job.nextRunAtMs - runtime.clock.nowMs(), abort.signal); }
         catch { continue; }
         continue;
       }
       await client.jobs.advance(id);
+      await flushEvents();
     }
   } finally {
     process.off('SIGINT', onSignal);

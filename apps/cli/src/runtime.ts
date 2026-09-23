@@ -1,22 +1,36 @@
 import { loadOrCreateMasterKey, NodeArtifactStore, SqliteStateStore } from '@learning/sdk/node';
 import { NodeFetchTransport } from '@learning/sdk/node';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
 
 export function resolveDataDir(explicit?: string): string {
   const base = explicit ?? process.env.LEARNING_HOME ?? resolve(process.env.HOME ?? '.', '.learning');
-  mkdirSync(base, { recursive: true });
+  mkdirSync(base, { recursive: true, mode: 0o700 });
+  chmodSync(base, 0o700);
   return base;
 }
 
 export function createCliRuntime(dataDir: string) {
   const masterKey = loadOrCreateMasterKey(dataDir);
   const clock = { nowMs: () => Date.now(), sleep: (ms: number, signal: AbortSignal) => new Promise<void>((resolveSleep, reject) => {
-    const timer = setTimeout(resolveSleep, ms);
-    signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolveSleep(); }, ms);
+    const onAbort = () => { clearTimeout(timer); signal.removeEventListener('abort', onAbort); reject(new DOMException('Aborted', 'AbortError')); };
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
   }) };
+  const wakeListeners = new Set<() => void>();
+  const waitForWake = (ms: number, signal: AbortSignal) => new Promise<void>((resolveWait, reject) => {
+    let finished = false;
+    const cleanup = () => { if (finished) return false; finished = true; clearTimeout(timer); signal.removeEventListener('abort', onAbort); wakeListeners.delete(onWake); return true; };
+    const onWake = () => { if (cleanup()) resolveWait(); };
+    const onAbort = () => { if (cleanup()) reject(new DOMException('Aborted', 'AbortError')); };
+    const timer = setTimeout(onWake, ms);
+    wakeListeners.add(onWake);
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
   return {
     transport: new NodeFetchTransport(),
     state: new SqliteStateStore(resolve(dataDir, 'state.db')),
@@ -26,7 +40,8 @@ export function createCliRuntime(dataDir: string) {
     heavy: new LocalHeavyRenderer(),
     model: null,
     log: () => {},
-    wake: async () => {},
+    wake: async () => { for (const listener of [...wakeListeners]) listener(); },
+    waitForWake,
   };
 }
 

@@ -14,7 +14,7 @@ import { createSessionHttp, SessionCookieJar } from './http/client.js';
 import { AuthLifecycle } from './auth/flow.js';
 import { importLegacyCookies } from './auth/legacy.js';
 import type { LegacyCookie } from './auth/legacy.js';
-import { readSession, revokeSession } from './session/store.js';
+import { readSession, revokeSession, writeSession } from './session/store.js';
 import { yktCourses, yktOutline, yktResolveCourse } from './providers/ykt/catalog.js';
 import { yktProbeProvider, yktQrLaunch } from './providers/ykt/auth.js';
 import { yktLessons, yktMedia, yktSlides, yktTranscript } from './providers/ykt/resources.js';
@@ -24,8 +24,9 @@ import { xtxCourses, xtxOutline } from './providers/xuetang/catalog.js';
 import { xtxProbeProvider, xtxQrLaunch } from './providers/xuetang/auth.js';
 import { xtxMedia, xtxTranscript } from './providers/xuetang/resources.js';
 import { xtxExamRead, xtxExamResolve } from './providers/xuetang/exam-read.js';
-import { zhsQrLaunch } from './providers/zhs/auth.js';
+import { zhsQrLaunch, zhsWechatQrLaunch } from './providers/zhs/auth.js';
 import { zhsHikeCourses, zhsHikeOutline, zhsShareCourses, zhsShareOutline } from './providers/zhs/catalog.js';
+import { zhidaoQuery } from './providers/zhs/http.js';
 import { importFeedbackSet, importLegacyDraft } from './services/drafts.js';
 export { exportDraftYaml } from './services/drafts.js';
 import { matchDraft } from './content/match.js';
@@ -39,8 +40,9 @@ import { advanceYktStudy, reconcileYktHeartbeat, yktReadProgress } from './provi
 import { advanceXtxStudy, reconcileXtxHeartbeat, xtxReadProgress, xtxReadStudyIdentity } from './providers/xuetang/study.js';
 import { fetchDiscussionComments, fetchUnitDiscussion, postComment } from './providers/xuetang/homework-write.js';
 import { sha256Hex } from './types/sha256.js';
-import { xtxReadStartCover, xtxStartExam } from './providers/xuetang/exam-write.js';
-import { zhsHikeReadProgress, zhsShareReadProgress } from './providers/zhs/study.js';
+import { encodeExamAnswer, xtxReadStartCover, xtxSaveExam, xtxStartExam } from './providers/xuetang/exam-write.js';
+import { advanceHikeStudy, advanceShareStudy, reconcileHikeSave, reconcileShareSave, zhsHikeReadProgress, zhsSharePopupPoints, zhsSharePrelearningNote, zhsShareReadProgress, zhsShareReadState, zhsShareSave } from './providers/zhs/study.js';
+import { YktLiveSession } from './providers/ykt/live.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
   ykt: ['yuketang.cn', 'xuetangx.com'],
@@ -101,13 +103,14 @@ function zhsUuid(raw: string | null): string | null {
   try {
     const value = JSON.parse(decodeURIComponent(raw)) as { uuid?: unknown };
     return typeof value.uuid === 'string' && value.uuid !== '' ? value.uuid : null;
-  } catch { return null; }
+  } catch { return /^[A-Za-z0-9_-]+$/.test(raw) ? raw : null; }
 }
 
 export function createLearningClient(input: { scope: Scope; runtime: Runtime }): LearningClient {
   const { scope, runtime } = input;
   const jobRunner = new JobRunner(runtime.state, runtime.clock);
-  const actionStore = new ActionStore(runtime.state, runtime.clock);
+  const actionStore = new ActionStore(runtime.state, runtime.clock, runtime.masterKey);
+  const liveSessions = new Map<string, YktLiveSession>();
   const ownsScope = (other: Scope): boolean => other.userId === scope.userId && other.profileId === scope.profileId && other.platform === scope.platform;
   const assertOwnedJob = async (id: string): Promise<Job> => {
     const job = await jobRunner.get(id);
@@ -132,6 +135,13 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       allowHosts: PLATFORM_HOSTS[scope.platform],
     });
   };
+  const liveCheckin = async (lessonId: string): Promise<{ lessonToken: string; jwt: string }> => {
+    const response = await (await httpBound()).request({ kind: 'write', method: 'POST', url: 'https://www.yuketang.cn/api/v3/lesson/checkin',
+      headers: { 'content-type': 'application/json;charset=utf-8' }, body: JSON.stringify({ source: 1, lessonId }) });
+    const payload = await response.json() as { code?: number; data?: { lessonToken?: string } };
+    if (payload.code !== 0 || typeof payload.data?.lessonToken !== 'string' || payload.data.lessonToken === '') throw new LearningError({ code: 'UNCERTAIN', message: 'live checkin did not confirm a lesson token', retryAfterMs: null, operationId: null });
+    return { lessonToken: payload.data.lessonToken, jwt: response.headers.get('set-auth') ?? '' };
+  };
   const platform = scope.platform;
   const client: LearningClient = {
     scope,
@@ -148,8 +158,9 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           return lifecycle.begin(xtxQrLaunch({ http, jar: sessionBox.jar, transport: runtime.transport, clock: runtime.clock }));
         }
         if (platform === 'zhs' && loginInput.method === 'qr') {
-          const http = await httpBound();
-          return lifecycle.begin(zhsQrLaunch({ http, jar: sessionBox.jar, clock: runtime.clock }));
+          await httpBound();
+          const http = createSessionHttp({ transport: runtime.transport, clock: runtime.clock, jar: sessionBox.jar, allowHosts: [...PLATFORM_HOSTS.zhs, 'weixin.qq.com'] });
+          return lifecycle.begin((loginInput.variant === 'native' ? zhsQrLaunch : zhsWechatQrLaunch)({ http, jar: sessionBox.jar, clock: runtime.clock }));
         }
         throw unsupported(platform, `auth.begin(${loginInput.method})`);
       },
@@ -169,6 +180,22 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             masterKey: runtime.masterKey,
             provider: xtxProbeProvider({ http: await httpBound(), clock: runtime.clock }),
           });
+        }
+        if (platform === 'zhs') {
+          const http = await httpBound();
+          return probeSession({ scope, state: runtime.state, masterKey: runtime.masterKey, provider: { probe: async (record) => {
+            if (record === null) return null;
+            const uuid = zhsUuid(record.platformUserId);
+            if (uuid === null) return null;
+            const payload = await zhidaoQuery(http, runtime.clock, '/login/getLoginUserInfo', {}, { method: 'GET' });
+            const data = (payload.data ?? payload.result) as { uuid?: unknown; name?: unknown } | undefined;
+            if (data?.uuid !== uuid) return null;
+            const updated = { ...record, platformUserId: uuid, identityVerified: true,
+              displayName: typeof data.name === 'string' ? data.name : record.displayName,
+              checkedAtMs: runtime.clock.nowMs(), cookieJar: await sessionBox.jar.serialize() };
+            await writeSession(runtime.state, runtime.masterKey, updated);
+            return { scope, generation: updated.generation, displayName: updated.displayName, platformUserId: uuid, identityVerified: true, checkedAtMs: updated.checkedAtMs };
+          } } });
         }
         return asyncUnsupported(platform, 'auth.probe');
       },
@@ -321,6 +348,80 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     },
     actions: {
       prepare: async (actionInput) => {
+        if (actionInput.kind === 'live.answer' && platform === 'ykt') {
+          const job = await assertOwnedJob(actionInput.liveJobId);
+          if (job.kind !== 'live' || !['running', 'waiting'].includes(job.status)) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'live job is not active', retryAfterMs: null, operationId: null });
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          if (session === null || !session.identityVerified || (await jobRunner.metadata(job.id)).generation !== session.generation) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'live session changed before answer', retryAfterMs: null, operationId: null });
+          const live = liveSessions.get(job.id);
+          if (live === undefined) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'live socket is not active in this process', retryAfterMs: null, operationId: null });
+          live.validateAnswer(actionInput.questionId, actionInput.phaseId, actionInput.answer);
+          return actionStore.prepare(actionInput, session.generation, async () => {
+            await live.answer(await httpBound(), actionInput.questionId, actionInput.phaseId, actionInput.answer);
+            return { operationId: 'ack', state: 'confirmed', message: 'current live answer acknowledged', result: { questionId: actionInput.questionId } };
+          }, { scope, preflight: async () => { live.validateAnswer(actionInput.questionId, actionInput.phaseId, actionInput.answer); } });
+        }
+        if (actionInput.kind === 'live.join' && platform === 'ykt') {
+          if (!ownsScope(actionInput.lesson.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'live lesson belongs to another profile', retryAfterMs: null, operationId: null });
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          if (session === null || !session.identityVerified || !session.platformUserId) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified Yuketang login required before live checkin', retryAfterMs: null, operationId: null });
+          return actionStore.prepare(actionInput, session.generation, async () => {
+            const { lessonToken, jwt } = await liveCheckin(actionInput.lesson.lessonId);
+            const job = await jobRunner.create(scope, 'live', { total: null, payload: actionInput, generation: session.generation });
+            liveSessions.set(job.id, new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, wake: async () => { await jobRunner.wake(job.id); await runtime.wake(); },
+              lessonId: actionInput.lesson.lessonId, userId: session.platformUserId!, lessonToken, jwt }));
+            return { operationId: 'ack', state: 'confirmed', message: 'live checkin acknowledged', result: { jobId: job.id } };
+          });
+        }
+        if (actionInput.kind === 'study' && platform === 'zhs') {
+          const family = actionInput.resources[0]?.native.kind;
+          if (family !== 'zhs-share' && family !== 'zhs-hike' || actionInput.resources.some((resource) => !ownsScope(resource.course.scope) || resource.native.kind !== family)) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS study needs one course family from this profile', retryAfterMs: null, operationId: null });
+          const maxSpeed = family === 'zhs-share' ? 1.5 : 1.25;
+          if (actionInput.settings.questionMode !== 'pause' || actionInput.settings.speed < 1 || actionInput.settings.speed > maxSpeed) throw new LearningError({ code: 'INVALID_INPUT', message: `ZHS ${family} study supports pause mode and speed 1..${maxSpeed}`, retryAfterMs: null, operationId: null });
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          if (session === null || !session.identityVerified || zhsUuid(session.platformUserId) === null) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified ZHS UUID is required before hike study', retryAfterMs: null, operationId: null });
+          for (const resource of actionInput.resources) {
+            const progress = family === 'zhs-share' ? await zhsShareReadProgress(await httpBound(), runtime.clock, resource) : await zhsHikeReadProgress(await httpBound(), runtime.clock, resource, true);
+            if (progress.durationSeconds === null) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'ZHS video duration is unknown', retryAfterMs: null, operationId: null });
+          }
+          return actionStore.prepare(actionInput, session.generation, async () => {
+            const job = await jobRunner.create(scope, 'study', { total: actionInput.resources.length, payload: actionInput, generation: session.generation });
+            return { operationId: 'ack', state: 'confirmed', message: 'hike study job created', result: { jobId: job.id } };
+          });
+        }
+        if (actionInput.kind === 'exam.finalize' && platform === 'xuetang') {
+          if (!ownsScope(actionInput.draft.ref.resource.course.scope) || actionInput.draft.ref.kind !== 'exam') throw new LearningError({ code: 'FORBIDDEN', message: 'final exam draft belongs to another profile or is not an exam', retryAfterMs: null, operationId: null });
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login required before final exam preview', retryAfterMs: null, operationId: null });
+          return actionStore.prepare(actionInput, session.generation,
+            async () => ({ operationId: 'blocked', state: 'rejected', message: 'E05 verification missing', result: null }),
+            { blockers: ['E05: final submission requires independent authorized verification before activation'] });
+        }
+        if (actionInput.kind === 'exam.save' && platform === 'xuetang') {
+          const draft = actionInput.draft;
+          if (!ownsScope(draft.ref.resource.course.scope) || draft.ref.kind !== 'exam') throw new LearningError({ code: 'FORBIDDEN', message: 'exam draft belongs to another profile or is not an exam', retryAfterMs: null, operationId: null });
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login required before saving exam answers', retryAfterMs: null, operationId: null });
+          const assessment = await clientRef.current!.assessments.get(draft.ref);
+          if (assessment.state !== 'in-progress' || assessment.fingerprint !== draft.fingerprint) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'exam is not in progress or paper changed', retryAfterMs: null, operationId: null });
+          const chosen = draft.entries.filter((entry) => entry.answer.kind !== 'unset');
+          if (chosen.length === 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam draft contains no answers to save', retryAfterMs: null, operationId: null });
+          const encoded = chosen.map((entry) => {
+            const question = assessment.questions.find((item) => item.id === entry.questionId);
+            if (question === undefined || question.fingerprint !== entry.fingerprint || question.kind === 'unknown') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'exam question changed or has an unverified type', retryAfterMs: null, operationId: null });
+            if (!['single-choice', 'multi-choice', 'judgement'].includes(question.kind)) throw new LearningError({ code: 'UNSUPPORTED', message: 'exam write shape for this question type is unverified', retryAfterMs: null, operationId: null });
+            if ((question.kind === 'single-choice' || question.kind === 'multi-choice') && entry.answer.kind !== 'choice' || question.kind === 'judgement' && entry.answer.kind !== 'judgement') throw new LearningError({ code: 'INVALID_INPUT', message: 'exam answer kind does not match the question', retryAfterMs: null, operationId: null });
+            const problemId = Number(entry.questionId);
+            if (!Number.isSafeInteger(problemId) || problemId <= 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam problem id is not a safe integer', retryAfterMs: null, operationId: null });
+            return { problem_id: problemId, result: encodeExamAnswer(entry.answer) };
+          });
+          return actionStore.prepare(actionInput, session.generation, async () => {
+            const latest = await xtxReadStartCover(await httpBound(), draft.ref);
+            if (latest.status !== 1) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'exam is no longer in progress', retryAfterMs: null, operationId: null });
+            await xtxSaveExam(await httpBound(), draft.ref, latest.userId, encoded.map((item) => ({ ...item, time: runtime.clock.nowMs() })));
+            return { operationId: 'ack', state: 'confirmed', message: 'exam answers cached; paper not finalized', result: { examId: draft.ref.assessmentId, count: encoded.length } };
+          });
+        }
         if (actionInput.kind === 'exam.start' && platform === 'xuetang') {
           if (!ownsScope(actionInput.ref.resource.course.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'exam belongs to another profile', retryAfterMs: null, operationId: null });
           const session = await readSession(runtime.state, runtime.masterKey, scope);
@@ -408,7 +509,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         const session = await readSession(runtime.state, runtime.masterKey, scope);
         if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login is required before action execution', retryAfterMs: null, operationId: null });
         const receipt = await actionStore.execute(previewId, { generation: session.generation });
-        if (operation.preview.kind === 'study') {
+        if (operation.preview.kind === 'study' || operation.preview.kind === 'live.join') {
           const result = receipt.result;
           if (result === null || typeof result !== 'object' || Array.isArray(result) || typeof result.jobId !== 'string') {
             throw new LearningError({ code: 'INTEGRITY', message: 'study operation has no saved job id', retryAfterMs: null, operationId: receipt.operationId });
@@ -418,8 +519,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         return { type: 'receipt', receipt };
       },
       reconcile: async (operationId) => {
-        if ((operationId.startsWith('heartbeat:') && platform === 'ykt') || (operationId.startsWith('xtx-heartbeat:') && platform === 'xuetang')) {
-          const jobId = /^(?:xtx-)?heartbeat:(job-[^:]+):/.exec(operationId)?.[1];
+        if ((operationId.startsWith('heartbeat:') && platform === 'ykt') || (operationId.startsWith('xtx-heartbeat:') && platform === 'xuetang') || ((operationId.startsWith('hike:') || operationId.startsWith('share-save:') || operationId.startsWith('prelearn:')) && platform === 'zhs')) {
+          const jobId = /^(?:(?:xtx-)?heartbeat|hike|share-save|prelearn):(job-[^:]+):/.exec(operationId)?.[1];
           if (jobId === undefined) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid heartbeat operation id', retryAfterMs: null, operationId });
           let job = await assertOwnedJob(jobId);
           if (job.status === 'running' && (await jobRunner.metadata(jobId)).running) job = await jobRunner.recoverInterrupted(jobId);
@@ -427,9 +528,17 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           if (saved.kind !== 'study') throw new LearningError({ code: 'INTEGRITY', message: 'heartbeat job input is invalid', retryAfterMs: null, operationId });
           const session = await readSession(runtime.state, runtime.masterKey, scope);
           if (session === null || (await jobRunner.metadata(jobId)).generation !== session.generation) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'session changed before heartbeat reconciliation', retryAfterMs: null, operationId });
-          return platform === 'ykt'
-            ? reconcileYktHeartbeat({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId })
-            : reconcileXtxHeartbeat({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId });
+          if (platform === 'ykt') return reconcileYktHeartbeat({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId });
+          if (platform === 'xuetang') return reconcileXtxHeartbeat({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId });
+          if (operationId.startsWith('prelearn:')) return { operationId, state: 'uncertain', message: 'prelearning note outcome cannot be proven from watch state; do not repeat', result: null };
+          if (operationId.startsWith('share-save:')) {
+            const resourceKey = operationId.split(':')[2];
+            const resource = saved.resources.find((item) => item.key === resourceKey);
+            if (resource === undefined) throw new LearningError({ code: 'INTEGRITY', message: 'share pending resource missing', retryAfterMs: null, operationId });
+            const http = await httpBound();
+            return reconcileShareSave({ job, action: saved, runner: jobRunner, operationId, readState: () => zhsShareReadState(http, runtime.clock, resource) });
+          }
+          return reconcileHikeSave({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId });
         }
         const operation = await actionStore.inspect(operationId);
         if (!ownsScope(operation.preview.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'operation belongs to another profile', retryAfterMs: null, operationId });
@@ -451,13 +560,31 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         return jobRunner.create(scope, 'export', { total: refs.length, payload: exportInput });
       },
       get: (jobId) => assertOwnedJob(jobId),
-      list: async () => {
-        const page = await jobRunner.list();
-        return { ...page, items: page.items.filter((job) => ownsScope(job.scope)) };
-      },
+      list: (input) => jobRunner.list(input, scope),
       events: async (jobId, afterSequence) => { await assertOwnedJob(jobId); return jobRunner.events(jobId, afterSequence); },
       advance: async (jobId) => {
         const job = await assertOwnedJob(jobId);
+        if (job.kind === 'live' && platform === 'ykt') {
+          const live = liveSessions.get(jobId);
+          if (live === undefined) return jobRunner.advance(jobId, async () => ({ completed: true, items: [{ key: jobId, state: 'needs-input', message: 'live socket cannot resume after process exit without a new confirmed checkin', artifacts: [] }] }));
+          const result = await jobRunner.advance(jobId, async () => {
+            await live.connect();
+            const drained = live.drain(runtime.clock.nowMs());
+            for (const event of drained.events) {
+              if (event.type === 'gap') { await jobRunner.emitGap(jobId, event.message); continue; }
+              const kind = event.problemType === 1 ? 'single-choice' : event.problemType === 2 ? 'multi-choice' : event.problemType === 3 ? 'judgement' : event.problemType === 4 ? 'fill-blank' : 'unknown';
+              await jobRunner.emitQuestion(jobId, event.phaseId, {
+                id: event.questionId, kind, rawType: String(event.problemType ?? ''),
+                body: { markdown: '', plainText: '', decodeState: 'unavailable', sourceHash: sha256Hex('') },
+                options: [], fingerprint: sha256Hex(JSON.stringify([event.phaseId, event.questionId])),
+                attemptsUsed: null, maxAttempts: null, myAnswer: null, feedback: null,
+              }, event.closesAtMs);
+            }
+            return { completed: drained.finished, status: 'waiting' as const, nextRunAtMs: runtime.clock.nowMs() + 1000 };
+          });
+          if (result.status === 'succeeded') { await live.close(); liveSessions.delete(jobId); }
+          return result;
+        }
         if (job.kind === 'study' && platform === 'ykt') {
           const session = await readSession(runtime.state, runtime.masterKey, scope);
           if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login required to advance study', retryAfterMs: null, operationId: jobId });
@@ -476,6 +603,26 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           const http = await httpBound();
           return advanceXtxStudy({ job, action: saved, runner: jobRunner, http, jar: sessionBox.jar, clock: runtime.clock });
         }
+        if (job.kind === 'study' && platform === 'zhs') {
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          const uuid = zhsUuid(session?.platformUserId ?? null);
+          if (session === null || !session.identityVerified || uuid === null) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified ZHS UUID required to advance hike study', retryAfterMs: null, operationId: jobId });
+          if ((await jobRunner.metadata(jobId)).generation !== session.generation) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'session generation changed since job creation', retryAfterMs: null, operationId: jobId });
+          const saved = ActionInputSchema.parse(await jobRunner.input(jobId));
+          if (saved.kind !== 'study') throw new LearningError({ code: 'INTEGRITY', message: 'hike job has invalid input', retryAfterMs: null, operationId: jobId });
+          if (saved.resources[0]?.native.kind === 'zhs-share') {
+            const resource = saved.resources.find((item) => !job.items.some((result) => result.key === item.key)) ?? saved.resources[0];
+            if (resource === undefined) throw new LearningError({ code: 'INTEGRITY', message: 'share job has no resource', retryAfterMs: null, operationId: jobId });
+            const http = await httpBound();
+            return advanceShareStudy({ job, action: saved, runner: jobRunner, clock: runtime.clock, uuid,
+              readState: () => zhsShareReadState(http, runtime.clock, resource),
+              popupPoints: (ids) => zhsSharePopupPoints(http, runtime.clock, resource, ids),
+              prelearningNote: (ids) => zhsSharePrelearningNote(http, runtime.clock, resource, ids),
+              save: (details) => zhsShareSave({ http, clock: runtime.clock, resource, uuid, ...details }),
+            });
+          }
+          return advanceHikeStudy({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, uuid });
+        }
         if (job.kind !== 'export') return asyncUnsupported(platform, `jobs.advance(${jobId})`);
         return advanceExport({
           runner: jobRunner,
@@ -491,18 +638,35 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           },
           getMedia: (ref) => clientRef.current!.resources.media(ref),
           getTranscript: async (ref) => (await clientRef.current!.resources.transcript(ref)).value,
-          getAsset: async (url, maxBytes) => {
-            const response = await (await httpBound()).request({ kind: 'read', method: 'GET', url });
-            if (response.status !== 200 && response.status !== 206) throw new LearningError({ code: 'PROTOCOL', message: `media asset returned HTTP ${response.status}`, retryAfterMs: null, operationId: job.id });
-            return { mimeType: response.headers.get('content-type')?.split(';')[0] ?? '', stream: response.stream(maxBytes) };
+          getAsset: async (url, maxBytes, headers) => {
+            const response = await (await httpBound()).request({ kind: 'read', method: 'GET', url, ...(headers === undefined ? {} : { headers }) });
+            if (response.status !== 200 && response.status !== 206 && !(headers?.range && response.status === 416)) throw new LearningError({ code: 'PROTOCOL', message: `media asset returned HTTP ${response.status}`, retryAfterMs: null, operationId: job.id });
+            return { status: response.status, headers: response.headers, mimeType: response.headers.get('content-type')?.split(';')[0] ?? '', stream: response.stream(maxBytes) };
           },
         });
       },
-      pause: async (jobId) => { await assertOwnedJob(jobId); return jobRunner.pause(jobId); },
-      resume: async (jobId) => { await assertOwnedJob(jobId); return jobRunner.resume(jobId); },
-      cancel: async (jobId) => { await assertOwnedJob(jobId); return jobRunner.cancel(jobId); },
+      pause: async (jobId) => { await assertOwnedJob(jobId); const live = liveSessions.get(jobId); if (live) { await live.close(); liveSessions.delete(jobId); } return jobRunner.pause(jobId); },
+      resume: async (jobId) => {
+        const job = await assertOwnedJob(jobId);
+        if (job.kind !== 'live') return jobRunner.resume(jobId);
+        if (platform !== 'ykt' || !['paused', 'waiting', 'needs-input', 'uncertain'].includes(job.status)) throw new LearningError({ code: 'CONFLICT', message: 'live job cannot rejoin from its current state', retryAfterMs: null, operationId: jobId });
+        const session = await readSession(runtime.state, runtime.masterKey, scope);
+        if (session === null || !session.identityVerified || !session.platformUserId || (await jobRunner.metadata(jobId)).generation !== session.generation) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'live session changed before rejoin', retryAfterMs: null, operationId: jobId });
+        const saved = ActionInputSchema.parse(await jobRunner.input(jobId));
+        if (saved.kind !== 'live.join') throw new LearningError({ code: 'INTEGRITY', message: 'live job has invalid input', retryAfterMs: null, operationId: jobId });
+        const { lessonToken, jwt } = await liveCheckin(saved.lesson.lessonId);
+        const live = new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, wake: async () => { await jobRunner.wake(jobId); await runtime.wake(); },
+          lessonId: saved.lesson.lessonId, userId: session.platformUserId, lessonToken, jwt });
+        liveSessions.set(jobId, live);
+        try {
+          const requeued = await jobRunner.requeueLive(jobId);
+          await jobRunner.emitGap(jobId, 'live socket re-established; events during process exit were not recoverable');
+          return requeued;
+        } catch (cause) { await live.close(); liveSessions.delete(jobId); throw cause; }
+      },
+      cancel: async (jobId) => { await assertOwnedJob(jobId); const live = liveSessions.get(jobId); if (live) { await live.close(); liveSessions.delete(jobId); } return jobRunner.cancel(jobId); },
     },
-    close: async () => {},
+    close: async () => { await Promise.all([...liveSessions.values()].map((live) => live.close())); liveSessions.clear(); },
   };
   clientRef.current = client;
   return client;

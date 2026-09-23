@@ -1,10 +1,12 @@
 import { LearningError } from '../types/errors.js';
 import type { Json } from '../types/errors.js';
 import { JobEventSchema, JobSchema } from '../types/models.js';
-import type { ItemResult, Job, JobEvent, JobStatus } from '../types/models.js';
+import type { ItemResult, Job, JobEvent, JobStatus, Question } from '../types/models.js';
 import type { Scope } from '../types/refs.js';
 import type { Clock, StateStore, StoredValue } from '../runtime/types.js';
 import { sha256Hex } from '../types/sha256.js';
+import { PageInputSchema } from '../types/errors.js';
+import type { PageInput } from '../types/errors.js';
 
 interface Meta { inputDigest: string; generation: number; cursor: string | null; pendingOperationId: string | null; running: boolean }
 
@@ -110,15 +112,25 @@ export class JobRunner {
     });
   }
 
-  async list(): Promise<{ items: Job[]; nextCursor: null; completeness: 'complete'; warnings: [] }> {
+  async list(input?: PageInput, scope?: Scope): Promise<{ items: Job[]; nextCursor: string | null; completeness: 'complete' | 'more'; warnings: [] }> {
+    const pageInput = PageInputSchema.parse(input ?? {});
+    const limit = pageInput.limit ?? 200;
     const items: Job[] = [];
-    let cursor: string | null = null;
-    do {
+    let cursor: string | null = pageInput.cursor ?? null;
+    for (;;) {
       const page = await this.state.list('job:', cursor, 200);
-      items.push(...page.items.map((row) => JobSchema.parse(row.record.value)));
+      for (const [index, row] of page.items.entries()) {
+        const job = JobSchema.parse(row.record.value);
+        if (scope === undefined || job.scope.userId === scope.userId && job.scope.profileId === scope.profileId && job.scope.platform === scope.platform) items.push(job);
+        cursor = row.key;
+        if (items.length === limit) {
+          const hasMore = index < page.items.length - 1 || page.nextCursor !== null;
+          return { items, nextCursor: hasMore ? cursor : null, completeness: hasMore ? 'more' : 'complete', warnings: [] };
+        }
+      }
+      if (page.nextCursor === null) return { items, nextCursor: null, completeness: 'complete', warnings: [] };
       cursor = page.nextCursor;
-    } while (cursor !== null);
-    return { items, nextCursor: null, completeness: 'complete', warnings: [] };
+    }
   }
 
   async advance(id: string, handler: () => Promise<{ completed: boolean; items?: ItemResult[]; status?: 'waiting' | 'needs-input'; nextRunAtMs?: number | null }>): Promise<Job> {
@@ -154,7 +166,7 @@ export class JobRunner {
       return job;
     } catch (cause) {
       await this.update(id, (job, meta) => ({
-        job: job.status === 'running' ? { ...job, status: 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() } : job,
+        job: job.status === 'running' ? { ...job, status: job.kind === 'export' ? 'paused' : 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() } : job,
         meta: { ...meta, running: false },
       }));
       throw cause;
@@ -180,6 +192,20 @@ export class JobRunner {
     });
     await this.emitState(id);
     return job;
+  }
+
+  async requeueLive(id: string): Promise<Job> {
+    const job = await this.update(id, (current, meta) => {
+      if (current.kind !== 'live' || !['paused', 'waiting', 'needs-input', 'uncertain'].includes(current.status) || meta.running || meta.pendingOperationId !== null) throw error('CONFLICT', 'live job cannot be rejoined from this state', id);
+      return { job: { ...current, status: 'queued', nextRunAtMs: this.clock.nowMs(), updatedAtMs: this.clock.nowMs() }, meta: { ...meta, running: false } };
+    });
+    await this.emitState(id);
+    return job;
+  }
+
+  async wake(id: string): Promise<Job> {
+    return this.update(id, (job, meta) => job.status === 'waiting' && (job.nextRunAtMs ?? 0) > this.clock.nowMs()
+      ? { job: { ...job, nextRunAtMs: this.clock.nowMs() }, meta } : null);
   }
 
   async cancel(id: string): Promise<Job> {
@@ -214,5 +240,13 @@ export class JobRunner {
 
   async emitState(id: string): Promise<void> {
     await this.appendEvent(id, { type: 'state', sequence: 0, job: await this.get(id) }, false);
+  }
+
+  async emitQuestion(id: string, phaseId: string, question: Question, closesAtMs: number | null): Promise<void> {
+    await this.appendEvent(id, { type: 'question', sequence: 0, jobId: id, phaseId, question, closesAtMs }, false);
+  }
+
+  async emitGap(id: string, message: string): Promise<void> {
+    await this.appendEvent(id, { type: 'gap', sequence: 0, jobId: id, message }, false);
   }
 }

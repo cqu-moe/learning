@@ -6,18 +6,20 @@ import { ActionInputSchema, PreviewSchema, ReceiptSchema } from '../types/models
 import type { ActionInput, Preview, Receipt } from '../types/models.js';
 import type { Scope } from '../types/refs.js';
 import type { Clock, StateStore, StoredValue } from '../runtime/types.js';
+import { encryptJson } from '../session/crypto.js';
 
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
-const StoredOperationSchema = z.object({
+const operationFields = {
   preview: PreviewSchema,
   operationId: z.string().min(1),
-  input: ActionInputSchema,
   phase: z.enum(['preview', 'sending', 'done', 'canceled']),
   receipt: ReceiptSchema.nullable(),
-});
+};
+const StoredOperationSchema = z.object({ ...operationFields, inputCiphertext: z.string().min(1) });
+const LegacyOperationSchema = z.object({ ...operationFields, input: ActionInputSchema });
 type StoredOperation = z.infer<typeof StoredOperationSchema>;
 
-function failure(code: 'INVALID_INPUT' | 'CONFLICT' | 'UNCERTAIN' | 'PREVIEW_EXPIRED' | 'PRECONDITION_CHANGED' | 'CANCELED', message: string, operationId: string | null): LearningError {
+function failure(code: 'INVALID_INPUT' | 'CONFLICT' | 'UNCERTAIN' | 'PREVIEW_EXPIRED' | 'PRECONDITION_CHANGED' | 'CANCELED' | 'UNSUPPORTED', message: string, operationId: string | null): LearningError {
   return new LearningError({ code, message, retryAfterMs: null, operationId });
 }
 
@@ -28,10 +30,12 @@ export function digestOf(input: ActionInput): string {
 /** Durable preview → sending → done transition. A lost response is never resent. */
 export class ActionStore {
   private readonly executors = new Map<string, () => Promise<Receipt>>();
-  constructor(private readonly state: StateStore, private readonly clock: Clock) {}
+  private readonly preflights = new Map<string, () => Promise<void>>();
+  constructor(private readonly state: StateStore, private readonly clock: Clock, private readonly masterKey: Uint8Array) {}
 
   private key(id: string): string { return `preview:${id}`; }
   private indexKey(id: string): string { return `operation:${id}`; }
+  private aad(preview: Preview): string { return JSON.stringify([1, 'action', preview.scope.userId, preview.scope.profileId, preview.scope.platform, preview.id]); }
 
   private async load(id: string): Promise<{ stored: StoredValue; record: StoredOperation }> {
     let stored = await this.state.get(this.key(id));
@@ -42,8 +46,16 @@ export class ActionStore {
     }
     if (stored === null) throw failure('INVALID_INPUT', 'unknown preview or operation id', null);
     const parsed = StoredOperationSchema.safeParse(stored.value);
-    if (!parsed.success) throw failure('CONFLICT', 'stored operation is invalid', null);
-    return { stored, record: parsed.data };
+    if (parsed.success) return { stored, record: parsed.data };
+    const legacy = LegacyOperationSchema.safeParse(stored.value);
+    if (!legacy.success) throw failure('CONFLICT', 'stored operation is invalid', null);
+    const record: StoredOperation = { preview: legacy.data.preview, operationId: legacy.data.operationId,
+      phase: legacy.data.phase, receipt: legacy.data.receipt,
+      inputCiphertext: await encryptJson(this.masterKey, JSON.stringify(legacy.data.input), this.aad(legacy.data.preview)) };
+    await this.update(stored, record);
+    const migrated = await this.state.get(this.key(record.preview.id));
+    if (migrated === null) throw failure('CONFLICT', 'operation vanished during migration', record.operationId);
+    return { stored: migrated, record };
   }
 
   async inspect(id: string): Promise<{ preview: Preview; operationId: string; phase: StoredOperation['phase']; receipt: Receipt | null }> {
@@ -59,13 +71,13 @@ export class ActionStore {
     if (!ok) throw failure('CONFLICT', 'operation changed concurrently', record.operationId);
   }
 
-  async prepare(input: ActionInput, generation: number, executor: () => Promise<Receipt>): Promise<Preview> {
+  async prepare(input: ActionInput, generation: number, executor: () => Promise<Receipt>, options: { blockers?: string[]; scope?: Scope; preflight?: () => Promise<void> } = {}): Promise<Preview> {
     const parsed = ActionInputSchema.parse(input);
     const id = `preview-${crypto.randomUUID()}`;
     const operationId = `operation-${crypto.randomUUID()}`;
     const preview: Preview = {
       id,
-      scope: scopeOf(parsed),
+      scope: options.scope ?? scopeOf(parsed),
       kind: parsed.kind,
       digest: digestOf(parsed),
       generation,
@@ -73,15 +85,16 @@ export class ActionStore {
       description: parsed.kind,
       startsTimer: parsed.kind === 'exam.start' || parsed.kind === 'live.join',
       finalSubmission: parsed.kind === 'exam.finalize',
-      blockers: [],
+      blockers: options.blockers ?? [],
     };
-    const record: StoredOperation = { preview, operationId, input: parsed, phase: 'preview', receipt: null };
+    const record: StoredOperation = { preview, operationId, inputCiphertext: await encryptJson(this.masterKey, JSON.stringify(parsed), this.aad(preview)), phase: 'preview', receipt: null };
     const ok = await this.state.commit({
       expected: [{ key: this.key(id), revision: null }, { key: this.indexKey(operationId), revision: null }],
       changes: [{ key: this.key(id), value: record as unknown as Json }, { key: this.indexKey(operationId), value: id }],
     });
     if (!ok) throw failure('CONFLICT', 'operation id collision', operationId);
     this.executors.set(id, executor);
+    if (options.preflight !== undefined) this.preflights.set(id, options.preflight);
     return preview;
   }
 
@@ -91,11 +104,13 @@ export class ActionStore {
     if (record.phase === 'done' && record.receipt?.state !== 'uncertain' && record.receipt !== null) return record.receipt;
     if (record.phase === 'sending' || record.receipt?.state === 'uncertain') throw failure('UNCERTAIN', 'operation outcome unknown; use reconcile', record.operationId);
     if (record.phase === 'canceled') throw failure('CANCELED', 'preview was canceled', record.operationId);
+    if (record.preview.blockers.length > 0) throw failure('UNSUPPORTED', record.preview.blockers.join('; '), record.operationId);
     if (this.clock.nowMs() > record.preview.expiresAtMs) throw failure('PREVIEW_EXPIRED', 'preview older than 10 minutes', record.operationId);
     if (current?.generation !== undefined && current.generation !== record.preview.generation) throw failure('PRECONDITION_CHANGED', 'session generation changed since preview', record.operationId);
     if (current?.digest !== undefined && current.digest !== record.preview.digest) throw failure('PRECONDITION_CHANGED', 'input content changed since preview', record.operationId);
     const executor = this.executors.get(previewId);
     if (executor === undefined) throw failure('PRECONDITION_CHANGED', 'preview executor is unavailable after process restart; prepare again', record.operationId);
+    await this.preflights.get(previewId)?.();
     await this.update(stored, { ...record, phase: 'sending' });
     try {
       const outcome = ReceiptSchema.parse(await executor());
@@ -130,12 +145,13 @@ export class ActionStore {
     do {
       const page = await this.state.list('preview:', cursor, 100);
       for (const row of page.items) {
-        const parsed = StoredOperationSchema.safeParse(row.record.value);
-        if (parsed.success && parsed.data.phase === 'preview') await this.update(row.record, { ...parsed.data, phase: 'canceled' });
+        const loaded = await this.load(row.key.slice('preview:'.length));
+        if (loaded.record.phase === 'preview') await this.update(loaded.stored, { ...loaded.record, phase: 'canceled' });
       }
       cursor = page.nextCursor;
     } while (cursor !== null);
     this.executors.clear();
+    this.preflights.clear();
   }
 }
 

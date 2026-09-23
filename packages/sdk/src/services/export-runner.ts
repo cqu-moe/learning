@@ -7,6 +7,7 @@ import type { Runtime } from '../runtime/types.js';
 import { safeFilename } from './exports.js';
 import type { JobRunner } from './jobs.js';
 import { advanceMedia } from './media-export.js';
+import type { MediaAsset } from './direct-media.js';
 
 function serialize(assessment: Assessment, format: 'json' | 'yaml' | 'markdown'): string {
   if (format === 'json') return JSON.stringify(assessment, null, 2) + '\n';
@@ -25,7 +26,7 @@ export async function advanceExport(input: {
   getSlideImage: (url: string) => Promise<{ bytes: Uint8Array; mimeType: string }>;
   getMedia: (ref: ResourceRef) => Promise<MediaInfo>;
   getTranscript: (ref: ResourceRef) => Promise<Transcript>;
-  getAsset: (url: string, maxBytes: number) => Promise<{ mimeType: string; stream: ReadableStream<Uint8Array> }>;
+  getAsset: (url: string, maxBytes: number, headers?: Record<string, string>) => Promise<MediaAsset>;
 }): Promise<Job> {
   const saved = ExportInputSchema.parse(await input.runner.input(input.job.id));
   if (saved.type === 'slides') return advanceSlides(input, saved);
