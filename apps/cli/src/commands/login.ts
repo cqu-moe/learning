@@ -18,7 +18,11 @@ function readCookieFile(path: string): string {
   }
   if (!Array.isArray(parsed) || parsed.some((item) => item === null || typeof item !== 'object' ||
     typeof item.name !== 'string' || typeof item.value !== 'string' || typeof item.domain !== 'string' ||
-    (item.path !== undefined && typeof item.path !== 'string'))) {
+    (item.path !== undefined && typeof item.path !== 'string') ||
+    (item.secure !== undefined && typeof item.secure !== 'boolean') ||
+    (item.httpOnly !== undefined && typeof item.httpOnly !== 'boolean') ||
+    (item.expires !== undefined && typeof item.expires !== 'number') ||
+    (item.sameSite !== undefined && !['Strict', 'Lax', 'None'].includes(item.sameSite)))) {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'cookie import must be a cookie array', retryAfterMs: null, operationId: null });
   }
   return text;
