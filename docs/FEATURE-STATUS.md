@@ -14,6 +14,7 @@
 | 历史课件与本地 PDF | partial | 历史课件图片/PDF 进程 fixture；字体 Canvas 与受控旧页面浏览器未实现，E07 黄金样本缺失。 |
 | MP4/HLS 下载 | partial | MP4 Range/validator 与 HLS 完整分段检查点均有双进程恢复 fixture；字幕失败保主文件；多 GiB 持续流与动态 HLS 未验收。 |
 | 答案匹配 | fixture 通过 | 只把精确匹配写到新的草稿，绝不自动提交。 |
+| 可选模型建议 | fixture 通过 | Node HTTPS 兼容 API 适配器与 `discuss draft --ai` 的离线模型 fixture 通过；未解码题干不发送，缺 key 不影响手工流程；付费模型未调用。 |
 | 任务持久化与不确定写入 | partial | AES-GCM 操作正文、跨进程 JobRunner/ActionStore、分页与核对 fixture；全部 job kind 的崩溃矩阵未闭合。 |
 | 雨课堂直播 | partial | checkin、WS 题目、当前题人工确认、重连 gap 与同 jobId 恢复 fixture；题面不可用时须在官方客户端查看，真实直播未授权。 |
 | CLI 安装打包验收 | partial | SDK/CLI tgz 在隔离消费者内验证 bin、exports、QR/课程/导出/Range 恢复；依赖使用工作区已冻结版本链接，离线独立安装缺 pdf-lib tarball；最终 A312 矩阵未完成。 |

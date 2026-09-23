@@ -2,6 +2,8 @@
 export { SqliteStateStore } from './state.js';
 export { NodeFetchTransport, NodeSocket } from './transport.js';
 export { NodeArtifactStore } from './artifacts.js';
+export { createCompatibleModelClient } from './model.js';
+export type { Runtime, ModelClient } from '../types.js';
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';

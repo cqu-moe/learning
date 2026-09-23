@@ -45,6 +45,7 @@ import { sha256Hex } from './types/sha256.js';
 import { encodeExamAnswer, xtxReadStartCover, xtxSaveExam, xtxStartExam } from './providers/xuetang/exam-write.js';
 import { advanceHikeStudy, advanceShareStudy, reconcileHikeSave, reconcileShareSave, zhsHikeReadProgress, zhsSharePopupPoints, zhsSharePrelearningNote, zhsShareReadProgress, zhsShareReadState, zhsShareSave } from './providers/zhs/study.js';
 import { YktLiveSession } from './providers/ykt/live.js';
+import { z } from 'zod';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
   ykt: ['yuketang.cn', 'xuetangx.com'],
@@ -348,7 +349,16 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         const thread = await clientRef.current!.discussions.get(ref);
         return { id: `discussion-${ref.topicId}`, ref, text: '', sourceHash: thread.body.sourceHash, origin: 'user' };
       },
-      propose: (ref) => asyncUnsupported(platform, `discussions.propose(${ref.topicId})`),
+      propose: async (ref) => {
+        if (platform !== 'xuetang') return asyncUnsupported(platform, `discussions.propose(${ref.topicId})`);
+        if (runtime.model === null) throw new LearningError({ code: 'MISSING_RUNTIME', message: 'model client is not configured', retryAfterMs: null, operationId: null });
+        const thread = await clientRef.current!.discussions.get(ref);
+        if (thread.body.decodeState !== 'complete' && thread.body.decodeState !== 'not-needed') throw new LearningError({ code: 'CONTENT_UNREADABLE', message: 'discussion topic is not decoded', retryAfterMs: null, operationId: null });
+        const result = await runtime.model.propose({ purpose: 'discussion', content: { topic: thread.body.plainText }, signal: new AbortController().signal });
+        const parsed = z.object({ text: z.string().trim().min(1).max(10_000) }).safeParse(result);
+        if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'model returned an invalid discussion draft', retryAfterMs: null, operationId: null });
+        return { id: `discussion-${ref.topicId}-model`, ref, text: parsed.data.text, sourceHash: thread.body.sourceHash, origin: 'model' };
+      },
     },
     actions: {
       prepare: async (actionInput) => {

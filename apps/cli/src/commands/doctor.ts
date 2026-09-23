@@ -16,7 +16,9 @@ export function registerDoctorCommand(program: Command): void {
       pdf: 'available',
       font: fontPath && existsSync(fontPath) ? 'unavailable (reference corpus supplied; Canvas decoder is not implemented)' : 'unavailable (reference corpus and Canvas decoder are not configured)',
       browser: browserPath && existsSync(browserPath) ? 'configured but legacy slide browser handler is unavailable' : 'not configured (legacy slide handler unavailable)',
-      model: 'not configured (optional model adapter unavailable)',
+      model: process.env.LEARNING_MODEL_BASE_URL && process.env.LEARNING_MODEL_NAME && process.env.LEARNING_MODEL_API_KEY
+        ? 'configured (requests only on explicit AI commands)'
+        : 'not configured (set LEARNING_MODEL_BASE_URL, LEARNING_MODEL_NAME and LEARNING_MODEL_API_KEY)',
     };
     printResult(program, status, [
       `node: ${status.node}`,

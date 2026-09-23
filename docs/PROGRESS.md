@@ -17,7 +17,7 @@
 | T10 | 智慧树编码与登录 | done | 默认微信 QR/原生 QR、在线 UUID probe 合成 fixture；见最新记录 | E04 真实账号字段待核验 |
 | T11 | 智慧树两类课程树和权威进度 | done | share/hike 树与权威进度只读 fixture；见最新记录 | E04/E06 真机端点仍缺证据 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
-| T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
+| T13 | 草稿导入、反馈匹配与可选模型建议 | done | SDK 模型建议过滤未解码/未选内容、Node 假模型与学堂讨论草稿 fixture；全套见最新记录 | 真实付费模型未授权调用 |
 | T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
 | T15 | 雨课堂作业与内嵌题写入 | partial | 独立作业与内嵌题专用题单/回复 SDK、CLI 进程 fixture；`ykt-write` 4/4 | 真实写入未授权 |
 | T16 | 学堂作业与讨论发布 | partial | 学堂作业 resolve/read/draft/apply SDK 与 CLI 两进程 fixture；讨论进程 fixture | 真实作业/讨论写入未授权 |
@@ -30,8 +30,8 @@
 | T23 | 流式下载、持久产物与断点恢复 | partial | MP4 Range 与 HLS 分段检查点双进程恢复、CLI 字幕降级 fixture | 多 GiB 持续流预算实测未完成 |
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | profile/login/catalog/doctor、独占锁与 wake CLI 进程 fixture；当前 CLI 45/45 | 真实平台登录未授权，fixture 不代替账号验收 |
-| T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、两平台作业、讨论、三平台学习、雨课堂图文、考试 start/save、直播 fixture | E05 最终交卷阻断；部分恢复与模型配置未闭合 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 218/218、CLI 48/48、E2E 6/6；packed tgz 隔离消费者测试 | 本检查点待正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
+| T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、两平台作业、讨论/显式AI草稿、三平台学习、雨课堂图文、考试 start/save、直播 fixture | E05 最终交卷阻断；全命令正常/异常矩阵仍未闭合 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 222/222、CLI 49/49、E2E 6/6；packed tgz 隔离消费者测试 | 本检查点待正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -340,3 +340,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - T23：本地 ArtifactStore 增加显式 `truncateUncommitted` 恢复选项，仅在分段下载中使用；验证已提交前缀 SHA256 后回退中断分段的尾部字节，普通 MP4 的严格长度验证不变。HLS 对 URL 列表/扩展名计算摘要，逐完整分段同步并持久化 checkpoint，重启后只从下一个未完成分段继续；播放列表变化或 checkpoint 无法验证时重下，不发布半成品。合成 CLI 两进程 fixture 在第二段中途失败，恢复时没有重新请求第一段，最终文件 `AAABBB`。
 - 测试先行：学堂延迟 fixture 原逻辑在第四次轮询前停机；ACK 后读回失败原逻辑丢 pending；Node 部分文件原逻辑拒绝显式回退，三项先失败后通过。Node v24.11.1 隔离工作树实际命令：SDK `vitest run` → 218/218 exit 0；CLI `vitest run` → 48/48 exit 0；CLI E2E → 6/6 exit 0；SDK/CLI typecheck/build、ESLint、boundaries、`git diff --check` → exit 0。根目录误执行 `tsc -p tsconfig.json` 因根无该文件 exit 1，随后分别对 SDK/CLI 正确命令均 exit 0。上一 T15 合并后主仓库正式 pnpm 五门禁 exit 0（SDK 215/CLI 47/E2E 6）。
 - 未运行：真实平台视频保存/下载、受限分段格式、4 GiB 持续流、E07 人工字体样本。下一当前任务：T24 可独立完成的本地字体/旧课件工程与 T31 验收矩阵；真实平台/最终交卷仍等待独立授权/证据。
+
+### 2026-09-23 · T13/T26 可选模型建议装配
+
+- SDK 的 `assessments.propose` 现在只向模型发送本次选中、完整解码的题干和选项，未解码/未选项返回 blocked；模型 JSON 结构及选项键继续严格校验。学堂 `discussions.propose` 从当前主题只生成可编辑草稿，空/无效模型输出拒绝，后续发帖仍需独立 `discuss post --yes`。
+- Node `/node` 出口提供明确配置的 HTTPS Chat Completions 兼容适配器：base URL/name/key 来自本机环境；无 key 时手工流程照常。请求仅在显式 AI 命令时发生，禁止重定向，响应 1 MiB 上限、30 秒超时，错误不回显密钥或模型正文。请求信封依据 [OpenAI Docs 的 Chat Completions 端点](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions/methods/create)，第三方兼容性未对真实服务验证。
+- 测试先行：未解码题原先返回 missing 且内容会进模型 payload、学堂讨论 propose 原先 UNSUPPORTED、Node 适配器模块原先不存在，测试分别先失败后修复。Node v24.11.1 隔离工作树实际命令：SDK `vitest run` → 222/222 exit 0；CLI `vitest run` → 49/49 exit 0；CLI E2E → 6/6 exit 0；SDK/CLI build/typecheck、ESLint、boundaries、`git diff --check` → exit 0。首次为声明跨包运行时类型触发 TS2742、修正后 profile.ts 的列表页类型再触发 TS7022；显式导出/标注类型后构建 exit 0。上一 T20/T23 合并后的主仓库正式 pnpm 五门禁 exit 0（SDK 218/CLI 48/E2E 6）。
+- 未运行：真实付费模型请求、真实平台讨论或答题（无单独授权）。下一当前任务：T24 样本缺口之外可完成的本机工程，以及 T31 剩余验收矩阵。

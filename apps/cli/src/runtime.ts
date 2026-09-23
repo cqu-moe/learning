@@ -1,4 +1,5 @@
-import { loadOrCreateMasterKey, NodeArtifactStore, SqliteStateStore } from '@learning/sdk/node';
+import { createCompatibleModelClient, loadOrCreateMasterKey, NodeArtifactStore, SqliteStateStore } from '@learning/sdk/node';
+import type { Runtime } from '@learning/sdk/node';
 import { NodeFetchTransport } from '@learning/sdk/node';
 import { chmodSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -12,7 +13,7 @@ export function resolveDataDir(explicit?: string): string {
   return base;
 }
 
-export function createCliRuntime(dataDir: string) {
+export function createCliRuntime(dataDir: string): Runtime & { state: SqliteStateStore; waitForWake: (ms: number, signal: AbortSignal) => Promise<void> } {
   const masterKey = loadOrCreateMasterKey(dataDir);
   const clock = { nowMs: () => Date.now(), sleep: (ms: number, signal: AbortSignal) => new Promise<void>((resolveSleep, reject) => {
     const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolveSleep(); }, ms);
@@ -21,6 +22,10 @@ export function createCliRuntime(dataDir: string) {
     else signal.addEventListener('abort', onAbort, { once: true });
   }) };
   const wakeListeners = new Set<() => void>();
+  const modelBaseUrl = process.env.LEARNING_MODEL_BASE_URL;
+  const modelName = process.env.LEARNING_MODEL_NAME;
+  const modelKey = process.env.LEARNING_MODEL_API_KEY;
+  const model = modelBaseUrl && modelName && modelKey ? createCompatibleModelClient({ baseUrl: modelBaseUrl, model: modelName, apiKey: modelKey }) : null;
   const waitForWake = (ms: number, signal: AbortSignal) => new Promise<void>((resolveWait, reject) => {
     let finished = false;
     const cleanup = () => { if (finished) return false; finished = true; clearTimeout(timer); signal.removeEventListener('abort', onAbort); wakeListeners.delete(onWake); return true; };
@@ -38,7 +43,7 @@ export function createCliRuntime(dataDir: string) {
     clock,
     masterKey,
     heavy: new LocalHeavyRenderer(),
-    model: null,
+    model,
     log: () => {},
     wake: async () => { for (const listener of [...wakeListeners]) listener(); },
     waitForWake,

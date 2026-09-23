@@ -68,7 +68,7 @@ export function registerProfileCommands(program: Command): void {
         const rows: Array<{ key: string; record: { revision: number; value: unknown } }> = [];
         let cursor: string | null = null;
         do {
-          const page = await runtime.state.list(prefix, cursor, 100);
+          const page: Awaited<ReturnType<typeof runtime.state.list>> = await runtime.state.list(prefix, cursor, 100);
           rows.push(...page.items);
           cursor = page.nextCursor;
         } while (cursor !== null);
