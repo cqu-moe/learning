@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { advanceHikeStudy, advanceShareStudy, buildShareSaveEv, hikeStallDecision, serverCompletedForTarget, zhsSharePopupPoints, zhsSharePrelearningNote, zhsShareSave } from '../src/providers/zhs/study.js';
+import { advanceHikeStudy, advanceShareStudy, buildShareSaveEv, hikeStallDecision, reconcileShareSave, serverCompletedForTarget, zhsSharePopupPoints, zhsSharePrelearningNote, zhsShareSave } from '../src/providers/zhs/study.js';
 import { WatchPoint, getEv, hikeSign, VIDEO_KEY, IV } from '../src/providers/zhs/crypto.js';
 import { createCipheriv } from 'node:crypto';
 import { createSessionHttp, SessionCookieJar } from '../src/http/client.js';
@@ -13,6 +13,44 @@ import type { Runtime } from '../src/runtime/types.js';
 import type { Json } from '../src/public.js';
 
 describe('zhs study (T21, A211/A212)', () => {
+  it('pauses a multi-resource share job at an unanswered popup instead of advancing the next video', async () => {
+    const scope = { userId: 'local', profileId: 'p-multi', platform: 'zhs' as const };
+    const first = { course: { scope, key: 'course', native: { kind: 'zhs-share' as const, recruitAndCourseId: 'R1' } }, key: 'first', native: { kind: 'zhs-share' as const, chapterId: '1', lessonId: '10', smallLessonId: '0', videoId: 'V1' } };
+    const second = { ...first, key: 'second', native: { ...first.native, videoId: 'V2' } };
+    const action = { kind: 'study' as const, resources: [first, second], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause' as const, maxDurationSeconds: 60 } };
+    const clock = new FakeClock();
+    const runner = new JobRunner(new MemoryStateStore(), clock);
+    const job = await runner.create(scope, 'study', { total: 2, payload: action });
+    let writes = 0;
+    const stopped = await advanceShareStudy({ job, action, runner, clock, uuid: 'u1',
+      readState: async () => ({ progress: { resource: first, serverCompleted: false, serverFraction: 0, serverSeconds: 0, durationSeconds: 10, observedAtMs: clock.nowMs() }, identity: { recruitId: '9', courseId: '44', ccCourseId: '55', videoSec: 10 } }),
+      popupPoints: async () => [{ timeSec: 1 }], prelearningNote: async () => { writes += 1; return '77'; }, save: async () => { writes += 1; } });
+    expect(stopped.status).toBe('needs-input');
+    expect(stopped.items).toMatchObject([{ key: 'first', state: 'needs-input' }]);
+    expect(writes).toBe(0);
+  });
+
+  it('keeps a share save pending when ACK succeeds but authoritative readback fails', async () => {
+    const scope = { userId: 'local', profileId: 'p-pending', platform: 'zhs' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'zhs-share' as const, recruitAndCourseId: 'R1' } }, key: 'video', native: { kind: 'zhs-share' as const, chapterId: '1', lessonId: '10', smallLessonId: '0', videoId: 'V1' } };
+    const action = { kind: 'study' as const, resources: [resource], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause' as const, maxDurationSeconds: 60 } };
+    const clock = new FakeClock();
+    const runner = new JobRunner(new MemoryStateStore(), clock);
+    const job = await runner.create(scope, 'study', { total: 1, payload: action });
+    await runner.setCursor(job.id, JSON.stringify({ resourceKey: 'video', noteId: '77', startedAtMs: clock.nowMs() - 5000, baseline: 0, awaiting: false, stalls: 0 }));
+    let reads = 0;
+    let saves = 0;
+    const state = (seconds: number) => ({ progress: { resource, serverCompleted: false, serverFraction: seconds / 10, serverSeconds: seconds, durationSeconds: 10, observedAtMs: clock.nowMs() }, identity: { recruitId: '9', courseId: '44', ccCourseId: '55', videoSec: 10 } });
+    await expect(advanceShareStudy({ job, action, runner, clock, uuid: 'u1', readState: async () => { reads += 1; if (reads > 1) throw Error('lost readback'); return state(0); }, popupPoints: async () => [], prelearningNote: async () => '77', save: async () => { saves += 1; } })).rejects.toThrow(/lost readback/);
+    const uncertain = await runner.get(job.id);
+    const pending = (await runner.metadata(job.id)).pendingOperationId;
+    expect(uncertain.status).toBe('uncertain');
+    expect(pending).toMatch(/^share-save:/);
+    expect((await reconcileShareSave({ job: uncertain, action, runner, operationId: pending!, readState: async () => state(5) })).state).toBe('confirmed');
+    expect((await runner.get(job.id)).status).toBe('paused');
+    expect(saves).toBe(1);
+  });
+
   it('share save ev encodes the 10-field order with watchPoint retained', () => {
     const wp = new WatchPoint();
     wp.add(10);
