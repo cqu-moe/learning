@@ -102,6 +102,26 @@ describe('zhs default WeChat QR API flow', () => {
 });
 
 describe('zhs online identity probe', () => {
+  it('derives and persists UUID from the authenticated endpoint for imported cookies', async () => {
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const masterKey = new Uint8Array(32).fill(9);
+    const { importLegacyCookies } = await import('../src/auth/legacy.js');
+    await importLegacyCookies({ transport, clock, state, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} }, scope, [{ name: 'CASLOGC', value: 'fixture', domain: '.zhihuishu.com', secure: true }]);
+    const dateFormate = Math.trunc(clock.nowMs() / 1000) * 1000;
+    const secretStr = await new AesCipher(VIDEO_KEY).encrypt(JSON.stringify({ dateFormate }));
+    transport.scriptInteractions([{ request: { method: 'GET', host: 'studyservice-api.zhihuishu.com', path: '/gateway/t/v1/login/getLoginUserInfo', query: { secretStr, dateFormate: String(dateFormate) }, headers: { origin: 'https://studyvideoh5.zhihuishu.com', referer: 'https://studyvideoh5.zhihuishu.com/' } }, response: { status: 200, body: { code: 0, data: { uuid: 'u1', name: 'Student' } } } }]);
+    const runtime: Runtime = { transport, clock, state, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} };
+    expect(await createLearningClient({ scope, runtime }).auth.probe()).toMatchObject({ state: 'valid', session: { identityVerified: true, platformUserId: 'u1' } });
+    expect(await readSession(state, masterKey, scope)).toMatchObject({ identityVerified: true, platformUserId: 'u1' });
+    transport.assertNoExtraScripts();
+  });
+
   it('upgrades an unverified CASLOGC only after an authenticated UUID read-back', async () => {
     const transport = new FakeTransport();
     const clock = new FakeClock();

@@ -169,12 +169,20 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       },
       probe: async () => {
         if (platform === 'ykt') {
-          return probeSession({
+          const result = await probeSession({
             scope,
             state: runtime.state,
             masterKey: runtime.masterKey,
             provider: yktProbeProvider({ http: await httpBound(), clock: runtime.clock }),
           });
+          if (result.state === 'valid') {
+            const record = await readSession(runtime.state, runtime.masterKey, scope);
+            if (record !== null && record.generation === result.session.generation && (!record.identityVerified || record.platformUserId !== result.session.platformUserId)) {
+              await writeSession(runtime.state, runtime.masterKey, { ...record, platformUserId: result.session.platformUserId, identityVerified: true, displayName: result.session.displayName,
+                checkedAtMs: runtime.clock.nowMs(), cookieJar: await sessionBox.jar.serialize() });
+            }
+          }
+          return result;
         }
         if (platform === 'xuetang') {
           const result = await probeSession({
@@ -195,13 +203,13 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           const http = await httpBound();
           return probeSession({ scope, state: runtime.state, masterKey: runtime.masterKey, provider: { probe: async (record) => {
             if (record === null) return null;
-            const uuid = zhsUuid(record.platformUserId);
-            if (uuid === null) return null;
+            const expectedUuid = zhsUuid(record.platformUserId);
             const payload = await zhidaoQuery(http, runtime.clock, '/login/getLoginUserInfo', {}, { method: 'GET' });
             const data = (payload.data ?? payload.result) as { uuid?: unknown; name?: unknown } | undefined;
-            if (data?.uuid !== uuid) return null;
+            const uuid = typeof data?.uuid === 'string' ? zhsUuid(data.uuid) : null;
+            if (uuid === null || expectedUuid !== null && uuid !== expectedUuid) return null;
             const updated = { ...record, platformUserId: uuid, identityVerified: true,
-              displayName: typeof data.name === 'string' ? data.name : record.displayName,
+              displayName: typeof data?.name === 'string' ? data.name : record.displayName,
               checkedAtMs: runtime.clock.nowMs(), cookieJar: await sessionBox.jar.serialize() };
             await writeSession(runtime.state, runtime.masterKey, updated);
             return { scope, generation: updated.generation, displayName: updated.displayName, platformUserId: uuid, identityVerified: true, checkedAtMs: updated.checkedAtMs };
