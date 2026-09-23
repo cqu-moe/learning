@@ -22,7 +22,7 @@
 | T15 | 雨课堂作业与内嵌题写入 | done | vitest tests/ykt-write.test.ts → 4/4; 全套 125/125, typecheck/lint/build exit 0 | — |
 | T16 | 学堂作业与讨论发布 | done | vitest tests/xuetang-write.test.ts → 4/4; 全套 129/129, typecheck/lint/build exit 0 | — |
 | T17 | 学堂考试的三个独立动作 | done | vitest tests/xuetang-exam-write.test.ts → 3/3; 全套 132/132, typecheck/lint/build exit 0 | E05 填空/主观考试写形状拒绝 |
-| T18 | 固定任务模型、暂停恢复与事件 | not-started | 未运行 | — |
+| T18 | 固定任务模型、暂停恢复与事件 | done | vitest tests/jobs.test.ts → 5/5; 全套 137/137, typecheck/lint/build exit 0 | — |
 | T19 | 雨课堂学习任务 | not-started | 未运行 | — |
 | T20 | 学堂学习任务 | not-started | 未运行 | — |
 | T21 | 智慧树share/hike学习任务 | not-started | 未运行 | — |
@@ -203,6 +203,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 验收：A171（未开始 save 拒绝、已终结不重复操作）；A172（独立操作语义测试覆盖；两试卷串行由 T09 临界区承接；超时不重交由 T14 UNCERTAIN 语义承接）。
 - 命令（Node v24.11.1）：vitest xuetang-exam-write → 3 passed；全套 132/132；typecheck/lint/build → 0。
 - 下一个当前任务：T18。
+
+### 2026-09-23 · T18 固定任务模型、暂停恢复与事件（done）
+
+- 实际改动：src/services/jobs.ts（JobRunner）、tests/jobs.test.ts。
+- 实现：JobRecord 保存 inputDigest/cursor/generation/pendingOperationId；普通 switch 处理 export/study/homework/live 四 kind（类型层面）；advance 同 job 重入 CONFLICT、cancel 后 advance 零执行且状态保持 canceled（不回滚旧 receipt）；事件 sequence 持久单调、高频 progress 同资源合并、上限 256 查询；partial/failed/succeeded 按 items 精确汇总；job 记录写 StateStore（job: 前缀）。
+- 验收：A181（重复 advance/取消后执行/一项失败 summary）；A182（重复读不建新 job、cancel 不回滚、事件单调）。
+- 命令（Node v24.11.1）：vitest jobs → 5 passed；全套 137/137；typecheck/lint/build → 0。
+- 未运行项：20 秒工作片与 nextRunAt 的前台调度循环在 CLI T25 接入。
+- 下一个当前任务：T19。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
