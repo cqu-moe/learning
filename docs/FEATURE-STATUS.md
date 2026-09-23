@@ -12,7 +12,7 @@
 | 雨课堂、学堂视频及图文学习 | partial | 雨课堂图文/视频真机只读均已完成，未重复写；学堂单视频 1×/2% 真机写入并独立读回 0.0217，整节未完成。 |
 | 智慧树 share/hike 学习 | partial | share/hike fixture；共享课单视频 1×/1% 真机写入，独立读回 6/581 秒。唯一 hike 课程是考试，未操作。 |
 | 历史课件与本地 PDF | partial | 历史课件图片/PDF 进程 fixture；字体 Canvas 与受控旧页面浏览器未实现，E07 黄金样本缺失。 |
-| MP4/HLS 下载 | partial | MP4 Range/validator 与 HLS 完整分段检查点均有双进程恢复 fixture；字幕失败保主文件；多 GiB 持续流与动态 HLS 未验收。 |
+| MP4/HLS 下载 | partial | MP4 Range/validator 与 HLS 分段双进程恢复；合成 4 GiB 流按 8 MiB 块拒绝超额且无发布；真实多 GiB 磁盘压力与动态 HLS 未验收。 |
 | 答案匹配 | fixture 通过 | 只把精确匹配写到新的草稿，绝不自动提交。 |
 | 可选模型建议 | fixture 通过 | Node HTTPS 兼容 API 适配器与 `discuss draft --ai` 的离线模型 fixture 通过；未解码题干不发送，缺 key 不影响手工流程；付费模型未调用。 |
 | 任务持久化与不确定写入 | partial | AES-GCM 操作正文、跨进程 JobRunner/ActionStore、分页与核对 fixture；全部 job kind 的崩溃矩阵未闭合。 |

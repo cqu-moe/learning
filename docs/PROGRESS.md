@@ -27,11 +27,11 @@
 | T20 | 学堂学习任务 | partial | `xuetang-study.test.ts` 7/7；真机选定视频 1×/2% 写入及独立进程读回 0.0217 | 仅验收单视频局部目标，长任务未全程真机 |
 | T21 | 智慧树share/hike学习任务 | partial | share/hike fixture；真机共享课 1×/1% 写入，独立进程读回 6/581 秒 | hike 唯一课程为考试，按用户要求未操作 |
 | T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
-| T23 | 流式下载、持久产物与断点恢复 | partial | MP4 Range 与 HLS 分段检查点双进程恢复、CLI 字幕降级 fixture | 多 GiB 持续流预算实测未完成 |
+| T23 | 流式下载、持久产物与断点恢复 | partial | MP4 Range/HLS 分段双进程恢复；4 GiB 合成流以 8 MiB 块拒绝超额且未发布 | 真实多 GiB 文件的峰值内存/磁盘压力未测 |
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture；字形维度/非有限值/近似歧义保守拒绝 | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | fixture + 已授权三平台旧会话导入/在线 whoami、课程列表与大纲真机只读 | 全新 QR 扫码未做真机 |
 | T26 | CLI完整功能入口与恢复操作 | partial | 28 个路径、23 组失败输入；真机学堂与智慧树单视频局部目标、雨课堂/学堂作业草稿 | 试卷禁止；直播/发帖/无答案作业未做真机 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | SDK 230/230、CLI 49/49、E2E 7/7；packed tgz 消费者；main 正式五门禁 exit 0；两平台局部学习权威读回 | E07 字体样本缺失；离线独立安装缺 pdf-lib tarball；其余能力仍分项验收 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | SDK 231/231、CLI 49/49、E2E 7/7；packed tgz 消费者；main 正式五门禁 exit 0；两平台局部学习权威读回 | E07 字体样本缺失；离线独立安装缺 pdf-lib tarball；其余能力仍分项验收 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -369,4 +369,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 学堂：导入旧会话初次 `whoami` 仅返回 valid/identityVerified=false；修正 `user-courses` 成功信封核验、403 拒绝和状态持久化后，在线身份确认通过。真实“人工智能(2026秋)”视频 1.3 原进度未登记，CLI 以 1×、目标 2% 运行一个 study job → succeeded；另起进程从平台 schedule 读回 `serverFraction=0.0217`、`serverCompleted=false`，只证明局部目标达到。普通作业草稿只读生成 13 题，未提交。
 - 智慧树：导入旧会话后在线接口确认 UUID；共享课列表实际用 `secret` 作 RAC ID，校内课列表业务成功码为 `200`，两处修正后 `courses` 返回 2 门共享课与 1 门校内课。唯一校内课标题为线上考试，未进一步操作。真实共享课“人工智能引论”一段视频初始 0 秒；CLI 以 1×、目标 1% 运行 → succeeded，另起进程读回 `6/581` 秒、`serverFraction=0.010327...`、`serverCompleted=false`。没有答题，也未触发验证码/风控。脱敏结构见 `protocol-evidence.md` P-E06。
 - 真机发现的 Cookie 导入作用域/安全属性、`expires:null`，三平台导入后身份提升、雨课堂 userinfo 数组/KG 零目录、智慧树共享课 secret/校内课 code=200 均已分别写正常/异常 fixture、提交并逐批合并本机 main。最终 Node v24.11.1 在 main 实跑：`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 230/230、CLI 49/49）、`pnpm build`、`pnpm test:e2e`（7/7）、`node scripts/check-boundaries.mjs`、`node scripts/check-source-lock.mjs`、`git diff --check` 全部 exit 0；未推送。
-- 尚缺：E07 字体 3 份独立样本/200 人工核实字形（用户确认暂无），Canvas/旧课件受控浏览器；T18 20 秒硬工作片；T23 多 GiB 持续流；完整干净消费者离线安装的 pdf-lib tarball；新 QR 登录与更多课程/直播/讨论/作业写入的逐项真机验收。E05 试卷功能按用户要求完全不做真机。当前 PLAN 28 项仍为 16 done、12 partial，Web T27–T30 继续延期；下一任务应针对已有证据缺口，不将两个局部视频进度写入称为三平台全功能通过。
+- 尚缺：E07 字体 3 份独立样本/200 人工核实字形（用户确认暂无），Canvas/旧课件受控浏览器；T18 20 秒硬工作片；T23 真实多 GiB 文件压力；完整干净消费者离线安装的 pdf-lib tarball；新 QR 登录与更多课程/直播/讨论/作业写入的逐项真机验收。E05 试卷功能按用户要求完全不做真机。当前 PLAN 28 项仍为 16 done、12 partial，Web T27–T30 继续延期；下一任务应针对已有证据缺口，不将两个局部视频进度写入称为三平台全功能通过。
+
+### 2026-09-23 · T23 合成 4 GiB 流边界补测
+
+- 使用单个重复的 8 MiB 内存块构造超过 4 GiB 的 ReadableStream，fake ArtifactStore 只计数、不持有或落盘全量内容。实际 `media-resume.test.ts` 断言写入到 4 GiB 为止，下一块触发 BUDGET、writer abort、job paused，且没有发布 manifest。此证据证明 SDK 下载路径逐块处理与预算拒绝；**不证明**真实 4 GiB 本地磁盘写入的峰值内存和吞吐量。
+- Node v24.11.1 主仓库最终门禁：`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 231/231、CLI 49/49）、`pnpm build`、`pnpm test:e2e`（7/7）、boundaries、source-lock、`git diff --check` 全部 exit 0。没有重新运行真实平台写入；前节已记录的局部服务端读回仍为本轮唯一写入验收。
