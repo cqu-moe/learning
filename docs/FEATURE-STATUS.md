@@ -15,7 +15,7 @@
 | MP4/HLS 下载 | partial | MP4 Range/validator 与 HLS 分段双进程恢复；合成 4 GiB 流按 8 MiB 块拒绝超额且无发布；真实多 GiB 磁盘压力与动态 HLS 未验收。 |
 | 答案匹配 | fixture 通过 | 只把精确匹配写到新的草稿，绝不自动提交。 |
 | 可选模型建议 | fixture 通过 | Node HTTPS 兼容 API 适配器与 `discuss draft --ai` 的离线模型 fixture 通过；未解码题干不发送，缺 key 不影响手工流程；付费模型未调用。 |
-| 任务持久化与不确定写入 | partial | AES-GCM 操作正文、跨进程 JobRunner/ActionStore、分页与核对 fixture；全部 job kind 的崩溃矩阵未闭合。 |
+| 任务持久化与不确定写入 | partial | AES-GCM 操作正文、跨进程恢复、智慧树多资源题闸及读回失败保留 pending fixture；20 秒硬切片和全部 job kind 崩溃矩阵未闭合。 |
 | 雨课堂直播 | partial | checkin、WS 题目、当前题人工确认、重连 gap 与同 jobId 恢复 fixture；题面不可用时须在官方客户端查看，真实直播未授权。 |
 | CLI 安装打包验收 | partial | 28 条命令 help、23 组错误输入、tgz 隔离消费者及三平台已授权的选定真机读写通过；全新离线依赖安装缺 pdf-lib tarball，E07 字体样本缺失。 |
 | Web 与 Cloudflare | deferred | [WEB.md](deferred/WEB.md)；不计本期范围。 |

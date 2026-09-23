@@ -25,13 +25,13 @@
 | T18 | 固定任务模型、暂停恢复与事件 | partial | 持久化、作用域分页、进程恢复与 wake fixture | 20 秒工作片硬期限与全部 job kind 边界仍需核对 |
 | T19 | 雨课堂学习任务 | partial | 图文/内嵌题 fixture；真机选中图文与视频均已完成，进度只读通过 | 未找到适合重复上报的未完成资源，真机写入未测 |
 | T20 | 学堂学习任务 | partial | `xuetang-study.test.ts` 7/7；真机选定视频 1×/2% 写入及独立进程读回 0.0217 | 仅验收单视频局部目标，长任务未全程真机 |
-| T21 | 智慧树share/hike学习任务 | partial | share/hike fixture；真机共享课 1×/1% 写入，独立进程读回 6/581 秒 | hike 唯一课程为考试，按用户要求未操作 |
+| T21 | 智慧树share/hike学习任务 | partial | share/hike fixture；真机共享课 1×/1% 写入读回 6/581 秒；多资源题闸与失败读回保留 pending | hike 唯一课程为考试，按用户要求未操作 |
 | T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
 | T23 | 流式下载、持久产物与断点恢复 | partial | MP4 Range/HLS 分段双进程恢复；4 GiB 合成流以 8 MiB 块拒绝超额且未发布 | 真实多 GiB 文件的峰值内存/磁盘压力未测 |
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture；字形维度/非有限值/近似歧义保守拒绝 | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | fixture + 已授权三平台旧会话导入/在线 whoami、课程列表与大纲真机只读 | 全新 QR 扫码未做真机 |
 | T26 | CLI完整功能入口与恢复操作 | partial | 28 个路径、23 组失败输入；真机学堂与智慧树单视频局部目标、雨课堂/学堂作业草稿 | 试卷禁止；直播/发帖/无答案作业未做真机 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | SDK 231/231、CLI 49/49、E2E 7/7；packed tgz 消费者；main 正式五门禁 exit 0；两平台局部学习权威读回 | E07 字体样本缺失；离线独立安装缺 pdf-lib tarball；其余能力仍分项验收 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | SDK 233/233、CLI 49/49、E2E 7/7；packed tgz 消费者；main 正式五门禁 exit 0；两平台局部学习权威读回 | E07 字体样本缺失；离线独立安装缺 pdf-lib tarball；其余能力仍分项验收 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -375,3 +375,8 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 
 - 使用单个重复的 8 MiB 内存块构造超过 4 GiB 的 ReadableStream，fake ArtifactStore 只计数、不持有或落盘全量内容。实际 `media-resume.test.ts` 断言写入到 4 GiB 为止，下一块触发 BUDGET、writer abort、job paused，且没有发布 manifest。此证据证明 SDK 下载路径逐块处理与预算拒绝；**不证明**真实 4 GiB 本地磁盘写入的峰值内存和吞吐量。
 - Node v24.11.1 主仓库最终门禁：`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 231/231、CLI 49/49）、`pnpm build`、`pnpm test:e2e`（7/7）、boundaries、source-lock、`git diff --check` 全部 exit 0。没有重新运行真实平台写入；前节已记录的局部服务端读回仍为本轮唯一写入验收。
+
+### 2026-09-23 · T18/T21 多资源任务暂停与不确定保存补验
+
+- 对智慧树 share/hike 的多资源 study job，`needs-input` 现在立即暂停整个任务，不会把弹题未解的资源记入 items 后继续下一视频。share save 已收到 ACK 但后续权威进度读回失败时保留 pending operation，job 为 uncertain，`actions.reconcile` 只读确认后才可恢复；不重发保存。
+- 测试先行：多资源弹题 fixture 原结果错误为 `running`；ACK 后读回丢失 fixture 原结果无 pending，均先失败后修复。Node v24.11.1 main 最终运行 `pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 233/233、CLI 49/49）、`pnpm build`、`pnpm test:e2e`（7/7）、boundaries、source-lock、`git diff --check` 全部 exit 0。没有新增真实课程写入。T18 的 20 秒硬工作片及全 job kind 崩溃矩阵仍未完成，不能据此将 T18/T31 标 done。
