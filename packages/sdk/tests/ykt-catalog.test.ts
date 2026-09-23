@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLearningClient } from '../src/index.js';
 import { keyOfCourse } from '../src/types/refs.js';
+import { parseKgChapterPayload } from '../src/providers/ykt/catalog.js';
 import { MemoryStateStore } from './helpers/memory.js';
 import { FakeClock, replay } from './helpers/replay.js';
 import type { Runtime } from '../src/runtime/types.js';
@@ -44,6 +45,16 @@ function yktCourseRef(classroomId: string) {
 }
 
 describe('ykt catalog (T06)', () => {
+  it('keeps a KG folder with id zero but never accepts a zero-id leaf', () => {
+    const payload = { success: true, data: { course_chapter: { id: 1, name: '根', leaf_list: [], children: [
+      { id: 0, name: '目录', leaf_list: [{ id: 12, name: '视频', leaf_type: 0, order: 1 }], children: [] },
+    ] } } };
+    expect(parseKgChapterPayload(payload).chapters[0]?.leaves[0]?.leafId).toBe('12');
+    const invalid = structuredClone(payload);
+    invalid.data.course_chapter.children[0]!.leaf_list[0]!.id = 0;
+    expect(() => parseKgChapterPayload(invalid)).toThrow(/leaf.*id/i);
+  });
+
   it('nested standard outline keeps root exam, deep resources, and drops empty folders (A062)', async () => {
     const outline = await replay('ykt/nested-outline', async ({ transport }) => {
       const client = createLearningClient({ scope, runtime: createRuntime(transport) });

@@ -67,7 +67,7 @@ export const HasKgWire = z.object({
 });
 
 export const RawNode = z.object({
-  id: z.number().int().positive().optional(),
+  id: z.number().int().nonnegative().optional(),
   leafinfo_id: z.number().int().optional(),
   name: z.string().optional(),
   leaf_type: z.number().int().nullable().optional(),

@@ -89,7 +89,7 @@ interface FlatLeaf {
 }
 
 function toLeaf(raw: RawNode, sectionPath: string[]): FlatLeaf {
-  if (raw.id === undefined) {
+  if (raw.id === undefined || raw.id === 0) {
     throw new LearningError({
       code: 'PROTOCOL',
       message: 'course tree leaf is missing its id; refusing to coerce 0',
