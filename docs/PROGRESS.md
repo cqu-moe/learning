@@ -16,7 +16,7 @@
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
 | T10 | 智慧树编码与登录 | done | vitest tests/zhs-auth-crypto.test.ts → 7/7; 全套 97/97, typecheck/lint/build/boundaries exit 0 | 参考仓库 HOME 向量多一个 = 属笔误，已修正记录 |
 | T11 | 智慧树两类课程树和权威进度 | done | vitest tests/zhs-catalog.test.ts → 5/5; 全套 102/102, typecheck/lint/build/boundaries exit 0 | zhs progress 读取端点形状未取证，能力未实现未伪造 |
-| T12 | 富文本、Markdown与格式导出 | not-started | 未运行 | — |
+| T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | not-started | 未运行 | — |
 | T14 | 操作预览、幂等与不确定写入 | not-started | 未运行 | — |
 | T15 | 雨课堂作业与内嵌题写入 | not-started | 未运行 | — |
@@ -153,6 +153,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest zhs-catalog → 5 passed；全套 102/102；typecheck/lint/build/boundaries → 0。secretStr 由测试用 node:crypto 独立生成（双实现交叉验证）。
 - 未运行项：share 权威进度读取端点（Z04 进度接口形状未在已读段落，catalog.progress 对 zhs 仍 UNSUPPORTED，记证据缺口不伪造）；hike save/view 属 T21。
 - 下一个当前任务：T12。
+
+### 2026-09-23 · T12 富文本、Markdown与格式导出（done）
+
+- 实际改动：src/content/{html.ts,markdown.ts}、tests/content.test.ts、package.json（parse5 8.0.1、yaml 2.9.1 save-exact）。
+- 实现：parse5 DOM 遍历清理（script/style/iframe 剔除、javascript: 链接去 href 留文本、事件属性不输出、textfonts 加密 span 标记 partial 不进明文）；sub/sup 相邻同类合并为单合法 LaTeX 记号（基元捕获 + _{}/^{} + $…$ 包裹，边界空格保留）；图片转 ![alt]；块级换行；normalizeAnswerValue 保持 -1.0/1.0/10/2e3/单位 等差异（A122）；renderAssessmentMarkdown 固定题目次序、我的作答与官方答案分列。
+- 验收：A121（script/onerror/javascript 链接不执行、无双下标、不吞边界空格）；A122（数字/单位差异在 plainText 保留）。
+- 命令（Node v24.11.1）：pnpm install（parse5/yaml 冻结）→ 0；vitest content → 7 passed；全套 109/109；typecheck/lint/build/boundaries → 0。
+- 未运行项：JSON/YAML 导出编排进 T13/T23 的服务层；MathJax SVG 剥离同源码策略。
+- 下一个当前任务：T13。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

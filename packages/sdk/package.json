@@ -31,7 +31,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "parse5": "8.0.1",
     "tough-cookie": "6.0.2",
+    "yaml": "2.9.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
