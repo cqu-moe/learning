@@ -1,0 +1,25 @@
+{
+  "id": "ykt/exercise-read",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/download/api.py",
+    "symbol": "fetch_exercise"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/mooc-api/v1/lms/learn/leaf_info/28930736/505/", "query": { "classroom_id": "28930736" }, "headers": { "xtbz": "ykt" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "leaf_type": 6, "content_info": { "leaf_type_id": 888001 } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/mooc-api/v1/lms/exercise/get_exercise_list/888001/", "query": { "classroom_id": "28930736" }, "headers": { "xtbz": "ykt" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "exercise_id": 888001, "font": "https://www.yuketang.cn/fonts/fixture.woff", "problems": [
+        { "problem_id": 11, "content": { "ProblemType": 1, "Body": "<p><span class=\"textfonts\">&#x1234;</span> 选对的</p>", "Options": [{ "key": "A", "value": "<p>甲</p>" }] } }
+      ] } } }
+    }
+  ],
+  "entry": { "service": "assessments", "method": "get", "input": { "leafId": "505" } },
+  "expected": null
+}

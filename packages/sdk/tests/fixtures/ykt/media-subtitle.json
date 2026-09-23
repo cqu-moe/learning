@@ -1,0 +1,31 @@
+{
+  "id": "ykt/media-subtitle",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/download/api.py",
+    "symbol": "fetch_playurl/fetch_subtitle"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/mooc-api/v1/lms/learn/leaf_info/28930736/502/", "query": { "classroom_id": "28930736" }, "headers": { "xtbz": "ykt" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "leaf_type": 0, "content_info": { "media": { "ccid": "CC1" } } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/api/open/audiovideo/playurl", "query": { "video_id": "CC1", "provider": "cc", "file_type": "1", "is_single": "0", "domain": "www.yuketang.cn" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "playurl": { "sources": { "quality20": ["https://www.yuketang.cn/hd.m3u8"], "quality10": ["https://www.yuketang.cn/sd.m3u8"] } } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/api/open/yunpan/video/subtitle/list", "query": { "cc_id": "CC1" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": [{ "language": "zh-CN", "url": "https://www.yuketang.cn/fixture/sub.srt" }] } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/fixture/sub.srt" },
+      "response": { "status": 200, "headers": {}, "body": "1\n00:00:00,000 --> 00:00:02,000\n第一句\n" }
+    }
+  ],
+  "entry": { "service": "resources", "method": "media/transcript", "input": { "leafId": "502" } },
+  "expected": null
+}

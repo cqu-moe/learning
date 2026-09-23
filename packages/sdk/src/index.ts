@@ -16,6 +16,9 @@ import type { LegacyCookie } from './auth/legacy.js';
 import { readSession, revokeSession } from './session/store.js';
 import { yktCourses, yktOutline, yktResolveCourse } from './providers/ykt/catalog.js';
 import { yktProbeProvider, yktQrLaunch } from './providers/ykt/auth.js';
+import { yktLessons, yktMedia, yktSlides, yktTranscript } from './providers/ykt/resources.js';
+import { yktAssessmentGet, yktAssessmentsResolve } from './providers/ykt/assessments.js';
+import { yktExamRead } from './providers/ykt/exam-read.js';
 import { probeSession } from './auth/flow.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
@@ -57,7 +60,7 @@ const CAPABILITY_IDS = [
 ] as const;
 
 const IMPLEMENTED: Record<Platform, Set<string>> = {
-  ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse']),
+  ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse', 'resources.media', 'resources.transcript', 'resources.lessons', 'resources.slides', 'assessments.resolve', 'assessments.get']),
   xuetang: new Set(['auth.importLegacy']),
   zhs: new Set(['auth.importLegacy']),
 };
@@ -142,15 +145,36 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       progress: (resource) => asyncUnsupported(platform, `catalog.progress(${resource.key})`),
     },
     resources: {
-      media: (resource) => asyncUnsupported(platform, `resources.media(${resource.key})`),
-      transcript: (resource) => asyncUnsupported(platform, `resources.transcript(${resource.key})`),
-      lessons: () => asyncUnsupported(platform, 'resources.lessons'),
-      slides: (lesson) => asyncUnsupported(platform, `resources.slides(${lesson.lessonId})`),
+      media: async (resource) => {
+        if (platform === 'ykt') return yktMedia(await httpBound(), resource);
+        return asyncUnsupported(platform, `resources.media(${resource.key})`);
+      },
+      transcript: async (resource) => {
+        if (platform === 'ykt') return yktTranscript(await httpBound(), resource);
+        return asyncUnsupported(platform, `resources.transcript(${resource.key})`);
+      },
+      lessons: async (course) => {
+        if (platform === 'ykt') return yktLessons(await httpBound(), course);
+        return asyncUnsupported(platform, 'resources.lessons');
+      },
+      slides: async (lesson) => {
+        if (platform === 'ykt') return yktSlides(await httpBound(), lesson);
+        return asyncUnsupported(platform, `resources.slides(${lesson.lessonId})`);
+      },
       resolveLesson: (url) => asyncUnsupported(platform, `resources.resolveLesson(${url})`),
     },
     assessments: {
-      resolve: (resource) => asyncUnsupported(platform, `assessments.resolve(${resource.key})`),
-      get: (ref) => asyncUnsupported(platform, `assessments.get(${ref.assessmentId})`),
+      resolve: async (resource) => {
+        if (platform === 'ykt') return yktAssessmentsResolve(await httpBound(), resource);
+        return asyncUnsupported(platform, `assessments.resolve(${resource.key})`);
+      },
+      get: async (ref) => {
+        if (platform === 'ykt') {
+          if (ref.kind === 'exam') return yktExamRead(await httpBound(), ref);
+          return yktAssessmentGet(await httpBound(), ref);
+        }
+        return asyncUnsupported(platform, `assessments.get(${ref.assessmentId})`);
+      },
       draft: (ref) => asyncUnsupported(platform, `assessments.draft(${ref.assessmentId})`),
       importDraft: (_text, format) => asyncUnsupported(platform, `assessments.importDraft(${format})`),
       importFeedback: (_text, ref) => asyncUnsupported(platform, `assessments.importFeedback(${ref.assessmentId})`),

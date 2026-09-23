@@ -163,6 +163,14 @@ export class SessionHttp {
         continue;
       }
       if (response.status === 429) throw rateLimitedError(retryAfterMs);
+      if (response.status >= 500) {
+        throw new LearningError({
+          code: 'PROTOCOL',
+          message: `server error ${response.status} after ${TOTAL_READ_ATTEMPTS} attempts`,
+          retryAfterMs: null,
+          operationId: null,
+        });
+      }
       return this.result(response, url);
     }
   }

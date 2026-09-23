@@ -1,0 +1,49 @@
+{
+  "id": "ykt/history-slides",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/slide/api.py",
+    "symbol": "fetch_lessons/fetch_presentations"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/v2/api/web/logs/learn/28930736", "query": { "actype": "14", "page": "0", "offset": "500", "sort": "-1" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "activities": [
+        { "type": 14, "courseware_id": 9001, "title": "第二课", "create_time": 200, "is_finished": true },
+        { "type": 14, "courseware_id": 9000, "title": "第一课", "create_time": 100, "is_finished": true },
+        { "type": 3, "courseware_id": 777, "title": "非课件", "create_time": 50, "is_finished": true }
+      ] } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/api/v3/classroom-report/student/review", "query": { "lesson_id": "9000" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "timelineList": [
+        { "presentationId": "P2" }, { "presentationId": "P1" }, { "presentationId": "P2" }
+      ] } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/api/v3/lesson-summary/student/presentation", "query": { "lesson_id": "9000", "presentation_id": "P2" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "presentation": { "title": "课件二" } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/api/v3/classroom-report/student/ppt", "query": { "lesson_id": "9000", "presentationId": "P2" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "slideList": [
+        { "index": 2, "cover": "https://www.yuketang.cn/s3/p2.png" },
+        { "index": 0, "cover": "https://www.yuketang.cn/s0.png" },
+        { "index": 1, "cover": "https://www.yuketang.cn/s1.png" }
+      ] } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/api/v3/lesson-summary/student/presentation", "query": { "lesson_id": "9000", "presentation_id": "P1" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "presentation": { "title": "课件一" } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/api/v3/classroom-report/student/ppt", "query": { "lesson_id": "9000", "presentationId": "P1" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "slideList": [] } } }
+    }
+  ],
+  "entry": { "service": "resources", "method": "slides", "input": { "classroomId": "28930736" } },
+  "expected": null
+}

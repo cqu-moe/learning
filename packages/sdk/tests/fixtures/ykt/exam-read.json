@@ -1,0 +1,49 @@
+{
+  "id": "ykt/exam-read",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/download/exam.py",
+    "symbol": "ExamSession.fetch_paper_and_results"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/mooc-api/v1/lms/learn/leaf_info/28930736/510/", "query": { "classroom_id": "28930736" }, "headers": { "xtbz": "ykt" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "leaf_type": 5, "content_info": { "leaf_type_id": 777001 } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.yuketang.cn", "path": "/v/exam/cover", "query": { "exam_id": "777001", "classroom_id": "28930736" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "show_perm": 1, "result": { "status": 2 } } } }
+    },
+    {
+      "request": { "method": "POST", "host": "www.yuketang.cn", "path": "/v/exam/gen_token", "body": { "exam_id": "777001", "classroom_id": "28930736" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "token": "crypt-fixture", "exam_host": "https://examination.xuetangx.com", "user_id": 424242 } } }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/login", "query": { "exam_id": "777001", "user_id": "424242", "crypt": "crypt-fixture", "next": "https://examination.xuetangx.com/result/777001?isFrom=2", "language": "zh" } },
+      "response": { "status": 302, "headers": { "location": "https://examination.xuetangx.com/result/777001?isFrom=2", "set-cookie": ["x_access_token=exam-session-fixture; Path=/"] } }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/result/777001", "query": { "isFrom": "2" } },
+      "response": { "status": 200, "headers": {}, "body": {} }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/exam_room/show_paper", "query": { "exam_id": "777001" }, "headers": { "xtbz": "cloud", "x-client": "web" } },
+      "response": { "status": 200, "headers": {}, "body": { "errcode": 0, "data": { "problems": [
+        { "problem_id": 1, "Problem": { "ProblemType": 1, "Body": "<p>第一题</p>", "Options": [{ "Key": "A", "Value": "<p>甲</p>" }, { "Key": "B", "Value": "<p>乙</p>" }] }, "Score": 5 },
+        { "problem_id": 2, "Problem": { "ProblemType": 6, "Body": "<p>第二题</p>", "Options": [] }, "Score": 5 }
+      ] } } }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/exam_room/problem_results", "query": { "exam_id": "777001" }, "headers": { "xtbz": "cloud", "x-client": "web" } },
+      "response": { "status": 200, "headers": {}, "body": { "errcode": 0, "data": { "results": [
+        { "problem_id": 2, "grade": 5, "Answer": null },
+        { "problem_id": 1, "grade": 0, "Answer": "A" }
+      ], "correct": { "1": "B" } } } }
+    }
+  ],
+  "entry": { "service": "assessments", "method": "get", "input": { "leafId": "510" } },
+  "expected": null
+}

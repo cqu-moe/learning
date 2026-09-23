@@ -11,7 +11,7 @@
 | T04 | HTTP、Cookie、重定向与协议fixture工具 | done | vitest tests/http.test.ts → 14/14; 全套 53/53, typecheck/build/lint/boundaries exit 0 | — |
 | T05 | 统一登录生命周期、WS和SDK工厂 | done | vitest tests/auth-flow.test.ts → 14/14; 全套 67/67, typecheck/lint/build/boundaries exit 0 | — |
 | T06 | 雨课堂登录、课程与两类大纲 | done | vitest tests/ykt-catalog.test.ts → 7/7; 全套 74/74, typecheck/lint/build/boundaries exit 0 | E04 身份字段仅 fixture；真实登录未执行 |
-| T07 | 雨课堂资源、课件及考试只读 | not-started | 未运行 | — |
+| T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
 | T08 | 学堂WS登录、课程与大纲 | not-started | 未运行 | — |
 | T09 | 学堂资源、作业和考试结果读取 | not-started | 未运行 | — |
 | T10 | 智慧树编码与登录 | not-started | 未运行 | — |
@@ -107,6 +107,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 实际命令（Node v24.11.1）：vitest run tests/ykt-catalog.test.ts → 7 passed；全套 74/74；typecheck/lint/build → exit 0；check-boundaries → exit 0。T05 的两个 UNSUPPORTED 断言按计划改用 xuetang 平台（ykt 已实现属预期演进）。
 - 未运行项：真实平台登录/课程读取（无授权）；userinfo data.id/name 字段形状来自源码+合成 fixture，E04 身份字段待真机核对。
 - 下一个当前任务：T07。
+
+### 2026-09-23 · T07 雨课堂资源、课件及考试只读（done）
+
+- 实际改动：src/providers/ykt/{resources.ts,assessments.ts,exam-read.ts}、src/index.ts 接线、src/http/client.ts（读重试耗尽后 5xx 显式 PROTOCOL 而非透传空 body）、tests/ykt-resources.test.ts、fixtures ykt/{history-slides,media,transcript,exam-read,exercise-read}.json。
+- 测试先行确认失败后实现，6/6；全套 80/80。
+- 实现：lessons（logs/learn type==14 倒序翻正、满 500 窗口→completeness unknown，E03）；slides 纯 HTTP 链 review→summary/ppt（presentationId 首见顺序、slideList 按 index 排序、无 checkin 无 renderer）；media leaf_info→ccid→playurl quality20/10；transcript 三形态 list 归一+srt 解析（列表失败=错误不冒充 absent）；homework exercise 读（font 字段→decodeState partial，不伪造明文）；exam 独立子系统 P-E01 全链（cover 状态、gen_token、SSO login、cloud 头 show_paper/problem_results、problem_id join、per-profile 串行链）。
+- 验收：A071（乱序 results 对齐、字幕失败不等于 absent）；A072（history slides 零 checkin/零 renderer、index 排序稳定、缺 font 不伪明文）。
+- 命令（Node v24.11.1）：vitest ykt-resources → 6 passed；全套 80/80；typecheck/lint/build → 0。
+- 未运行项：真实考试 SSO/字幕 CDN（allowlist 限制记录于 E01）；font 实际解码在 T24。
+- 下一个当前任务：T08。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
