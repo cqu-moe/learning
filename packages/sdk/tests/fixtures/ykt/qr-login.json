@@ -1,0 +1,66 @@
+{
+  "id": "ykt/qr-login",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/core/auth.py",
+    "symbol": "api_qr_login"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/api/v3/user/login/app-web-pre-info"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "code": 0, "data": { "qrContent": "https://open.weixin.qq.com/connect/confirm?uuid=fixture", "token": "fixture.jwt.token" } }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "host": "www.yuketang.cn",
+        "path": "/api/v3/user/login/app-web-login",
+        "body": { "token": "fixture.jwt.token" }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "code": 0, "data": { "UserID": 424242, "Auth": "auth-secret-fixture" } }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "host": "www.yuketang.cn",
+        "path": "/pc/web_login",
+        "headers": { "content-type": "application/x-www-form-urlencoded" },
+        "body": "UserID=424242&Auth=auth-secret-fixture"
+      },
+      "response": {
+        "status": 200,
+        "headers": { "set-cookie": ["sessionid=sess-fixture; Path=/; Domain=yuketang.cn", "csrftoken=csrf-fixture; Path=/; Domain=yuketang.cn"] },
+        "body": {}
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/v2/api/web/userinfo"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "errcode": 0, "data": { "id": 424242, "name": "Fixture User" } }
+      }
+    }
+  ],
+  "entry": { "service": "auth", "method": "begin", "input": { "method": "qr" } },
+  "expected": null
+}

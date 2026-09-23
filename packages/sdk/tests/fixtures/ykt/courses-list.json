@@ -1,0 +1,36 @@
+{
+  "id": "ykt/courses-list",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/core/api.py",
+    "symbol": "fetch_courses"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/v2/api/web/courses/list",
+        "query": { "identity": "2" }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "errcode": 0,
+          "data": {
+            "list": [
+              { "classroom_id": 28930736, "term": 20251, "course": { "university_id": 7, "name": "学术写作", "teachers": [{ "name": "王老师" }] } },
+              { "classroom_id": 28927419, "term": 20251, "course": { "university_id": 7, "name": "jsh" } }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "courses", "input": {} },
+  "expected": null
+}

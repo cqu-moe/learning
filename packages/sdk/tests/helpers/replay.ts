@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { Json } from '../../src/types/errors.js';
 import type { Clock, Transport } from '../../src/runtime/types.js';
 
-const testsDir = resolve(fileURLToPath(new URL('.', import.meta.url)));
+const testsDir = resolve(fileURLToPath(new URL('../', import.meta.url)));
 
 export interface ScriptedResponse {
   status: number;

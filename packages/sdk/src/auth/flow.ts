@@ -22,7 +22,7 @@ export interface AuthLaunchContext {
   signal: AbortSignal;
   deadlineAtMs: number;
   emit(event: AuthEvent): void;
-  finish(session: Omit<SessionRecord, 'scope'>): Promise<void>;
+  finish(session: Omit<SessionRecord, 'scope' | 'generation'>): Promise<void>;
   fail(error: ErrorData): void;
 }
 

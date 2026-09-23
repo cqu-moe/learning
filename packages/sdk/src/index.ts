@@ -14,6 +14,9 @@ import { AuthLifecycle } from './auth/flow.js';
 import { importLegacyCookies } from './auth/legacy.js';
 import type { LegacyCookie } from './auth/legacy.js';
 import { readSession, revokeSession } from './session/store.js';
+import { yktCourses, yktOutline, yktResolveCourse } from './providers/ykt/catalog.js';
+import { yktProbeProvider, yktQrLaunch } from './providers/ykt/auth.js';
+import { probeSession } from './auth/flow.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
   ykt: ['yuketang.cn', 'xuetangx.com'],
@@ -53,32 +56,65 @@ const CAPABILITY_IDS = [
   'jobs.createExport',
 ] as const;
 
+const IMPLEMENTED: Record<Platform, Set<string>> = {
+  ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse']),
+  xuetang: new Set(['auth.importLegacy']),
+  zhs: new Set(['auth.importLegacy']),
+};
+
 function capabilitiesFor(platform: Platform): Capability[] {
+  const implemented = IMPLEMENTED[platform];
   return CAPABILITY_IDS.map((id) => ({
     id: `${platform}.${id}`,
     system: null,
-    state: 'unimplemented' as const,
-    reason: 'provider implementation lands in T06+',
+    state: implemented.has(id) ? ('unverified' as const) : ('unimplemented' as const),
+    reason: implemented.has(id) ? 'fixture-tested; no live platform verification yet' : 'provider implementation lands in a later task',
   }));
 }
 
 export function createLearningClient(input: { scope: Scope; runtime: Runtime }): LearningClient {
   const { scope, runtime } = input;
-  const jar = new SessionCookieJar();
-  createSessionHttp({
-    transport: runtime.transport,
-    clock: runtime.clock,
-    jar,
-    allowHosts: PLATFORM_HOSTS[scope.platform],
-  });
+  const sessionBox = { jar: new SessionCookieJar(), hydrated: false };
+  const lifecycle = new AuthLifecycle({ scope, clock: runtime.clock, state: runtime.state, masterKey: runtime.masterKey });
+  const httpBound = async () => {
+    if (!sessionBox.hydrated) {
+      const record = await readSession(runtime.state, runtime.masterKey, scope);
+      if (record !== null) {
+        sessionBox.jar = await SessionCookieJar.deserialize(record.cookieJar);
+      }
+      sessionBox.hydrated = true;
+    }
+    return createSessionHttp({
+      transport: runtime.transport,
+      clock: runtime.clock,
+      jar: sessionBox.jar,
+      allowHosts: PLATFORM_HOSTS[scope.platform],
+    });
+  };
   new AuthLifecycle({ scope, clock: runtime.clock, state: runtime.state, masterKey: runtime.masterKey });
   const platform = scope.platform;
   return {
     scope,
     capabilities: () => capabilitiesFor(platform),
     auth: {
-      begin: () => asyncUnsupported<AuthFlow>(platform, 'auth.begin'),
-      probe: () => asyncUnsupported(platform, 'auth.probe'),
+      begin: async (loginInput): Promise<AuthFlow> => {
+        if (platform === 'ykt' && loginInput.method === 'qr') {
+          const http = await httpBound();
+          return lifecycle.begin(yktQrLaunch({ http, jar: sessionBox.jar, clock: runtime.clock }));
+        }
+        throw unsupported(platform, `auth.begin(${loginInput.method})`);
+      },
+      probe: async () => {
+        if (platform === 'ykt') {
+          return probeSession({
+            scope,
+            state: runtime.state,
+            masterKey: runtime.masterKey,
+            provider: yktProbeProvider({ http: await httpBound(), clock: runtime.clock }),
+          });
+        }
+        return asyncUnsupported(platform, 'auth.probe');
+      },
       importLegacy: async (legacyInput) => {
         if (legacyInput.format === 'cookie-array') {
           return importLegacyCookies(runtime, scope, JSON.parse(legacyInput.text) as LegacyCookie[]);
@@ -91,9 +127,18 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       },
     },
     catalog: {
-      resolveCourse: (url) => asyncUnsupported(platform, `catalog.resolveCourse(${url})`),
-      courses: () => asyncUnsupported<Page<Course>>(platform, 'catalog.courses'),
-      outline: (course) => asyncUnsupported(platform, `catalog.outline(${course.key})`),
+      resolveCourse: async (url) => {
+        if (platform === 'ykt') return yktResolveCourse(scope, url);
+        return asyncUnsupported(platform, `catalog.resolveCourse(${url})`);
+      },
+      courses: async (): Promise<Page<Course>> => {
+        if (platform === 'ykt') return yktCourses(await httpBound(), scope);
+        return asyncUnsupported(platform, 'catalog.courses');
+      },
+      outline: async (course) => {
+        if (platform === 'ykt') return yktOutline(await httpBound(), scope, course);
+        return asyncUnsupported(platform, `catalog.outline(${course.key})`);
+      },
       progress: (resource) => asyncUnsupported(platform, `catalog.progress(${resource.key})`),
     },
     resources: {

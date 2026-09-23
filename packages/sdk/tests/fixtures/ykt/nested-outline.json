@@ -1,0 +1,83 @@
+{
+  "id": "ykt/nested-outline",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/download/api.py",
+    "symbol": "fetch_chapter/_flatten_leaves"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/v2/api/web/classrooms/28930736",
+        "query": { "role": "5" }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "data": { "course_sign": "SIGN1", "free_sku_id": 901, "course_name": "学术写作", "uv_id": 7 } }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/c27/online_courseware/course/classroom/28930736/has_kg/",
+        "query": { "is_student": "1", "uv_id": "7", "classroom_id": "28930736" },
+        "headers": {
+          "xtbz": "ykt",
+          "university-id": "7",
+          "uv-id": "7",
+          "classroom-id": "28930736",
+          "xt-agent": "web"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "data": { "has": false } }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/mooc-api/v1/lms/learn/course/chapter",
+        "query": { "cid": "28930736", "sign": "SIGN1" },
+        "headers": { "xtbz": "ykt" }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "success": true,
+          "data": {
+            "course_chapter": [
+              {
+                "id": 11,
+                "name": "第1章",
+                "section_leaf_list": [
+                  { "id": 501, "leafinfo_id": 601, "name": "根级考试", "leaf_type": 5, "chapter_id": 11, "order": 1 },
+                  { "name": "1.1 小节", "leaf_type": null, "leaf_list": [
+                    { "id": 502, "leafinfo_id": 602, "name": "小节视频", "leaf_type": 0, "chapter_id": 11, "order": 1 },
+                    { "name": "1.1.1 子小节", "leaf_type": null, "leaf_list": [
+                      { "id": 503, "leafinfo_id": 603, "name": "嵌套视频", "leaf_type": 0, "chapter_id": 11, "order": 1 }
+                    ] }
+                  ] },
+                  { "name": "空小节", "leaf_type": null, "leaf_list": [] },
+                  { "id": 504, "leafinfo_id": 604, "name": "图文讲义", "leaf_type": 3, "chapter_id": 11, "order": 2 }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "outline", "input": { "classroomId": "28930736" } },
+  "expected": null
+}

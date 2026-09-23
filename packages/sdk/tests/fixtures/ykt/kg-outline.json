@@ -1,0 +1,92 @@
+{
+  "id": "ykt/kg-outline",
+  "platform": "ykt",
+  "source": {
+    "repo": "cqu-moe/ykt-cli",
+    "ref": "48a92c24498980d01aa045cf734ba3095d5f5bd1",
+    "path": "src/core/kg.py",
+    "symbol": "fetch_kg_chapter/_flatten_kg_node"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/v2/api/web/classrooms/28927419",
+        "query": { "role": "5" }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "data": { "course_sign": "KSIGN", "free_sku_id": 902, "course_name": "jsh", "uv_id": 7 } }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/c27/online_courseware/course/classroom/28927419/has_kg/",
+        "query": { "is_student": "1", "uv_id": "7", "classroom_id": "28927419" },
+        "headers": {
+          "xtbz": "ykt",
+          "university-id": "7",
+          "uv-id": "7",
+          "classroom-id": "28927419",
+          "xt-agent": "web"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": { "data": { "has": true, "kg_id": 33 } }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "host": "www.yuketang.cn",
+        "path": "/mooc-api/v1/lms/kg/student_learn_chapter/",
+        "query": { "cid": "28927419", "term": "latest", "uv_id": "7", "classroom_id": "28927419" },
+        "headers": { "xtbz": "ykt" }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "success": true,
+          "data": {
+            "course_chapter": {
+              "id": 1,
+              "name": "课程根节点",
+              "leaf_list": [
+                { "id": 701, "leafinfo_id": 801, "name": "期末考试", "leaf_type": 5, "chapter_id": 1, "order": 1 }
+              ],
+              "children": [
+                {
+                  "id": 2,
+                  "name": "第一章",
+                  "leaf_list": [
+                    { "id": 702, "leafinfo_id": 802, "name": "KG 直挂视频", "leaf_type": 0, "chapter_id": 2, "order": 1 }
+                  ],
+                  "children": [
+                    {
+                      "id": 3,
+                      "name": "1.1 节点",
+                      "leaf_list": [
+                        { "id": 703, "leafinfo_id": 803, "name": "KG 深层视频", "leaf_type": 0, "chapter_id": 2, "order": 2 }
+                      ],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "outline", "input": { "classroomId": "28927419" } },
+  "expected": null
+}

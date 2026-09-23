@@ -10,7 +10,7 @@
 | T03 | 本地StateStore和加密会话记录 | done | vitest tests/store.test.ts → 19/19, typecheck/build/lint/boundaries exit 0 | E08 Node24 本机实测已由本任务覆盖 SQLite/crypto 部分 |
 | T04 | HTTP、Cookie、重定向与协议fixture工具 | done | vitest tests/http.test.ts → 14/14; 全套 53/53, typecheck/build/lint/boundaries exit 0 | — |
 | T05 | 统一登录生命周期、WS和SDK工厂 | done | vitest tests/auth-flow.test.ts → 14/14; 全套 67/67, typecheck/lint/build/boundaries exit 0 | — |
-| T06 | 雨课堂登录、课程与两类大纲 | not-started | 未运行 | — |
+| T06 | 雨课堂登录、课程与两类大纲 | done | vitest tests/ykt-catalog.test.ts → 7/7; 全套 74/74, typecheck/lint/build/boundaries exit 0 | E04 身份字段仅 fixture；真实登录未执行 |
 | T07 | 雨课堂资源、课件及考试只读 | not-started | 未运行 | — |
 | T08 | 学堂WS登录、课程与大纲 | not-started | 未运行 | — |
 | T09 | 学堂资源、作业和考试结果读取 | not-started | 未运行 | — |
@@ -97,6 +97,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 实际命令（Node v24.11.1）：vitest run tests/auth-flow.test.ts → 14 passed；全套 67/67；根 typecheck/lint/build → exit 0；check-boundaries → exit 0。
 - 未运行项：真实平台 WS/HTTP 未连接；ykt/xuetang/zhs provider 方法按计划在 T06+。
 - 下一个当前任务：T06。
+
+### 2026-09-23 · T06 雨课堂登录、课程与两类大纲（done）
+
+- 实际改动：src/providers/ykt/{schemas.ts,auth.ts,catalog.ts}、src/index.ts（ykt auth/catalog 接线、能力表、jar 惰性水合）、tests/ykt-catalog.test.ts、tests/fixtures/ykt/{nested-outline,kg-outline,courses-list,qr-login}.json。
+- 测试先行：先运行 vitest tests/ykt-catalog.test.ts 按预期失败（provider 缺失，exit 1）；实现后 7/7。
+- 实现：纯 API 扫码登录三步链（pre-info→app-web-login 长轮询（TIMEOUT=等待、404=换码）→/pc/web_login form 编码→userinfo 校验），AuthLaunch 挂入 T05 lifecycle；课程列表 errcode 信封→Course DTO（classroomId 稳定 key）；classroom 上下文（course_sign/free_sku_id/uv_id）独立获取；has_kg 带全套决定头（xtbz+university-id+uv-id+classroom-id+xt-agent），success=false 抛 PROTOCOL 与 has:false 分开；standard 异构 section_leaf_list 递归展开（folder 进 children、直挂 leaf 进 resources、空 folder 不成伪资源、缺 id 拒绝）；KG children/leaf_list 双递归、根级 leaf 保留为前置章；leaf_type 0/3/5/6→video/document/exam/homework；小节路径进 path。
+- 验收对照：A061（fixture 逐头校验 xtbz/university-id 等，缺一即 mismatch 失败；kg false 与请求失败分开——parseHasKg 断言）；A062（根考试+深层资源同时保留、空 folder 不成资源、缺 leafId 抛错不 0 兜底）。
+- 实际命令（Node v24.11.1）：vitest run tests/ykt-catalog.test.ts → 7 passed；全套 74/74；typecheck/lint/build → exit 0；check-boundaries → exit 0。T05 的两个 UNSUPPORTED 断言按计划改用 xuetang 平台（ykt 已实现属预期演进）。
+- 未运行项：真实平台登录/课程读取（无授权）；userinfo data.id/name 字段形状来自源码+合成 fixture，E04 身份字段待真机核对。
+- 下一个当前任务：T07。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
