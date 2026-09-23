@@ -20,7 +20,7 @@
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
 | T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
 | T15 | 雨课堂作业与内嵌题写入 | done | vitest tests/ykt-write.test.ts → 4/4; 全套 125/125, typecheck/lint/build exit 0 | — |
-| T16 | 学堂作业与讨论发布 | not-started | 未运行 | — |
+| T16 | 学堂作业与讨论发布 | done | vitest tests/xuetang-write.test.ts → 4/4; 全套 129/129, typecheck/lint/build exit 0 | — |
 | T17 | 学堂考试的三个独立动作 | not-started | 未运行 | — |
 | T18 | 固定任务模型、暂停恢复与事件 | not-started | 未运行 | — |
 | T19 | 雨课堂学习任务 | not-started | 未运行 | — |
@@ -187,6 +187,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 验收：A151（headers/body 逐字断言）；A152（unset 拒绝、无标准答案不选第一项、失败只一次——kind:'write' 不重试）。
 - 命令（Node v24.11.1）：vitest ykt-write → 4 passed；全套 125/125；typecheck/lint/build → 0。
 - 下一个当前任务：T16。
+
+### 2026-09-23 · T16 学堂作业与讨论发布（done）
+
+- 实际改动：src/providers/xuetang/homework-write.ts、tests/xuetang-write.test.ts。
+- 实现：problem_apply 七字段 body（leaf_id/classroom_id/exercise_id/problem_id/sign/answers/answer）；Type 字符串映射（单多选/判断→list、填空→answers map、主观→{time,content,oSubject} 对象，不强制全数组）；unit/discussion 顶层 thread 对象（无 id→PROTOCOL 不造空 thread）；comment/list 分页与 comment POST query/body 分清；写失败 UNCERTAIN 只一次。上层经 ActionStore preview 接入。
+- 验收：A161（主观对象与填空 map 精确 fixture、unset 零写入）；A162（HTTP200 success=false 失败、未知 schema 不成空 thread）。
+- 命令（Node v24.11.1）：vitest xuetang-write → 4 passed；全套 129/129；typecheck/lint/build → 0。
+- 下一个当前任务：T17。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
