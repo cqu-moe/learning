@@ -318,6 +318,36 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(readFileSync(parsed.files[0]!, 'utf8')).toBe('AAABBB');
   });
 
+  it('resumes HLS at the next verified segment after a process stops mid-segment', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+    const ref = { course: { scope, key: 'fixture-course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'fixture-hls-resume', native: { kind: 'ykt', leafId: '502', leafInfoId: null } };
+    expect(await state.commit({ expected: [{ key: 'cli:resource:fixture-hls-resume', revision: null }], changes: [{ key: 'cli:resource:fixture-hls-resume', value: ref }] })).toBe(true);
+    state.close();
+    const fixture = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/media.json'), 'utf8')) as { interactions: unknown[] };
+    const playlist = '#EXTM3U\n#EXTINF:5,\na.ts\n#EXTINF:5,\nb.ts\n#EXT-X-ENDLIST\n';
+    const binary = (path: string, body: Buffer) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path }, response: { status: 200, base64: body.toString('base64') } });
+    const first = resolve(dir, 'hls-first.json');
+    writeFileSync(first, JSON.stringify({ interactions: [...fixture.interactions, binary('/hd.m3u8', Buffer.from(playlist)), binary('/a.ts', Buffer.from('AAA')),
+      { request: { method: 'GET', host: 'www.yuketang.cn', path: '/b.ts' }, response: { status: 200, chunks: [Buffer.from('discard').toString('base64')], failAfterChunks: true } }] }));
+    const interrupted = run(dir, ['download', 'fixture-hls-resume', '--types', 'video', '--profile', 'alpha', '--json'], first);
+    expect(interrupted.code).not.toBe(0);
+    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout) as Array<{ id: string; status: string }>;
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.status).toBe('paused');
+    const second = resolve(dir, 'hls-second.json');
+    writeFileSync(second, JSON.stringify({ interactions: [...fixture.interactions, binary('/hd.m3u8', Buffer.from(playlist)), binary('/b.ts', Buffer.from('BBB'))] }));
+    const resumed = run(dir, ['jobs', 'resume', jobs[0]!.id, '--profile', 'alpha', '--json'], second);
+    expect(resumed.code, resumed.stderr).toBe(0);
+    const parsed = JSON.parse(resumed.stdout) as { job: { status: string }; files: string[] };
+    expect(parsed.job.status).toBe('succeeded');
+    expect(readFileSync(parsed.files[0]!, 'utf8')).toBe('AAABBB');
+  });
+
   it('previews then runs a one-beat Yuketang study job with server confirmation', async () => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);

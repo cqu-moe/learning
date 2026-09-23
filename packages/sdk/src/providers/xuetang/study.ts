@@ -38,12 +38,12 @@ export function buildXtxStudyRow(identity: XtxStudyIdentity, input: { event: 'lo
   };
 }
 
-interface XtxCursor { resourceKey: string; phase: 'start' | 'rate' | 'heart'; cp: number; sq: number; baseline: number; awaiting: boolean; stalls: number }
+interface XtxCursor { resourceKey: string; phase: 'start' | 'rate' | 'heart'; cp: number; sq: number; baseline: number; awaiting: boolean; stalls: number; awaitingSinceMs?: number }
 function parseStudyCursor(raw: string | null): XtxCursor | null {
   if (raw === null) return null;
   try {
     const row = JSON.parse(raw) as Partial<XtxCursor>;
-    if (typeof row.resourceKey !== 'string' || !['start', 'rate', 'heart'].includes(row.phase ?? '') || typeof row.cp !== 'number' || typeof row.sq !== 'number' || typeof row.baseline !== 'number' || typeof row.awaiting !== 'boolean' || typeof row.stalls !== 'number') return null;
+    if (typeof row.resourceKey !== 'string' || !['start', 'rate', 'heart'].includes(row.phase ?? '') || typeof row.cp !== 'number' || typeof row.sq !== 'number' || typeof row.baseline !== 'number' || typeof row.awaiting !== 'boolean' || typeof row.stalls !== 'number' || row.awaitingSinceMs !== undefined && !Number.isSafeInteger(row.awaitingSinceMs)) return null;
     return row as XtxCursor;
   } catch { return null; }
 }
@@ -56,11 +56,19 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
     const now = clock.nowMs();
     const finish = (state: ItemResult['state'], message: string | null) => {
       const items: ItemResult[] = [...job.items, { key: next.key, state, message, artifacts: [] }];
-      return { completed: items.length === action.resources.length, items };
+      return { completed: items.length === action.resources.length, items, ...(state === 'needs-input' ? { status: 'needs-input' as const } : {}) };
     };
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'study duration budget expired');
     const before = await xtxReadProgress(http, clock, next);
     if (before.serverFraction !== null && before.serverFraction >= action.settings.targetFraction) return finish('succeeded', before.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
+    const previous = parseStudyCursor((await runner.metadata(job.id)).cursor);
+    const cursor = previous?.resourceKey === next.key ? previous : null;
+    if (cursor?.awaiting && (before.serverFraction ?? 0) <= cursor.baseline) {
+      const since = cursor.awaitingSinceMs ?? now;
+      if (now - since >= 180_000) return finish('needs-input', 'server schedule did not advance within 180 seconds; do not resend heartbeat');
+      await runner.setCursor(job.id, JSON.stringify({ ...cursor, awaitingSinceMs: since, stalls: cursor.stalls + 1 }));
+      return { completed: false, status: 'waiting' as const, nextRunAtMs: now + 5000 };
+    }
     let identity: XtxStudyIdentity;
     try { identity = await xtxReadStudyIdentity(http, next); }
     catch (cause) {
@@ -68,14 +76,6 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
       throw cause;
     }
     if (identity.exerciseId !== null && action.settings.questionMode === 'pause') return finish('needs-input', 'embedded question requires review');
-    const previous = parseStudyCursor((await runner.metadata(job.id)).cursor);
-    const cursor = previous?.resourceKey === next.key ? previous : null;
-    if (cursor?.awaiting && (before.serverFraction ?? 0) <= cursor.baseline) {
-      const stalls = cursor.stalls + 1;
-      if (stalls >= 3) return finish('needs-input', 'heartbeat was acknowledged but schedule did not advance');
-      await runner.setCursor(job.id, JSON.stringify({ ...cursor, stalls }));
-      return { completed: false, status: 'waiting' as const, nextRunAtMs: now + 5000 };
-    }
     const phase = cursor?.phase ?? 'start';
     const cp = cursor?.cp ?? (before.serverFraction ?? 0) * identity.duration;
     const seq = cursor?.sq ?? 0;
@@ -97,7 +97,7 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
     if (csrf === null) return finish('needs-input', 'CSRF cookie is missing');
     const baseline = before.serverFraction ?? 0;
     const pendingId = `xtx-heartbeat:${job.id}:${next.key}:${seq + 1}`;
-    await runner.setCursor(job.id, JSON.stringify({ resourceKey: next.key, phase: nextPhase, cp: nextCp, sq: seq + rows.length, baseline, awaiting: phase === 'heart', stalls: 0 } satisfies XtxCursor));
+    await runner.setCursor(job.id, JSON.stringify({ resourceKey: next.key, phase: nextPhase, cp: nextCp, sq: seq + rows.length, baseline, awaiting: phase === 'heart', stalls: 0, awaitingSinceMs: now } satisfies XtxCursor));
     await runner.setPendingOperation(job.id, pendingId);
     const response = await http.request({ kind: 'write', method: 'POST', url: `${XTX_BASE}/video-log/heartbeat/`,
       headers: { ...XTX_BASE_HEADERS, 'x-csrftoken': csrf, 'content-type': 'application/json;charset=utf-8', referer: `${XTX_BASE}/` },
@@ -110,12 +110,12 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
       catch { throw new LearningError({ code: 'UNCERTAIN', message: 'Xuetang heartbeat acknowledgement is invalid', retryAfterMs: null, operationId: pendingId }); }
       if (parsed.success === false) throw new LearningError({ code: 'UNCERTAIN', message: 'Xuetang heartbeat was rejected', retryAfterMs: null, operationId: pendingId });
     }
-    await runner.setPendingOperation(job.id, null);
     if (phase === 'heart') {
       const after = await xtxReadProgress(http, clock, next);
+      await runner.setPendingOperation(job.id, null);
       if ((after.serverFraction ?? 0) >= action.settings.targetFraction) return finish('succeeded', after.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
-      await runner.setCursor(job.id, JSON.stringify({ resourceKey: next.key, phase: nextPhase, cp: nextCp, sq: seq + rows.length, baseline: Math.max(baseline, after.serverFraction ?? 0), awaiting: (after.serverFraction ?? 0) <= baseline, stalls: 0 } satisfies XtxCursor));
-    }
+      await runner.setCursor(job.id, JSON.stringify({ resourceKey: next.key, phase: nextPhase, cp: nextCp, sq: seq + rows.length, baseline: Math.max(baseline, after.serverFraction ?? 0), awaiting: (after.serverFraction ?? 0) <= baseline, stalls: 0, awaitingSinceMs: now } satisfies XtxCursor));
+    } else await runner.setPendingOperation(job.id, null);
     return { completed: false, status: 'waiting' as const, nextRunAtMs: clock.nowMs() + 5000 };
   });
 }

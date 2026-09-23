@@ -49,7 +49,7 @@ export interface BlobWriter {
 
 export interface ArtifactStore {
   create(input: { id: string; mimeType: string }): Promise<BlobWriter>;
-  resume(input: { id: string; checkpoint: Json }): Promise<BlobWriter>;
+  resume(input: { id: string; checkpoint: Json; truncateUncommitted?: boolean }): Promise<BlobWriter>;
   open(id: string, options?: Options): Promise<ReadableStream<Uint8Array>>;
   remove(id: string): Promise<void>;
 }

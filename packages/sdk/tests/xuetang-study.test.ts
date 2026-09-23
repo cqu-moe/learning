@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { advanceXtxStudy, buildXtxHeartBatch, buildXtxStudyRow, schedulePollStates, xtxReadStudyIdentity } from '../src/providers/xuetang/study.js';
+import { advanceXtxStudy, buildXtxHeartBatch, buildXtxStudyRow, reconcileXtxHeartbeat, schedulePollStates, xtxReadStudyIdentity } from '../src/providers/xuetang/study.js';
 import { createSessionHttp, SessionCookieJar } from '../src/http/client.js';
 import { JobRunner } from '../src/services/jobs.js';
 import { createLearningClient } from '../src/index.js';
@@ -71,6 +71,68 @@ describe('xtx study identity and wire rows', () => {
 });
 
 describe('xtx study lifecycle', () => {
+  it('keeps the pending heartbeat when acknowledgement succeeds but schedule readback fails', async () => {
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const scope = { userId: 'local', profileId: 'p-lost-read', platform: 'xuetang' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang' as const, classroomId: '100', courseSign: 'SIGN-A', skuId: '9' } }, key: 'video', native: { kind: 'xuetang' as const, leafId: '7', leafInfoId: null } };
+    const action = { kind: 'study' as const, resources: [resource], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause' as const, maxDurationSeconds: 3600 } };
+    const runner = new JobRunner(state, clock);
+    const job = await runner.create(scope, 'study', { total: 1, generation: 1, payload: action });
+    await runner.setCursor(job.id, JSON.stringify({ resourceKey: 'video', phase: 'heart', cp: 0, sq: 3, baseline: 0, awaiting: false, stalls: 0 }));
+    const jar = new SessionCookieJar();
+    await jar.absorb(new URL('https://www.xuetangx.com/'), ['csrftoken=fixture; Path=/']);
+    const http = createSessionHttp({ transport, clock, jar, allowHosts: ['xuetangx.com'] });
+    const schedule = (rate: number, status = 200) => ({ request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/course/schedule', query: { cid: '100', sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status, body: { data: { leaf_schedules: { '7': rate } } } } });
+    const leaf = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/leaf_info/100/7/', query: { sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { id: 7, course_id: 5, user_id: 77, sku_id: 9, content_info: { media: { ccid: 'CCX1', duration: 10 } } } } } };
+    const row = buildXtxStudyRow({ courseId: '5', userId: '77', skuId: '9', videoId: '7', ccid: 'CCX1', duration: 10, exerciseId: null }, { event: 'heartbeat', cp: 5, speed: 1, sq: 4, tsMs: clock.nowMs(), classroomId: '100', pg: `${job.id}_7` });
+    const write = { request: { method: 'POST', host: 'www.xuetangx.com', path: '/video-log/heartbeat/', headers: { xtbz: 'xt', 'x-csrftoken': 'fixture', 'content-type': 'application/json;charset=utf-8' }, body: { heart_data: [row] } }, response: { status: 200, body: {} } };
+    transport.scriptInteractions([schedule(0), leaf, write, schedule(0, 403)]);
+    await expect(advanceXtxStudy({ job, action, runner, http, jar, clock })).rejects.toThrow(/schedule returned HTTP 403/);
+    const uncertain = await runner.get(job.id);
+    expect(uncertain.status).toBe('uncertain');
+    const operationId = `xtx-heartbeat:${job.id}:video:4`;
+    expect((await runner.metadata(job.id)).pendingOperationId).toBe(operationId);
+    transport.scriptInteractions([schedule(0.5)]);
+    expect((await reconcileXtxHeartbeat({ job: uncertain, action, runner, http, clock, operationId })).state).toBe('confirmed');
+    expect((await runner.get(job.id)).status).toBe('paused');
+    expect(transport.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+    transport.assertNoExtraScripts();
+  });
+
+  it('waits for delayed schedule accounting up to 180 seconds without sending a second heartbeat', async () => {
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const scope = { userId: 'local', profileId: 'p-delay', platform: 'xuetang' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang' as const, classroomId: '100', courseSign: 'SIGN-A', skuId: '9' } }, key: 'video', native: { kind: 'xuetang' as const, leafId: '7', leafInfoId: null } };
+    const action = { kind: 'study' as const, resources: [resource], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause' as const, maxDurationSeconds: 3600 } };
+    const runner = new JobRunner(state, clock);
+    let job = await runner.create(scope, 'study', { total: 1, generation: 1, payload: action });
+    await runner.setCursor(job.id, JSON.stringify({ resourceKey: 'video', phase: 'heart', cp: 5, sq: 5, baseline: 0, awaiting: true, stalls: 0, awaitingSinceMs: clock.nowMs() }));
+    const jar = new SessionCookieJar();
+    const http = createSessionHttp({ transport, clock, jar, allowHosts: ['xuetangx.com'] });
+    const schedule = (rate: number) => ({ request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/course/schedule', query: { cid: '100', sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { data: { leaf_schedules: { '7': rate } } } } });
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      transport.scriptInteractions([schedule(0)]);
+      job = await advanceXtxStudy({ job, action, runner, http, jar, clock });
+      expect(job.status).toBe('waiting');
+      clock.setNow(clock.nowMs() + 5000);
+    }
+    transport.scriptInteractions([schedule(0.5)]);
+    job = await advanceXtxStudy({ job, action, runner, http, jar, clock });
+    expect(job.status).toBe('succeeded');
+    expect(transport.calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+    transport.assertNoExtraScripts();
+    const stale = await runner.create(scope, 'study', { total: 1, generation: 1, payload: action });
+    await runner.setCursor(stale.id, JSON.stringify({ resourceKey: 'video', phase: 'heart', cp: 5, sq: 5, baseline: 0, awaiting: true, stalls: 0, awaitingSinceMs: clock.nowMs() - 180_001 }));
+    transport.scriptInteractions([schedule(0)]);
+    expect((await advanceXtxStudy({ job: stale, action, runner, http, jar, clock })).status).toBe('needs-input');
+    expect(transport.calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+    transport.assertNoExtraScripts();
+  });
+
   it('emits start, ratechange, then heartbeat only after each wall-clock interval', async () => {
     const transport = new FakeTransport();
     const clock = new FakeClock();

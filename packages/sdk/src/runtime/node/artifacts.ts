@@ -44,19 +44,20 @@ export class NodeArtifactStore implements ArtifactStore {
     return this.writer(input.id, paths, handle, 0, createHash('sha256'));
   }
 
-  async resume(input: { id: string; checkpoint: Json }): Promise<BlobWriter> {
+  async resume(input: { id: string; checkpoint: Json; truncateUncommitted?: boolean }): Promise<BlobWriter> {
     const checkpoint = parseCheckpoint(input.checkpoint, input.id);
     const paths = this.paths(input.id);
     const info = await stat(paths.part);
-    if (info.size !== checkpoint.bytes) throw invalid('artifact partial length changed');
+    if (info.size < checkpoint.bytes || info.size !== checkpoint.bytes && input.truncateUncommitted !== true) throw invalid('artifact partial length changed');
     const hash = createHash('sha256');
-    for await (const chunk of createReadStream(paths.part)) hash.update(chunk);
+    if (checkpoint.bytes > 0) for await (const chunk of createReadStream(paths.part, { start: 0, end: checkpoint.bytes - 1 })) hash.update(chunk);
     if (hash.copy().digest('hex') !== checkpoint.sha256) throw invalid('artifact partial content changed');
     const handle = await openFile(paths.part, 'r+');
-    if ((await handle.stat()).size !== checkpoint.bytes) {
+    if ((await handle.stat()).size !== info.size) {
       await handle.close();
       throw invalid('artifact partial changed during resume');
     }
+    if (info.size > checkpoint.bytes) await handle.truncate(checkpoint.bytes);
     return this.writer(input.id, paths, handle, checkpoint.bytes, hash);
   }
 

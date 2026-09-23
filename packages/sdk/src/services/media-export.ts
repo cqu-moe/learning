@@ -2,10 +2,12 @@ import { LearningError } from '../types/errors.js';
 import type { ItemResult, Job, MediaInfo, Transcript, ExportInput } from '../types/models.js';
 import type { ResourceRef, Scope } from '../types/refs.js';
 import type { Runtime } from '../runtime/types.js';
+import type { Json } from '../types/errors.js';
 import type { JobRunner } from './jobs.js';
 import { safeFilename } from './exports.js';
 import { downloadDirectMedia } from './direct-media.js';
 import type { MediaAsset } from './direct-media.js';
+import { sha256Hex } from '../types/sha256.js';
 
 type MediaInput = Extract<ExportInput, { type: 'media' }>;
 type Asset = MediaAsset;
@@ -52,6 +54,66 @@ function parsePlaylist(text: string, base: string, id: string): { nested: string
   return { nested: null, segments, extension: map === null ? 'ts' : 'mp4' };
 }
 
+interface HlsCheckpoint { digest: string; nextIndex: number; bytes: number; checkpoint: Json }
+
+function parseHlsCheckpoint(value: Json): HlsCheckpoint {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw error('PROTOCOL', 'HLS checkpoint is invalid', 'hls');
+  const row = value as Record<string, Json>;
+  if (typeof row.digest !== 'string' || typeof row.nextIndex !== 'number' || !Number.isSafeInteger(row.nextIndex) || row.nextIndex < 0 ||
+    typeof row.bytes !== 'number' || !Number.isSafeInteger(row.bytes) || row.bytes < 0 || row.checkpoint === undefined) throw error('PROTOCOL', 'HLS checkpoint is invalid', 'hls');
+  return { digest: row.digest, nextIndex: row.nextIndex, bytes: row.bytes, checkpoint: row.checkpoint };
+}
+
+async function downloadHls(input: { runtime: Runtime; jobId: string; resourceKey: string; artifactId: string; mimeType: string; urls: string[]; extension: 'ts' | 'mp4'; getAsset: (url: string, maxBytes: number, headers?: Record<string, string>) => Promise<Asset> }): Promise<{ bytes: number; sha256: string }> {
+  const key = `hls:${input.jobId}:${input.resourceKey}`;
+  const digest = sha256Hex(JSON.stringify([input.urls, input.extension]));
+  const commit = async (value: HlsCheckpoint | null) => {
+    const prior = await input.runtime.state.get(key);
+    const ok = await input.runtime.state.commit({ expected: [{ key, revision: prior?.revision ?? null }], changes: [{ key, value: value as Json }] });
+    if (!ok) throw error('PROTOCOL', 'HLS checkpoint changed concurrently', input.jobId);
+  };
+  const record = await input.runtime.state.get(key);
+  const saved = record === null ? null : parseHlsCheckpoint(record.value);
+  let writer;
+  let nextIndex = 0;
+  let total = 0;
+  if (saved !== null && saved.digest === digest && saved.nextIndex <= input.urls.length) {
+    try {
+      writer = await input.runtime.artifacts.resume({ id: input.artifactId, checkpoint: saved.checkpoint, truncateUncommitted: true });
+      nextIndex = saved.nextIndex;
+      total = saved.bytes;
+    } catch { /* corrupted or unavailable partial must restart from the first segment */ }
+  }
+  if (writer === undefined) {
+    await input.runtime.artifacts.remove(input.artifactId);
+    if (saved !== null) await commit(null);
+    writer = await input.runtime.artifacts.create({ id: input.artifactId, mimeType: input.mimeType });
+    await commit({ digest, nextIndex: 0, bytes: 0, checkpoint: await writer.checkpoint() });
+  }
+  try {
+    for (let index = nextIndex; index < input.urls.length; index += 1) {
+      const asset = await input.getAsset(input.urls[index]!, 64 * 1024 * 1024);
+      if (asset.status !== 200) { await asset.stream.cancel().catch(() => {}); throw error('PROTOCOL', `HLS segment returned HTTP ${asset.status}`, input.jobId); }
+      const reader = asset.stream.getReader();
+      let segmentBytes = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          segmentBytes += value.byteLength;
+          total += value.byteLength;
+          if (segmentBytes > 64 * 1024 * 1024 || total > 4 * 1024 * 1024 * 1024) throw error('BUDGET', 'HLS media exceeds size limit', input.jobId);
+          await writer.write(value);
+        }
+      } finally { reader.releaseLock(); }
+      await commit({ digest, nextIndex: index + 1, bytes: total, checkpoint: await writer.checkpoint() });
+    }
+    const result = await writer.finish();
+    await commit(null);
+    return result;
+  } catch (cause) { await writer.abort(); throw cause; }
+}
+
 export async function advanceMedia(input: {
   runner: JobRunner; runtime: Runtime; job: Job; scope: Scope;
   getMedia: (ref: ResourceRef) => Promise<MediaInfo>;
@@ -85,26 +147,7 @@ export async function advanceMedia(input: {
     const mimeType = extension === 'ts' ? 'video/mp2t' : 'video/mp4';
     let result: { bytes: number; sha256: string };
     if (!isHls) result = await downloadDirectMedia({ runtime: input.runtime, jobId: input.job.id, resourceKey: next.key, artifactId, url: variant.id, getAsset: input.getAsset });
-    else {
-      const writer = await input.runtime.artifacts.create({ id: artifactId, mimeType });
-      let total = 0;
-      try {
-        for (const url of urls) {
-          const asset = await input.getAsset(url, 64 * 1024 * 1024);
-          const reader = asset.stream.getReader();
-          try {
-            for (;;) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              total += value.byteLength;
-              if (total > 4 * 1024 * 1024 * 1024) throw error('BUDGET', 'media exceeds 4 GiB', input.job.id);
-              await writer.write(value);
-            }
-          } finally { reader.releaseLock(); }
-        }
-        result = await writer.finish();
-      } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(artifactId); throw cause; }
-    }
+    else result = await downloadHls({ runtime: input.runtime, jobId: input.job.id, resourceKey: next.key, artifactId, mimeType, urls, extension, getAsset: input.getAsset });
     const artifacts: ItemResult['artifacts'] = [{ id: artifactId, scope: input.scope,
       filename: `${safeFilename(next.key)}.${extension}`, mimeType, bytes: result.bytes, sha256: result.sha256,
       createdAtMs: input.runtime.clock.nowMs() }];

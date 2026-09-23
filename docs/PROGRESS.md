@@ -24,14 +24,14 @@
 | T17 | 学堂考试的三个独立动作 | partial | 开卷、单独缓存选择/判断题与阻断最终交卷的 SDK/CLI fixture | E05 最终交卷独立验证缺失；填空/主观题写入未验证 |
 | T18 | 固定任务模型、暂停恢复与事件 | partial | 持久化、作用域分页、进程恢复与 wake fixture | 20 秒工作片硬期限与全部 job kind 边界仍需核对 |
 | T19 | 雨课堂学习任务 | partial | 图文写入/核对及内嵌题暂停、同 job 继续 fixture | 真实心跳/题目未授权 |
-| T20 | 学堂学习任务 | partial | 当前 `xuetang-study.test.ts` 5/5；CLI 实际间隔 fixture | 长任务和统计延迟验收不足；真实心跳未授权 |
+| T20 | 学堂学习任务 | partial | 当前 `xuetang-study.test.ts` 7/7；180 秒延迟统计/不确定读回 fixture | 真实心跳未授权 |
 | T21 | 智慧树share/hike学习任务 | partial | 两套保存 handler、题闸/停滞/签名、权威回读 fixture | E04/E06 真机身份与回读时延缺口；真实学习未授权 |
 | T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
-| T23 | 流式下载、持久产物与断点恢复 | partial | MP4 206/200/416/ETag 恢复、CLI 双进程与字幕降级 fixture | HLS 分段断点及多 GiB 预算实测未完成 |
+| T23 | 流式下载、持久产物与断点恢复 | partial | MP4 Range 与 HLS 分段检查点双进程恢复、CLI 字幕降级 fixture | 多 GiB 持续流预算实测未完成 |
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | profile/login/catalog/doctor、独占锁与 wake CLI 进程 fixture；当前 CLI 45/45 | 真实平台登录未授权，fixture 不代替账号验收 |
 | T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、两平台作业、讨论、三平台学习、雨课堂图文、考试 start/save、直播 fixture | E05 最终交卷阻断；部分恢复与模型配置未闭合 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 215/215、CLI 47/47、E2E 6/6；packed tgz 隔离消费者测试 | 内嵌题检查点待正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 218/218、CLI 48/48、E2E 6/6；packed tgz 隔离消费者测试 | 本检查点待正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -333,3 +333,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 学习任务先读题单确认全部 `user.is_right` 才可把视频服务端进度记作完成；未解题 `needs-input`，`jobs resume` 明确重新排队同一 study job 并重读题单，停机期间不补造心跳。用户手动选择答案且逐题确认；无答案不自动选择/穷举。多资源任务遇题也立即暂停。
 - 测试先行：原 parser 用真实数组信封测试先返回 0 项失败（exit 1）；视频已完成但题未解的任务先错误地返回 succeeded（exit 1），修正后通过。Node v24.11.1 隔离工作树实际命令：SDK `vitest run` → 215/215 exit 0；CLI `vitest run` → 47/47 exit 0；CLI E2E → 6/6 exit 0；SDK/CLI typecheck/build、ESLint、boundaries、`git diff --check` → exit 0。上一 T16 合并后的主仓库正式 pnpm 五门禁 exit 0（当时 SDK 213/CLI 46/E2E 6）。
 - 未运行：真实雨课堂视频/图文/内嵌题写入、人工黄金字体样本 E07（用户确认暂无）。本批尚待合并后的正式 pnpm 门禁。下一当前任务：T20 长任务统计、T23 HLS 分段恢复及 T31 剩余本机验收；真实平台证据仍按未授权处理。
+
+### 2026-09-23 · T20/T23 延迟统计与 HLS 分段恢复
+
+- T20：把学堂心跳后的 schedule 轮询从三次/约15秒改为 180 秒实际时钟预算；轮询期间不重发心跳，超时转 `needs-input`，服务端达到目标才确认。发送 ACK 后若 schedule 读回失败，保留 pending operation，`actions.reconcile` 只读确认后可恢复；先前清掉 pending 导致不可核对的问题已由失败测试复现。
+- T23：本地 ArtifactStore 增加显式 `truncateUncommitted` 恢复选项，仅在分段下载中使用；验证已提交前缀 SHA256 后回退中断分段的尾部字节，普通 MP4 的严格长度验证不变。HLS 对 URL 列表/扩展名计算摘要，逐完整分段同步并持久化 checkpoint，重启后只从下一个未完成分段继续；播放列表变化或 checkpoint 无法验证时重下，不发布半成品。合成 CLI 两进程 fixture 在第二段中途失败，恢复时没有重新请求第一段，最终文件 `AAABBB`。
+- 测试先行：学堂延迟 fixture 原逻辑在第四次轮询前停机；ACK 后读回失败原逻辑丢 pending；Node 部分文件原逻辑拒绝显式回退，三项先失败后通过。Node v24.11.1 隔离工作树实际命令：SDK `vitest run` → 218/218 exit 0；CLI `vitest run` → 48/48 exit 0；CLI E2E → 6/6 exit 0；SDK/CLI typecheck/build、ESLint、boundaries、`git diff --check` → exit 0。根目录误执行 `tsc -p tsconfig.json` 因根无该文件 exit 1，随后分别对 SDK/CLI 正确命令均 exit 0。上一 T15 合并后主仓库正式 pnpm 五门禁 exit 0（SDK 215/CLI 47/E2E 6）。
+- 未运行：真实平台视频保存/下载、受限分段格式、4 GiB 持续流、E07 人工字体样本。下一当前任务：T24 可独立完成的本地字体/旧课件工程与 T31 验收矩阵；真实平台/最终交卷仍等待独立授权/证据。
