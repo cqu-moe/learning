@@ -4,18 +4,25 @@ import type { ResourceRef } from '../../types/refs.js';
 import type { SessionHttp } from '../../http/client.js';
 import type { Clock } from '../../runtime/types.js';
 import { fetchLeafInfo } from './resources.js';
+import { fetchClassroomContext } from './catalog.js';
 import { YKT_BASE } from './schemas.js';
 import type { SessionCookieJar } from '../../http/cookies.js';
 import type { JobRunner } from '../../services/jobs.js';
 
 export interface YktStudyIdentity { courseId: string; userId: string; skuId: string; ccid: string; exerciseId: string | null }
+type YktObserved = { kind: 'article'; progress: Progress; skuId: string | null } | { kind: 'video'; progress: Progress; identity: YktStudyIdentity };
 
 /** Read the platform's watch state; missing IDs/duration stay unknown. */
-export async function yktReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef): Promise<{ progress: Progress; identity: YktStudyIdentity }> {
+export async function yktReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef): Promise<YktObserved> {
   if (resource.native.kind !== 'ykt' || resource.course.native.kind !== 'ykt') throw new LearningError({ code: 'INVALID_INPUT', message: 'Yuketang progress needs a Yuketang video ref', retryAfterMs: null, operationId: null });
   const classroomId = resource.course.native.classroomId;
   const videoId = resource.native.leafId;
   const leaf = await fetchLeafInfo(http, classroomId, videoId);
+  if (leaf?.leaf_type === 3) {
+    if (typeof leaf.finish !== 'boolean') throw new LearningError({ code: 'PROTOCOL', message: 'article leaf_info lacks finish state', retryAfterMs: null, operationId: null });
+    const skuId = leaf.sku_id === undefined ? null : String(leaf.sku_id);
+    return { kind: 'article', skuId: skuId === '0' || skuId === '' ? null : skuId, progress: { resource, serverCompleted: leaf.finish, serverFraction: leaf.finish ? 1 : 0, serverSeconds: null, durationSeconds: null, observedAtMs: clock.nowMs() } };
+  }
   const identity: YktStudyIdentity = { courseId: String(leaf?.course_id ?? ''), userId: String(leaf?.user_id ?? ''), skuId: String(leaf?.sku_id ?? ''), ccid: String(leaf?.content_info?.media?.ccid ?? ''), exerciseId: leaf?.content_info?.media?.exercise_id ? String(leaf.content_info.media.exercise_id) : null };
   if ([identity.courseId, identity.userId, identity.skuId, identity.ccid].some((value) => value === '' || value === '0')) throw new LearningError({ code: 'PROTOCOL', message: 'leaf_info lacks the identifiers required for progress', retryAfterMs: null, operationId: null });
   const query = new URLSearchParams({ cid: identity.courseId, user_id: identity.userId, classroom_id: classroomId, video_type: 'video', vtype: 'rate', video_id: videoId, snapshot: '1', no_loading: 'true' });
@@ -25,7 +32,7 @@ export async function yktReadProgress(http: SessionHttp, clock: Clock, resource:
   if (typeof payload !== 'object' || payload === null || (payload as { success?: boolean }).success === false) throw new LearningError({ code: 'PROTOCOL', message: 'watch progress returned an error envelope', retryAfterMs: null, operationId: null });
   const observed = parseWatchProgress(payload, videoId);
   if (![observed.rate, observed.videoLength, observed.lastPoint].every((value) => Number.isFinite(value) && value >= 0) || observed.rate > 1) throw new LearningError({ code: 'PROTOCOL', message: 'watch progress numbers are invalid', retryAfterMs: null, operationId: null });
-  return { identity, progress: { resource, serverCompleted: observed.completed, serverFraction: observed.rate, serverSeconds: observed.lastPoint, durationSeconds: observed.videoLength > 0 ? observed.videoLength : null, observedAtMs: clock.nowMs() } };
+  return { kind: 'video', identity, progress: { resource, serverCompleted: observed.completed, serverFraction: observed.rate, serverSeconds: observed.lastPoint, durationSeconds: observed.videoLength > 0 ? observed.videoLength : null, observedAtMs: clock.nowMs() } };
 }
 
 interface StudyCursor { resourceKey: string; cp: number; sq: number; baseline: number; awaiting: boolean; stalls: number }
@@ -51,7 +58,25 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     };
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'study duration budget expired');
     const observed = await yktReadProgress(http, clock, next);
-    const { progress, identity } = observed;
+    const { progress } = observed;
+    if (observed.kind === 'article') {
+      if (progress.serverCompleted) return finish('succeeded', 'server completed');
+      if (observed.skuId === null) return finish('needs-input', 'article sku is missing');
+      const classroomId = next.course.native.kind === 'ykt' ? next.course.native.classroomId : '';
+      const leafId = next.native.kind === 'ykt' ? next.native.leafId : '';
+      const context = await fetchClassroomContext(http, classroomId);
+      const operationId = `article:${job.id}:${next.key}`;
+      await runner.setPendingOperation(job.id, operationId);
+      const response = await http.request({ kind: 'write', method: 'GET', url: `${YKT_BASE}/mooc-api/v1/lms/learn/user_article_finish/${leafId}/?cid=${classroomId}&sid=${observed.skuId}`,
+        headers: { xtbz: 'ykt', 'university-id': context.universityId, 'uv-id': context.universityId, 'classroom-id': classroomId, 'xt-agent': 'web' } });
+      if (response.status !== 200) throw new LearningError({ code: 'UNCERTAIN', message: `article finish returned HTTP ${response.status}`, retryAfterMs: null, operationId });
+      const body = await response.json() as { success?: unknown };
+      if (body?.success !== true) throw new LearningError({ code: 'UNCERTAIN', message: 'article finish acknowledgement is invalid', retryAfterMs: null, operationId });
+      const after = await yktReadProgress(http, clock, next);
+      await runner.setPendingOperation(job.id, null);
+      return after.progress.serverCompleted ? finish('succeeded', 'server completed') : finish('needs-input', 'article finish acknowledged but server completion was not observed');
+    }
+    const { identity } = observed;
     if (progress.serverFraction !== null && (progress.serverCompleted || progress.serverFraction >= action.settings.targetFraction)) return finish('succeeded', progress.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
     if (identity.exerciseId !== null && action.settings.questionMode === 'pause') return finish('needs-input', 'embedded question requires review');
     const duration = progress.durationSeconds;
@@ -103,6 +128,17 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
 /** A lost heartbeat response is resolved only by a newer authoritative watch rate. */
 export async function reconcileYktHeartbeat(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; clock: Clock; operationId: string }): Promise<Receipt> {
   const meta = await input.runner.metadata(input.job.id);
+  if (input.operationId.startsWith(`article:${input.job.id}:`)) {
+    if (meta.pendingOperationId !== input.operationId || input.job.status !== 'uncertain') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain article finish', retryAfterMs: null, operationId: input.operationId });
+    const resourceKey = input.operationId.slice(`article:${input.job.id}:`.length);
+    const resource = input.action.resources.find((item) => item.key === resourceKey);
+    if (resource === undefined) throw new LearningError({ code: 'INTEGRITY', message: 'article resource is missing', retryAfterMs: null, operationId: input.operationId });
+    const observed = await yktReadProgress(input.http, input.clock, resource);
+    if (observed.kind !== 'article') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'article type changed', retryAfterMs: null, operationId: input.operationId });
+    if (!observed.progress.serverCompleted) return { operationId: input.operationId, state: 'uncertain', message: 'article completion is not visible; do not resend', result: { serverCompleted: false } };
+    await input.runner.confirmPendingAndPause(input.job.id, input.operationId);
+    return { operationId: input.operationId, state: 'confirmed', message: 'article completion confirmed by leaf_info', result: { serverCompleted: true } };
+  }
   const cursor = parseCursor(meta.cursor);
   if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') {
     throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain heartbeat', retryAfterMs: null, operationId: input.operationId });

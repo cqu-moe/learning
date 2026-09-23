@@ -464,7 +464,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           for (const resource of actionInput.resources) {
             if (platform === 'ykt') {
               const observed = await yktReadProgress(await httpBound(), runtime.clock, resource);
-              if (observed.progress.durationSeconds === null && !observed.progress.serverCompleted) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'video duration is unknown; study cannot be planned', retryAfterMs: null, operationId: null });
+              if (observed.kind === 'article' && !observed.progress.serverCompleted && observed.skuId === null) throw new LearningError({ code: 'PROTOCOL', message: 'article sku is missing', retryAfterMs: null, operationId: null });
+              if (observed.kind === 'video' && observed.progress.durationSeconds === null && !observed.progress.serverCompleted) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'video duration is unknown; study cannot be planned', retryAfterMs: null, operationId: null });
             } else {
               await xtxReadProgress(await httpBound(), runtime.clock, resource);
               await xtxReadStudyIdentity(await httpBound(), resource);
@@ -519,8 +520,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         return { type: 'receipt', receipt };
       },
       reconcile: async (operationId) => {
-        if ((operationId.startsWith('heartbeat:') && platform === 'ykt') || (operationId.startsWith('xtx-heartbeat:') && platform === 'xuetang') || ((operationId.startsWith('hike:') || operationId.startsWith('share-save:') || operationId.startsWith('prelearn:')) && platform === 'zhs')) {
-          const jobId = /^(?:(?:xtx-)?heartbeat|hike|share-save|prelearn):(job-[^:]+):/.exec(operationId)?.[1];
+        if (((operationId.startsWith('heartbeat:') || operationId.startsWith('article:')) && platform === 'ykt') || (operationId.startsWith('xtx-heartbeat:') && platform === 'xuetang') || ((operationId.startsWith('hike:') || operationId.startsWith('share-save:') || operationId.startsWith('prelearn:')) && platform === 'zhs')) {
+          const jobId = /^(?:(?:xtx-)?heartbeat|article|hike|share-save|prelearn):(job-[^:]+):/.exec(operationId)?.[1];
           if (jobId === undefined) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid heartbeat operation id', retryAfterMs: null, operationId });
           let job = await assertOwnedJob(jobId);
           if (job.status === 'running' && (await jobRunner.metadata(jobId)).running) job = await jobRunner.recoverInterrupted(jobId);
