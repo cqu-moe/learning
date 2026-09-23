@@ -23,9 +23,9 @@
 | T16 | 学堂作业与讨论发布 | done | vitest tests/xuetang-write.test.ts → 4/4; 全套 129/129, typecheck/lint/build exit 0 | — |
 | T17 | 学堂考试的三个独立动作 | done | vitest tests/xuetang-exam-write.test.ts → 3/3; 全套 132/132, typecheck/lint/build exit 0 | E05 填空/主观考试写形状拒绝 |
 | T18 | 固定任务模型、暂停恢复与事件 | done | vitest tests/jobs.test.ts → 5/5; 全套 137/137, typecheck/lint/build exit 0 | — |
-| T19 | 雨课堂学习任务 | not-started | 未运行 | — |
-| T20 | 学堂学习任务 | not-started | 未运行 | — |
-| T21 | 智慧树share/hike学习任务 | not-started | 未运行 | — |
+| T19 | 雨课堂学习任务 | done | vitest tests/ykt-study.test.ts → 3/3; 全套 145/145 | 真实心跳未发送（无授权） |
+| T20 | 学堂学习任务 | done | vitest tests/xuetang-study.test.ts → 2/2; 全套 145/145 | 真实心跳未发送（无授权） |
+| T21 | 智慧树share/hike学习任务 | done | vitest tests/zhs-study.test.ts → 3/3; 全套 145/145 | E06 回读时延待真机 |
 | T22 | 雨课堂实时会话与事件缺口 | not-started | 未运行 | — |
 | T23 | 流式下载、持久产物与断点恢复 | not-started | 未运行 | — |
 | T24 | 本地PDF与字体重型实现 | not-started | 未运行 | — |
@@ -212,6 +212,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest jobs → 5 passed；全套 137/137；typecheck/lint/build → 0。
 - 未运行项：20 秒工作片与 nextRunAt 的前台调度循环在 CLI T25 接入。
 - 下一个当前任务：T19。
+
+### 2026-09-23 · T19–T21 三平台学习任务核心编码（done）
+
+- T19 实际改动：src/providers/ykt/study.ts（buildYktHeartbeats/parseWatchProgress）、tests/ykt-study.test.ts。纯函数心跳构造（5s 墙钟拍、cp=5×speed clamp duration、ts 字符串毫秒、sq 自 1、lob=ykt、tp=d）；speed<1/duration<=0/cpStart<0 guard；watch_progress 双层信封解析与未观看默认。A191（无未来 ts、cp≤duration、sq/et 正确）；A192（duration 未知拒绝；恢复从 last_point=cp_start）。
+- T20 实际改动：src/providers/xuetang/study.ts（buildXtxHeartBatch/schedulePollStates）、tests/xuetang-study.test.ts。heart_data 批次信封（ratechange 首行激活非 1x、heartbeat 行 lob=xt、sq 连续、cp clamp、ts 字符串）；schedule 回读轮询状态机（6s×180s 预算、pending≠complete、确认才完成）。A201（bare object/lob 错误在 fixture 断言失败——批次形状断言）；A202（延迟回读先 waiting、超时 timeout）。
+- T21 实际改动：src/providers/zhs/study.ts（buildShareSaveEv/hikeStallDecision/serverCompletedForTarget）、tests/zhs-study.test.ts。share save ev 十字段顺序（增量/累计/hms/uuid+zhs）与 watchPoint 官方向量（T10 已锁）；hike 连续 3 次无推进→needs-input；target 0.91 不强置 serverCompleted。A211/A212 断言通过。
+- 命令（Node v24.11.1）：三个测试文件 3+2+3 passed；全套 145/145；typecheck/lint/build/boundaries → 0。
+- 未运行项：真实平台心跳/save 写入（无授权，not-run）；job handler 与 JobRunner 的接线在 T25 CLI 组装。
+- 下一个当前任务：T22。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
