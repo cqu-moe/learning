@@ -19,7 +19,7 @@
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
 | T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
-| T15 | 雨课堂作业与内嵌题写入 | not-started | 未运行 | — |
+| T15 | 雨课堂作业与内嵌题写入 | done | vitest tests/ykt-write.test.ts → 4/4; 全套 125/125, typecheck/lint/build exit 0 | — |
 | T16 | 学堂作业与讨论发布 | not-started | 未运行 | — |
 | T17 | 学堂考试的三个独立动作 | not-started | 未运行 | — |
 | T18 | 固定任务模型、暂停恢复与事件 | not-started | 未运行 | — |
@@ -179,6 +179,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 验收：A141（同 preview 重复执行 1 次上游写、三项拒绝语义）；A142（sending 崩溃 uncertain 不重放、reconcile 权威确认、取消保留已发生结果）。
 - 命令（Node v24.11.1）：vitest actions → 6 passed；全套 121/121；typecheck/lint/build → 0。
 - 下一个当前任务：T15。
+
+### 2026-09-23 · T15 雨课堂作业与内嵌题写入（done）
+
+- 实际改动：src/providers/ykt/homework-write.ts、tests/ykt-write.test.ts。
+- 实现：encodeHomeworkAnswer 严格编码（unset/未知/空 choice 预发送拒绝）；problem_apply 精确 body {classroom_id,problem_id,answer}+headers（json+xtbz+xt-agent+classroom-id）；HTTP200 success=false → PROTOCOL 不算成功；内嵌题 list envelope 解析与显式作答同一端点，success=true 不等于答对、correctAnswer 仅来自显式反馈字段（不编造）。写操作经 ActionStore preview（T14）由上层接入。
+- 验收：A151（headers/body 逐字断言）；A152（unset 拒绝、无标准答案不选第一项、失败只一次——kind:'write' 不重试）。
+- 命令（Node v24.11.1）：vitest ykt-write → 4 passed；全套 125/125；typecheck/lint/build → 0。
+- 下一个当前任务：T16。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
