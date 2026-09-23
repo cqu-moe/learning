@@ -15,16 +15,17 @@ export async function zhsShareCourses(http: SessionHttp, clock: Clock, scope: Sc
   let page = 1;
   for (;;) {
     const payload = await homeQuery(http, clock, '/t/v1/student/course/share/queryShareCourseInfo', { status: 0, pageNo: page, pageSize: 5 });
-    const result = (payload.result ?? {}) as { totalCount?: number; courseOpenDtos?: Array<{ recruitAndCourseId?: number | string; courseName?: string }> };
+    const result = (payload.result ?? {}) as { totalCount?: number; courseOpenDtos?: Array<{ recruitAndCourseId?: number | string; secret?: string; courseName?: string }> };
     const dtos = result.courseOpenDtos ?? [];
     for (const dto of dtos) {
-      if (dto.recruitAndCourseId === undefined) {
+      const racId = dto.secret || dto.recruitAndCourseId;
+      if (racId === undefined || racId === '' || racId === 0) {
         throw new LearningError({ code: 'PROTOCOL', message: 'share course missing recruitAndCourseId', retryAfterMs: null, operationId: null });
       }
-      const native = { kind: 'zhs-share' as const, recruitAndCourseId: String(dto.recruitAndCourseId) };
+      const native = { kind: 'zhs-share' as const, recruitAndCourseId: String(racId) };
       items.push({
         ref: { scope, key: keyOfCourse({ scope, key: 'pending', native }), native },
-        title: dto.courseName ?? String(dto.recruitAndCourseId),
+        title: dto.courseName ?? String(racId),
         system: 'zhs-share',
         term: null,
         teachers: [],
