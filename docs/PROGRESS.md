@@ -364,7 +364,7 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 
 ### 2026-09-23 · 用户授权后的三平台本机验收（T06/T10/T11/T20/T21/T25/T26/T31）
 
-- 用户允许自行选课程做真实写入验收，明确“不能玩试卷”。因此只使用本机已有旧会话在受限临时 LEARNING_HOME 下导入，并经平台 `whoami` 在线核验；未执行任何真机开卷、试卷读取、缓存或交卷。所用目录、master.key、state.db 权限均为 0700/0600/0600；原旧 CLI 会话只读，临时明文 Cookie 数组与测试草稿已删，仓库未提交 Cookie、UUID、姓名或原始课程/题目载荷。
+- 用户允许自行选课程做真实写入验收，明确“不能玩试卷”。因此只使用本机已有旧会话在受限临时 LEARNING_HOME 下导入，并经平台 `whoami` 在线核验；未执行任何真机开卷、试卷读取、缓存或交卷。所用目录、master.key、state.db 权限均为 0700/0600/0600；原旧 CLI 会话只读。验收后核对 2 个 job 均为 succeeded，随后删除整个临时 LEARNING_HOME（含导入的会话、临时 Cookie 数组与测试草稿）；仓库未提交 Cookie、UUID、姓名或原始课程/题目载荷。
 - 雨课堂：真实 `userinfo` 返回 `data:[{user_id,...}]`，旧 fixture 只接受 `{id,...}`，曾把 ZodError 误报 NETWORK。修正后导入会话 `whoami=valid`；课程列表 30 门。某 KG 课程目录节点 `id=0` 导致大纲失败，修复为目录可零、资源叶子仍拒绝零后，大纲实际列出 22 视频/2 图文/12 作业；另一个非计分普通作业草稿只读生成 5 题。抽查图文与视频均为服务端已完成，未重复发学习写入。具体脱敏协议形态见 `protocol-evidence.md` P-E05/P-E07。
 - 学堂：导入旧会话初次 `whoami` 仅返回 valid/identityVerified=false；修正 `user-courses` 成功信封核验、403 拒绝和状态持久化后，在线身份确认通过。真实“人工智能(2026秋)”视频 1.3 原进度未登记，CLI 以 1×、目标 2% 运行一个 study job → succeeded；另起进程从平台 schedule 读回 `serverFraction=0.0217`、`serverCompleted=false`，只证明局部目标达到。普通作业草稿只读生成 13 题，未提交。
 - 智慧树：导入旧会话后在线接口确认 UUID；共享课列表实际用 `secret` 作 RAC ID，校内课列表业务成功码为 `200`，两处修正后 `courses` 返回 2 门共享课与 1 门校内课。唯一校内课标题为线上考试，未进一步操作。真实共享课“人工智能引论”一段视频初始 0 秒；CLI 以 1×、目标 1% 运行 → succeeded，另起进程读回 `6/581` 秒、`serverFraction=0.010327...`、`serverCompleted=false`。没有答题，也未触发验证码/风控。脱敏结构见 `protocol-evidence.md` P-E06。
