@@ -1,5 +1,6 @@
 // Node runtime entry (/node subpath): the only production runtime this phase.
 export { SqliteStateStore } from './state.js';
+export { NodeFetchTransport, NodeSocket } from './transport.js';
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';

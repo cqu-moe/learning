@@ -29,7 +29,7 @@
 | T22 | 雨课堂实时会话与事件缺口 | done | vitest tests/live.test.ts → 2/2; 全套 147/147, typecheck/lint/build exit 0 | 真实 WS join/checkin 未执行（无授权） |
 | T23 | 流式下载、持久产物与断点恢复 | done | vitest tests/download.test.ts → 3/3; 全套 150/150, typecheck/lint/build/boundaries exit 0 | Node ArtifactStore 文件层在 CLI 组装时接入 |
 | T24 | 本地PDF与字体重型实现 | done | vitest tests/render.test.ts → 4/4; 全套 154/154, typecheck/lint/build/boundaries exit 0 | E07 字体黄金样本缺失，unresolved 不伪造 |
-| T25 | CLI基础命令与本地运行装配 | not-started | 未运行 | — |
+| T25 | CLI基础命令与本地运行装配 | done | vitest tests/basic.test.ts → 4/4; 全套 SDK 154/154 + CLI 4/4, typecheck/lint/build/boundaries exit 0 | — |
 | T26 | CLI完整功能入口与恢复操作 | not-started | 未运行 | — |
 | T31 | SDK与CLI集成验收、安装说明与本机证据 | not-started | 未运行 | — |
 
@@ -246,6 +246,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 未运行项：E07 黄金样本不足——真实字体准确率未验证（明确阻塞质量验收，不伪造）；Chromium 受控页面未安装（浏览器缺失时 UNSUPPORTED，不自动安装）。
 - 命令（Node v24.11.1）：vitest render → 4 passed；全套 154/154；typecheck/lint/build/boundaries → 0。
 - 下一个当前任务：T25。
+
+### 2026-09-23 · T25 CLI基础命令与本地运行装配（done）
+
+- 实际改动：apps/cli/src/{index.ts,runtime.ts,commands/{init.ts,doctor.ts}}、tests/basic.test.ts、package.json（commander 15.0.0、qrcode 1.5.4 冻结）、packages/sdk/src/runtime/node/index.ts（导出 NodeFetchTransport/NodeSocket）。
+- 实现：Commander 装配 --version/init/doctor；resolveDataDir（--home/LEARNING_HOME）；createCliRuntime（master.key 0600、SQLite state.db、Node transport、LocalHeavyRenderer 注入、无 daemon/无监听）；acquireDataDirLock（PID lockfile、二次写拒绝 exit 3 提示 Ctrl+C 或 unlock）；doctor 报告浏览器缺失不自动安装；init 不打印密钥。
+- 验收：A251（本机无 Cloudflare 可用——命令全本地；两进程同 home 第二个拒绝）；A252（错误码经 stderr/exitCode；不打印 Cookie——本任务无平台输出；无 TTY 不等待输入——命令全部非交互）。
+- 命令（Node v24.11.1）：CLI vitest 4/4；SDK 154/154；typecheck/lint/build/boundaries/source-lock → 0；--frozen-lockfile 二次 → 0。
+- 未运行项：真实 login/courses 命令在 T26 接入；profile/login/whoami 命令组在 T26 补齐。
+- 下一个当前任务：T26。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

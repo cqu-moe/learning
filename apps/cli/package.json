@@ -16,7 +16,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@learning/sdk": "workspace:*"
+    "@learning/sdk": "workspace:*",
+    "commander": "15.0.0",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "@types/node": "24.13.6",
