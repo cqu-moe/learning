@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthLifecycle, probeSession } from '../src/auth/flow.js';
 import { importLegacyCookies } from '../src/auth/legacy.js';
+import { SessionCookieJar } from '../src/http/cookies.js';
 import { NodeSocket } from '../src/runtime/node/transport.js';
 import { createLearningClient, aggregateCourses } from '../src/index.js';
 import { MemoryStateStore } from './helpers/memory.js';
@@ -219,6 +220,27 @@ describe('SDK factory (A052)', () => {
     expect(result.value.identityVerified).toBe(false);
     expect(transport.requests).toHaveLength(0);
     expect((await readFrom(runtime.state as MemoryStateStore))?.generation).toBe(1);
+  });
+
+  it('preserves Playwright cookie scope and security attributes during local import', async () => {
+    const transport = new FakeTransport();
+    const runtime = makeRuntime(transport);
+    const xtxScope: Scope = { userId: 'local', profileId: 'x-cookie', platform: 'xuetang' };
+    await importLegacyCookies(runtime, xtxScope, [
+      { name: 'domain-token', value: 'fixture-one', domain: '.xuetangx.com', path: '/', secure: true, httpOnly: true, sameSite: 'Lax', expires: 4102444800 },
+      { name: 'host-token', value: 'fixture-two', domain: 'www.xuetangx.com', path: '/private', secure: true, httpOnly: false, sameSite: 'Strict', expires: -1 },
+    ]);
+    const { readSession } = await import('../src/session/store.js');
+    const saved = await readSession(runtime.state, runtime.masterKey, xtxScope);
+    if (saved === null) throw Error('missing imported session');
+    const jar = await SessionCookieJar.deserialize(saved.cookieJar);
+    expect(await jar.cookiesFor(new URL('https://www.xuetangx.com/private'))).toContain('host-token=fixture-two');
+    expect(await jar.cookiesFor(new URL('https://sub.xuetangx.com/private'))).not.toContain('host-token=fixture-two');
+    const serialized = await jar.serialize() as { cookies: Array<{ key: string; secure?: boolean; httpOnly?: boolean; sameSite?: string; hostOnly?: boolean }> };
+    expect(serialized.cookies.find((cookie) => cookie.key === 'domain-token')).toMatchObject({ secure: true, httpOnly: true, sameSite: 'lax', hostOnly: false });
+    const hostCookie = serialized.cookies.find((cookie) => cookie.key === 'host-token');
+    expect(hostCookie).toMatchObject({ secure: true, sameSite: 'strict', hostOnly: true });
+    expect(hostCookie?.httpOnly).not.toBe(true);
   });
 
   it('disconnect tombstones the session so stale generations cannot revive', async () => {
