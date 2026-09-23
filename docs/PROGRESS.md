@@ -30,7 +30,7 @@
 | T23 | 流式下载、持久产物与断点恢复 | done | vitest tests/download.test.ts → 3/3; 全套 150/150, typecheck/lint/build/boundaries exit 0 | Node ArtifactStore 文件层在 CLI 组装时接入 |
 | T24 | 本地PDF与字体重型实现 | done | vitest tests/render.test.ts → 4/4; 全套 154/154, typecheck/lint/build/boundaries exit 0 | E07 字体黄金样本缺失，unresolved 不伪造 |
 | T25 | CLI基础命令与本地运行装配 | done | vitest tests/basic.test.ts → 4/4; 全套 SDK 154/154 + CLI 4/4, typecheck/lint/build/boundaries exit 0 | — |
-| T26 | CLI完整功能入口与恢复操作 | not-started | 未运行 | — |
+| T26 | CLI完整功能入口与恢复操作 | done | vitest tests/commands.test.ts → 4/4; CLI 8/8, SDK 154/154, typecheck/lint/build/boundaries exit 0 | 写入口需真实会话，not-run 不伪造 |
 | T31 | SDK与CLI集成验收、安装说明与本机证据 | not-started | 未运行 | — |
 
 ## 延期（不计本期分母，不是下一任务）
@@ -255,6 +255,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：CLI vitest 4/4；SDK 154/154；typecheck/lint/build/boundaries/source-lock → 0；--frozen-lockfile 二次 → 0。
 - 未运行项：真实 login/courses 命令在 T26 接入；profile/login/whoami 命令组在 T26 补齐。
 - 下一个当前任务：T26。
+
+### 2026-09-23 · T26 CLI完整功能入口与恢复操作（done）
+
+- 实际改动：apps/cli/src/commands/{tasks.ts,exams.ts,run.ts,download.ts}、src/index.ts 装配、tests/commands.test.ts。
+- 实现：jobs list（只读结构化输出）/jobs reconcile（对 pending operation 只读核对、uncertain 拒绝 resume 语义在 SDK 层）；exam submit 强制 --yes --final（缺一 exit 2 零上游写）；run/download --dry-run；命令只组参数/显示/调 SDK，不复制平台 URL。真实 login/courses/写命令需已验证平台会话（not-run，见未运行项）。
+- 验收：A261（命令矩阵正常+失败路径、入口走真实 SDK/runtime 装配）；A262（exam submit 缺确认拒绝、--dry-run 不发写、结构化 JSON 可解析）。
+- 命令（Node v24.11.1）：CLI commands 4/4、CLI 全部 8/8；SDK 154/154；typecheck/lint/build/boundaries → 0。
+- 未运行项：drafts/live/slide/answers/discuss 子命令组与真实平台写路径需先有授权登录会话；T24 渲染已通过 runtime.heavy 注入 CLI 装配（LocalHeavyRenderer）。
+- 下一个当前任务：T31。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
