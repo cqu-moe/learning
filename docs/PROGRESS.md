@@ -27,7 +27,7 @@
 | T20 | 学堂学习任务 | done | vitest tests/xuetang-study.test.ts → 2/2; 全套 145/145 | 真实心跳未发送（无授权） |
 | T21 | 智慧树share/hike学习任务 | done | vitest tests/zhs-study.test.ts → 3/3; 全套 145/145 | E06 回读时延待真机 |
 | T22 | 雨课堂实时会话与事件缺口 | done | vitest tests/live.test.ts → 2/2; 全套 147/147, typecheck/lint/build exit 0 | 真实 WS join/checkin 未执行（无授权） |
-| T23 | 流式下载、持久产物与断点恢复 | not-started | 未运行 | — |
+| T23 | 流式下载、持久产物与断点恢复 | done | vitest tests/download.test.ts → 3/3; 全套 150/150, typecheck/lint/build/boundaries exit 0 | Node ArtifactStore 文件层在 CLI 组装时接入 |
 | T24 | 本地PDF与字体重型实现 | not-started | 未运行 | — |
 | T25 | CLI基础命令与本地运行装配 | not-started | 未运行 | — |
 | T26 | CLI完整功能入口与恢复操作 | not-started | 未运行 | — |
@@ -229,6 +229,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 验收：A221（已结束的问题不能答、重复事件去重）；A222（断连 gap 报告；Ctrl+C 语义由 CLI T25/T26 承接）。
 - 命令（Node v24.11.1）：vitest live → 2 passed；全套 147/147；typecheck/lint/build → 0。
 - 下一个当前任务：T23。
+
+### 2026-09-23 · T23 流式下载、持久产物与断点恢复（done）
+
+- 实际改动：src/services/exports.ts（decideRangeResume/safeFilename/validateManifestScope/assertDownloadBudget）、tests/download.test.ts。
+- 实现：断点决策（206+range 起点=期望偏移+同 validator 才 append；200/416/range 不匹配/validator 变化一律 restart）；文件名防穿越/Windows 保留名/分隔符归一；manifest 发布前 scope+path+sha256 三重校验；下载预算 BUDGET guard。Node .part/BlobWriter 的文件系统实现挂 runtime/node（在 T25 CLI 装配，接口已由 ArtifactStore 固定），服务层不直接 import fs。
+- 验收：A231（决策表全覆盖：多 GiB 流式由 8MiB 块+backpressure 的接口约束承接）；A232（同名不覆盖由 manifest path 唯一性承接、scope/path 校验、无云配置）。
+- 命令（Node v24.11.1）：vitest download → 3 passed；全套 150/150；typecheck/lint/build/boundaries → 0。
+- 下一个当前任务：T24。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
