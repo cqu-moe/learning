@@ -26,7 +26,7 @@
 | T19 | 雨课堂学习任务 | done | vitest tests/ykt-study.test.ts → 3/3; 全套 145/145 | 真实心跳未发送（无授权） |
 | T20 | 学堂学习任务 | done | vitest tests/xuetang-study.test.ts → 2/2; 全套 145/145 | 真实心跳未发送（无授权） |
 | T21 | 智慧树share/hike学习任务 | done | vitest tests/zhs-study.test.ts → 3/3; 全套 145/145 | E06 回读时延待真机 |
-| T22 | 雨课堂实时会话与事件缺口 | not-started | 未运行 | — |
+| T22 | 雨课堂实时会话与事件缺口 | done | vitest tests/live.test.ts → 2/2; 全套 147/147, typecheck/lint/build exit 0 | 真实 WS join/checkin 未执行（无授权） |
 | T23 | 流式下载、持久产物与断点恢复 | not-started | 未运行 | — |
 | T24 | 本地PDF与字体重型实现 | not-started | 未运行 | — |
 | T25 | CLI基础命令与本地运行装配 | not-started | 未运行 | — |
@@ -221,6 +221,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：三个测试文件 3+2+3 passed；全套 145/145；typecheck/lint/build/boundaries → 0。
 - 未运行项：真实平台心跳/save 写入（无授权，not-run）；job handler 与 JobRunner 的接线在 T25 CLI 组装。
 - 下一个当前任务：T22。
+
+### 2026-09-23 · T22 雨课堂实时会话与事件缺口（done）
+
+- 实际改动：src/providers/ykt/live.ts（LiveMailbox/expiredQuestionGuard）、tests/live.test.ts。
+- 实现：有界 live mailbox（phaseId+questionId+deadline 去重、重复事件不重复提交）；断连记录 gap 事件（不承诺补齐丢失消息）；过期问题拒绝答题；普通 slides 读取不签到（T07 已断言零 checkin）。真实 checkin/lessonToken/set-auth JWT 刷新链按 Y10 记录，需真机授权后接入（未伪造）。
+- 验收：A221（已结束的问题不能答、重复事件去重）；A222（断连 gap 报告；Ctrl+C 语义由 CLI T25/T26 承接）。
+- 命令（Node v24.11.1）：vitest live → 2 passed；全套 147/147；typecheck/lint/build → 0。
+- 下一个当前任务：T23。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
