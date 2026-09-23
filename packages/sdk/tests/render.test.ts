@@ -16,6 +16,9 @@ describe('font matching (T24, A241/A242)', () => {
     expect(matchGlyph([1, 0, 0], references)).toMatchObject({ state: 'exact', char: '甲' });
     expect(matchGlyph([0.5, 0.5, 0], references)).toMatchObject({ state: 'unresolved' });
     expect(matchGlyph([1, 0, 0], [])).toMatchObject({ state: 'unresolved' });
+    expect(matchGlyph([1, 0, 999], [{ char: '甲', vector: [1, 0] }])).toMatchObject({ state: 'unresolved' });
+    expect(matchGlyph([1, Number.NaN], [{ char: '甲', vector: [1, 0] }])).toMatchObject({ state: 'unresolved' });
+    expect(matchGlyph([1, 0], [{ char: '甲', vector: [1, 0] }, { char: '乙', vector: [0.99, 0.1] }])).toMatchObject({ state: 'unresolved' });
   });
 
   it('rejects over-budget inputs before any render work', () => {

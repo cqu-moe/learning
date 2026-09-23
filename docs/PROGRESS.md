@@ -28,10 +28,10 @@
 | T21 | 智慧树share/hike学习任务 | partial | 两套保存 handler、题闸/停滞/签名、权威回读 fixture | E04/E06 真机身份与回读时延缺口；真实学习未授权 |
 | T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
 | T23 | 流式下载、持久产物与断点恢复 | partial | MP4 Range 与 HLS 分段检查点双进程恢复、CLI 字幕降级 fixture | 多 GiB 持续流预算实测未完成 |
-| T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
+| T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture；字形维度/非有限值/近似歧义保守拒绝 | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | profile/login/catalog/doctor、独占锁与 wake CLI 进程 fixture；当前 CLI 45/45 | 真实平台登录未授权，fixture 不代替账号验收 |
 | T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、两平台作业、讨论/显式AI草稿、三平台学习、雨课堂图文、考试 start/save、直播 fixture | E05 最终交卷阻断；全命令正常/异常矩阵仍未闭合 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 222/222、CLI 49/49、E2E 6/6；packed tgz 隔离消费者测试 | 本检查点待正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 222/222、CLI 49/49、E2E 7/7；28 命令路径及23组错误输入、packed tgz 隔离消费者测试 | 本检查点待正式门禁；离线独立安装缺 pdf-lib tarball；E07/真实账号未验收 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -347,3 +347,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - Node `/node` 出口提供明确配置的 HTTPS Chat Completions 兼容适配器：base URL/name/key 来自本机环境；无 key 时手工流程照常。请求仅在显式 AI 命令时发生，禁止重定向，响应 1 MiB 上限、30 秒超时，错误不回显密钥或模型正文。请求信封依据 [OpenAI Docs 的 Chat Completions 端点](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions/methods/create)，第三方兼容性未对真实服务验证。
 - 测试先行：未解码题原先返回 missing 且内容会进模型 payload、学堂讨论 propose 原先 UNSUPPORTED、Node 适配器模块原先不存在，测试分别先失败后修复。Node v24.11.1 隔离工作树实际命令：SDK `vitest run` → 222/222 exit 0；CLI `vitest run` → 49/49 exit 0；CLI E2E → 6/6 exit 0；SDK/CLI build/typecheck、ESLint、boundaries、`git diff --check` → exit 0。首次为声明跨包运行时类型触发 TS2742、修正后 profile.ts 的列表页类型再触发 TS7022；显式导出/标注类型后构建 exit 0。上一 T20/T23 合并后的主仓库正式 pnpm 五门禁 exit 0（SDK 218/CLI 48/E2E 6）。
 - 未运行：真实付费模型请求、真实平台讨论或答题（无单独授权）。下一当前任务：T24 样本缺口之外可完成的本机工程，以及 T31 剩余验收矩阵。
+
+### 2026-09-23 · T24/T31 离线边界与命令失败矩阵
+
+- T24 字形匹配修复：向量维度不一致、NaN/非有限值、零向量不再因余弦计算缺陷被误报“精确”；次优字形分数接近最佳时保守返回 unresolved。合成单测先证实维度不一致被误报 exact，修复后 `render.test.ts` 5/5。此项只证明拒绝边界，**不代表** E07 三份独立参考样本/200 个人工核实字形已取得；用户答复“暂无”，Canvas 解码和受控旧课件页面仍未实现/验收。
+- T31 构建产物 E2E 保留 28 条 A02 命令路径 help 注册检查，并新增 23 组实际错误输入。每组在零登记网络 fixture 下运行 CLI 进程，均以非零退出、空 stdout 且无平台请求结束。可运行的 QR/课程/大纲/导出/恢复、作业/讨论/学习/直播等正常路径仍由 SDK/CLI 合成 fixture 覆盖。为防止隔离工作树、pnpm store 与参考源码软链接被误暂存，`.gitignore` 加入对应路径。
+- 先运行根目录 E2E 配置得到 “No test files found”（exit 1，配置 include 相对于 CLI 包）；切换到 `apps/cli` 正式测试目录后新增失败矩阵 1/1 exit 0。并行全套 SDK/CLI/E2E 时，28 次 CLI 启动的 help 测试因默认 5 秒超时而失败 1 项（行为断言未失败）；只增加两组多进程测试的时间预算，单独重跑 E2E 7/7 exit 0。离线独立消费者 `pnpm add --offline` 仍因本机缺 pdf-lib tarball 不能宣称通过；现有 packed tgz 消费者通过的是精确依赖链接。
+- 下一当前任务：合并此检查点并完成本期最终本机门禁；E05 交卷独立证据、E07 字体参考样本和真实平台写入仍不能用 fixture 代替。

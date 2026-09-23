@@ -17,7 +17,7 @@
 | 可选模型建议 | fixture 通过 | Node HTTPS 兼容 API 适配器与 `discuss draft --ai` 的离线模型 fixture 通过；未解码题干不发送，缺 key 不影响手工流程；付费模型未调用。 |
 | 任务持久化与不确定写入 | partial | AES-GCM 操作正文、跨进程 JobRunner/ActionStore、分页与核对 fixture；全部 job kind 的崩溃矩阵未闭合。 |
 | 雨课堂直播 | partial | checkin、WS 题目、当前题人工确认、重连 gap 与同 jobId 恢复 fixture；题面不可用时须在官方客户端查看，真实直播未授权。 |
-| CLI 安装打包验收 | partial | SDK/CLI tgz 在隔离消费者内验证 bin、exports、QR/课程/导出/Range 恢复；依赖使用工作区已冻结版本链接，离线独立安装缺 pdf-lib tarball；最终 A312 矩阵未完成。 |
+| CLI 安装打包验收 | partial | 28 条 A02 命令路径 help、23 组错误输入零平台请求、SDK/CLI tgz 隔离消费者的 bin/exports/QR/课程/导出/Range 恢复均通过；离线独立安装缺 pdf-lib tarball，真实账号未验收。 |
 | Web 与 Cloudflare | deferred | [WEB.md](deferred/WEB.md)；不计本期范围。 |
 
 真实平台的登录、学习、答题、发帖、开卷、交卷均未在本轮执行。详见 [PROGRESS.md](PROGRESS.md) 的实际命令、退出码和下一任务。

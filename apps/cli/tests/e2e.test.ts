@@ -74,7 +74,52 @@ describe('packed cli e2e (T31, A311/A312)', () => {
       expect(result.exitCode, path).toBe(0);
       expect(result.stdout, path).toContain('Usage:');
     }
-  });
+  }, 20_000);
+
+  it('rejects malformed or unowned command inputs before any platform request', () => {
+    const home = mkdtempSync(resolve(tmpdir(), 'learning-e2e-negative-'));
+    tempRoots.push(home);
+    const fixture = resolve(home, 'empty-fixture.json');
+    writeFileSync(fixture, JSON.stringify({ interactions: [] }));
+    const entry = resolve(import.meta.dirname, '../dist/index.js');
+    const preload = resolve(import.meta.dirname, 'fixture-fetch.mjs');
+    const run = (args: string[]) => spawnSync(process.execPath, ['--import', preload, entry, '--home', home, ...args], {
+      cwd: home, encoding: 'utf8', env: { ...process.env, LEARNING_FIXTURE_FILE: fixture, LEARNING_HOME: resolve(home, 'ignored-env') },
+    });
+    expect(run(['init']).status).toBe(0);
+    expect(run(['profile', 'add', 'alpha', '--platform', 'ykt']).status).toBe(0);
+    const cases = [
+      ['profile', 'add', 'alpha', '--platform', 'zhs'],
+      ['profile', 'remove', 'missing', '--yes'],
+      ['login', '--profile', 'missing'],
+      ['whoami', '--profile', 'missing'],
+      ['courses', '--profile', 'missing'],
+      ['outline', 'unknown', '--profile', 'alpha'],
+      ['download', 'unknown', '--profile', 'alpha'],
+      ['slide', 'not-a-url', '--profile', 'alpha'],
+      ['run', 'unknown', '--profile', 'alpha'],
+      ['homework', 'draft', 'unknown', '-o', resolve(home, 'draft.yaml'), '--profile', 'alpha'],
+      ['homework', 'apply', resolve(home, 'missing.yaml'), '--profile', 'alpha'],
+      ['exam', 'export', 'unknown', '--profile', 'alpha'],
+      ['exam', 'start', 'unknown', '--profile', 'alpha'],
+      ['exam', 'save', resolve(home, 'missing.yaml'), '--profile', 'alpha'],
+      ['exam', 'submit', resolve(home, 'missing.yaml'), '--profile', 'alpha'],
+      ['discuss', 'draft', 'unknown', '-o', resolve(home, 'discussion.json'), '--profile', 'alpha'],
+      ['discuss', 'post', resolve(home, 'missing.json'), '--profile', 'alpha'],
+      ['answers', 'match', resolve(home, 'missing.yaml'), '--source', resolve(home, 'feedback.yaml'), '--profile', 'alpha'],
+      ['live', 'not-a-url', '--profile', 'alpha'],
+      ['jobs', 'show', 'missing-job'],
+      ['jobs', 'resume', 'missing-job', '--profile', 'alpha'],
+      ['jobs', 'cancel', 'missing-job', '--profile', 'alpha'],
+      ['jobs', 'reconcile', 'missing-job', '--profile', 'alpha'],
+    ];
+    for (const args of cases) {
+      const result = run(args);
+      expect(result.status, `${args.join(' ')}: ${result.stderr}`).not.toBe(0);
+      expect(result.stdout, args.join(' ')).toBe('');
+      expect(result.stderr, args.join(' ')).not.toContain('undeclared request');
+    }
+  }, 20_000);
 
   it('uses packed tarballs in an isolated consumer for QR, catalog, export and Range resume', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'learning-packed-e2e-'));
