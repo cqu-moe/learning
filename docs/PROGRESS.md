@@ -31,7 +31,7 @@
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture；字形维度/非有限值/近似歧义保守拒绝 | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | profile/login/catalog/doctor、独占锁与 wake CLI 进程 fixture；当前 CLI 45/45 | 真实平台登录未授权，fixture 不代替账号验收 |
 | T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、两平台作业、讨论/显式AI草稿、三平台学习、雨课堂图文、考试 start/save、直播 fixture | E05 最终交卷阻断；全命令正常/异常矩阵仍未闭合 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 222/222、CLI 49/49、E2E 7/7；28 命令路径及23组错误输入、packed tgz 隔离消费者测试 | 本检查点待正式门禁；离线独立安装缺 pdf-lib tarball；E07/真实账号未验收 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | SDK 222/222、CLI 49/49、E2E 7/7；28 命令路径及23组错误输入、packed tgz 隔离消费者；main 正式五门禁 exit 0 | 离线独立安装缺 pdf-lib tarball；E07/真实账号未验收 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -354,3 +354,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - T31 构建产物 E2E 保留 28 条 A02 命令路径 help 注册检查，并新增 23 组实际错误输入。每组在零登记网络 fixture 下运行 CLI 进程，均以非零退出、空 stdout 且无平台请求结束。可运行的 QR/课程/大纲/导出/恢复、作业/讨论/学习/直播等正常路径仍由 SDK/CLI 合成 fixture 覆盖。为防止隔离工作树、pnpm store 与参考源码软链接被误暂存，`.gitignore` 加入对应路径。
 - 先运行根目录 E2E 配置得到 “No test files found”（exit 1，配置 include 相对于 CLI 包）；切换到 `apps/cli` 正式测试目录后新增失败矩阵 1/1 exit 0。并行全套 SDK/CLI/E2E 时，28 次 CLI 启动的 help 测试因默认 5 秒超时而失败 1 项（行为断言未失败）；只增加两组多进程测试的时间预算，单独重跑 E2E 7/7 exit 0。离线独立消费者 `pnpm add --offline` 仍因本机缺 pdf-lib tarball 不能宣称通过；现有 packed tgz 消费者通过的是精确依赖链接。
 - 下一当前任务：合并此检查点并完成本期最终本机门禁；E05 交卷独立证据、E07 字体参考样本和真实平台写入仍不能用 fixture 代替。
+
+### 2026-09-23 · main 最终本机复核（T31 partial）
+
+- 已将分批 SDK/CLI 检查点合并到本机 `main`，未推送。正式门禁前 `git status --short` 为空；本机 `main` 领先 `origin/main`。保留 `codex/cli-complete` 隔离工作树与合并前备份 stash，未清理用户数据。
+- Node v24.11.1、macOS 本机主仓库实际命令：`pnpm lint` → exit 0；`pnpm typecheck` → exit 0；`pnpm test` → exit 0（SDK 222/222、CLI 49/49）；`pnpm build` → exit 0；`pnpm test:e2e` → exit 0（7/7）；`node scripts/check-boundaries.mjs` → exit 0（仅两包、public graph 干净）；`node scripts/check-source-lock.mjs` → exit 0（三份固定参考源码）；`git diff --check` → exit 0。
+- 当前计划 28 项中 16 项 done、12 项 partial。离线可运行链路已有 SDK/CLI 合成 fixture，T31 的 28 命令注册、23 组错误输入零平台请求与 tgz 隔离消费者已验证。**没有**把这些测试等同真实账号业务验收。
+- 未运行/阻塞：E05 学堂最终交卷缺独立取证与单独授权；E07 用户确认暂无三份参考字体样本/200 人工核实字形，Canvas 解码与受控旧课件浏览器仍未完成；真实登录/学习/答题/发帖/直播未获单独授权；新消费者离线 `pnpm add` 缺 pdf-lib tarball；多 GiB 持续流及所有 CLI 命令的完整正常/异常组合尚未覆盖。T27–T30 Web 继续 deferred。下一当前任务：取得对应输入或授权后逐项补齐上述验收，优先 E07 字体样本与 E05 交卷证据；本期不自动开发 Web。
