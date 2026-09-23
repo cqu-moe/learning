@@ -1,0 +1,14 @@
+{
+  "id": "xuetang/lecture-note",
+  "platform": "xuetang",
+  "source": { "repo": "cqu-moe/xuetang-cli", "ref": "628a8fa8a4b90897f285a109aa591a8f6263846d", "path": "src/download/api.py", "symbol": "fetch_lecture_note" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.xuetangx.com", "path": "/c27/online_courseware/leaf_lecture_note/7/", "query": { "classroom_id": "100" }, "headers": { "xtbz": "xt" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": [{ "text": "本节讲述", "start": 0, "end": 4 }] } }
+    }
+  ],
+  "entry": { "service": "resources", "method": "transcript", "input": { "leafId": "7" } },
+  "expected": null
+}

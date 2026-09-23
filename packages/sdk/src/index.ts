@@ -21,6 +21,8 @@ import { yktAssessmentGet, yktAssessmentsResolve } from './providers/ykt/assessm
 import { yktExamRead } from './providers/ykt/exam-read.js';
 import { xtxCourses, xtxOutline } from './providers/xuetang/catalog.js';
 import { xtxProbeProvider, xtxQrLaunch } from './providers/xuetang/auth.js';
+import { xtxMedia, xtxTranscript } from './providers/xuetang/resources.js';
+import { xtxExamRead, xtxExamResolve } from './providers/xuetang/exam-read.js';
 import { probeSession } from './auth/flow.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
@@ -63,7 +65,7 @@ const CAPABILITY_IDS = [
 
 const IMPLEMENTED: Record<Platform, Set<string>> = {
   ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse', 'resources.media', 'resources.transcript', 'resources.lessons', 'resources.slides', 'assessments.resolve', 'assessments.get']),
-  xuetang: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline']),
+  xuetang: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'resources.media', 'resources.transcript', 'assessments.resolve', 'assessments.get']),
   zhs: new Set(['auth.importLegacy']),
 };
 
@@ -163,10 +165,12 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     resources: {
       media: async (resource) => {
         if (platform === 'ykt') return yktMedia(await httpBound(), resource);
+        if (platform === 'xuetang') return xtxMedia(await httpBound(), resource);
         return asyncUnsupported(platform, `resources.media(${resource.key})`);
       },
       transcript: async (resource) => {
         if (platform === 'ykt') return yktTranscript(await httpBound(), resource);
+        if (platform === 'xuetang') return xtxTranscript(await httpBound(), resource);
         return asyncUnsupported(platform, `resources.transcript(${resource.key})`);
       },
       lessons: async (course) => {
@@ -182,6 +186,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     assessments: {
       resolve: async (resource) => {
         if (platform === 'ykt') return yktAssessmentsResolve(await httpBound(), resource);
+        if (platform === 'xuetang') return xtxExamResolve(await httpBound(), resource);
         return asyncUnsupported(platform, `assessments.resolve(${resource.key})`);
       },
       get: async (ref) => {
@@ -189,6 +194,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           if (ref.kind === 'exam') return yktExamRead(await httpBound(), ref);
           return yktAssessmentGet(await httpBound(), ref);
         }
+        if (platform === 'xuetang' && ref.kind === 'exam') return xtxExamRead(await httpBound(), ref);
         return asyncUnsupported(platform, `assessments.get(${ref.assessmentId})`);
       },
       draft: (ref) => asyncUnsupported(platform, `assessments.draft(${ref.assessmentId})`),

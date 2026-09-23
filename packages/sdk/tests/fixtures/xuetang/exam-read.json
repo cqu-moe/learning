@@ -1,0 +1,44 @@
+{
+  "id": "xuetang/exam-read",
+  "platform": "xuetang",
+  "source": { "repo": "cqu-moe/xuetang-cli", "ref": "628a8fa8a4b90897f285a109aa591a8f6263846d", "path": "src/download/exam.py", "symbol": "ExamSession.fetch_paper_and_results" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.xuetangx.com", "path": "/api/v1/lms/learn/leaf_info/100/30/", "query": { "sign": "SIGN-A" }, "headers": { "xtbz": "xt" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "leaf_type": 5, "content_info": { "leaf_type_id": 3908258 } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.xuetangx.com", "path": "/api/v1/lms/exam/cover", "query": { "exam_id": "3908258" }, "headers": { "xtbz": "xt" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "data": { "show_perm": 1, "result": { "status": 2 }, "user": { "user_id": 77 } } } } }
+    },
+    {
+      "request": { "method": "POST", "host": "www.xuetangx.com", "path": "/api/v1/lms/exam/gen_token", "headers": { "xtbz": "xt", "content-type": "application/json;charset=utf-8" }, "body": { "exam_id": "3908258", "classroom_id": "100", "is_teacher": 0 } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "errcode": 0, "data": { "crypt": "xtx-crypt-fixture", "exam_host": "https://examination.xuetangx.com" } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/login", "query": { "exam_id": "3908258", "user_id": "77", "crypt": "xtx-crypt-fixture", "next": "https://examination.xuetangx.com/result/3908258?isFrom=0", "language": "zh" } },
+      "response": { "status": 302, "headers": { "location": "https://examination.xuetangx.com/result/3908258?isFrom=0", "set-cookie": ["x_access_token=xtx-exam-sess; Path=/"] } }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/result/3908258", "query": { "isFrom": "0" } },
+      "response": { "status": 200, "headers": {}, "body": {} }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/exam_room/show_paper", "query": { "exam_id": "3908258" }, "headers": { "xtbz": "cloud", "x-client": "web" } },
+      "response": { "status": 200, "headers": {}, "body": { "errcode": 0, "data": { "problems": [
+        { "problem_id": 1, "Problem": { "ProblemType": "SingleChoice", "Body": "<p>选对的</p>", "Options": [{ "Key": "A", "Value": "<p>甲</p>" }] }, "Score": 5 },
+        { "problem_id": 9, "Problem": { "ProblemType": "WeirdNewType", "Body": "<p>?</p>", "Options": [] }, "Score": 5 }
+      ] } } }
+    },
+    {
+      "request": { "method": "GET", "host": "examination.xuetangx.com", "path": "/exam_room/problem_results", "query": { "exam_id": "3908258" }, "headers": { "xtbz": "cloud", "x-client": "web" } },
+      "response": { "status": 200, "headers": {}, "body": { "errcode": 0, "data": { "results": [
+        { "problem_id": 9, "grade": 0, "Answer": null },
+        { "problem_id": 1, "grade": 5, "Answer": "A" }
+      ] } } }
+    }
+  ],
+  "entry": { "service": "assessments", "method": "get", "input": { "leafId": "30" } },
+  "expected": null
+}

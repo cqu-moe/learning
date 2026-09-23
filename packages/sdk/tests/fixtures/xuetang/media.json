@@ -1,0 +1,18 @@
+{
+  "id": "xuetang/media",
+  "platform": "xuetang",
+  "source": { "repo": "cqu-moe/xuetang-cli", "ref": "628a8fa8a4b90897f285a109aa591a8f6263846d", "path": "src/download/api.py", "symbol": "fetch_leaf_info/fetch_playurl" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.xuetangx.com", "path": "/api/v1/lms/learn/leaf_info/100/7/", "query": { "sign": "SIGN-A" }, "headers": { "xtbz": "xt" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "content_info": { "media": { "ccid": "CCX1" } } } } }
+    },
+    {
+      "request": { "method": "GET", "host": "www.xuetangx.com", "path": "/api/v1/lms/service/playurl/CCX1/", "query": { "appid": "10000" }, "headers": { "xtbz": "xt" } },
+      "response": { "status": 200, "headers": {}, "body": { "data": { "duration": 120, "sources": { "quality20": ["https://www.xuetangx.com/hd.mp4"], "quality10": ["https://www.xuetangx.com/sd.mp4"] } } } }
+    }
+  ],
+  "entry": { "service": "resources", "method": "media", "input": { "leafId": "7" } },
+  "expected": null
+}

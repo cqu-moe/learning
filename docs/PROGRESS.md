@@ -13,7 +13,7 @@
 | T06 | 雨课堂登录、课程与两类大纲 | done | vitest tests/ykt-catalog.test.ts → 7/7; 全套 74/74, typecheck/lint/build/boundaries exit 0 | E04 身份字段仅 fixture；真实登录未执行 |
 | T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
-| T09 | 学堂资源、作业和考试结果读取 | not-started | 未运行 | — |
+| T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
 | T10 | 智慧树编码与登录 | not-started | 未运行 | — |
 | T11 | 智慧树两类课程树和权威进度 | not-started | 未运行 | — |
 | T12 | 富文本、Markdown与格式导出 | not-started | 未运行 | — |
@@ -127,6 +127,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest xuetang-catalog → 6 passed；全套 86/86；typecheck/lint/build/boundaries → 0。
 - 未运行项：真实 wsapp 连接；QR 过期重连循环仅实现骨架（ticket expire 事件已带 expiresAtMs）。
 - 下一个当前任务：T09。
+
+### 2026-09-23 · T09 学堂资源、作业和考试结果读取（done）
+
+- 实际改动：src/providers/xuetang/{resources.ts,exam-read.ts}、src/index.ts 接线、tests/xuetang-resources.test.ts、fixtures xuetang/{media,lecture-note,exam-read}.json。
+- 实现：leaf_info→ccid→playurl mp4 变体（duration 秒）；讲稿 leaf_lecture_note 秒→毫秒段；考试读全链（cover 双层 data、gen_token 双层 data.data.crypt、exam_host allowlist 校验先于 crypt 发送（A091）、SSO login 种 x_access_token、cloud 头 show_paper/problem_results、problem_id join、Type 字符串分类未知保持 unknown、per-profile 串行链全程持锁）。只读路径零 start/submit 调用（A092）。
+- 命令（Node v24.11.1）：vitest xuetang-resources → 4 passed；全套 90/90；typecheck/lint/build → 0。测试先行确认失败后实现。
+- 未运行项：真实考试子系统；讲稿 seconds 字段名 start/end 按源码，真实键名待 E02 一并核对。
+- 下一个当前任务：T10。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 
