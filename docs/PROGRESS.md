@@ -17,7 +17,7 @@
 | T10 | 智慧树编码与登录 | done | vitest tests/zhs-auth-crypto.test.ts → 7/7; 全套 97/97, typecheck/lint/build/boundaries exit 0 | 参考仓库 HOME 向量多一个 = 属笔误，已修正记录 |
 | T11 | 智慧树两类课程树和权威进度 | done | vitest tests/zhs-catalog.test.ts → 5/5; 全套 102/102, typecheck/lint/build/boundaries exit 0 | zhs progress 读取端点形状未取证，能力未实现未伪造 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
-| T13 | 草稿导入、反馈匹配与可选模型建议 | not-started | 未运行 | — |
+| T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
 | T14 | 操作预览、幂等与不确定写入 | not-started | 未运行 | — |
 | T15 | 雨课堂作业与内嵌题写入 | not-started | 未运行 | — |
 | T16 | 学堂作业与讨论发布 | not-started | 未运行 | — |
@@ -162,6 +162,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：pnpm install（parse5/yaml 冻结）→ 0；vitest content → 7 passed；全套 109/109；typecheck/lint/build/boundaries → 0。
 - 未运行项：JSON/YAML 导出编排进 T13/T23 的服务层；MathJax SVG 剥离同源码策略。
 - 下一个当前任务：T13。
+
+### 2026-09-23 · T13 草稿导入、反馈匹配与可选模型建议（done）
+
+- 实际改动：src/services/{drafts.ts,model.ts}、src/content/match.ts、src/index.ts 接线（draft/importDraft/importFeedback/match/propose）、tests/drafts.test.ts。
+- 实现：legacy YAML/JSON 草稿导入（4MiB 上限、自定义 tag/别名上限拒绝、ykt/xtx 值约定 A/[A,B]/正确/文字→Answer、值类型不混）；ykt 反馈集导入（官方 Answers→feedback）；内容匹配（fingerprint 精确、plainText+选项多重集合重排映射、源/目标重复选项歧义拒绝、跨 exam/homework blocked、未解码题干 blocked）；模型建议（无 client 全 blocked、只发题面/选项文本零 Cookie、返回 schema 校验、不存在的选项 blocked）。
+- 验收：A131（跨 kind 不回填、选项换序正确映射、重复选项歧义拒绝）；A132（坏 JSON/YAML 拒绝、未知选项/未解码题干不形成可执行答案、模型 payload 无 Cookie 断言）。
+- 命令（Node v24.11.1）：vitest drafts → 6 passed；全套 115/115；typecheck/lint/build/boundaries → 0。
+- 未运行项：真实模型 API（无 key，fake client fixture 级验证）。
+- 下一个当前任务：T14。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

@@ -25,6 +25,9 @@ import { xtxMedia, xtxTranscript } from './providers/xuetang/resources.js';
 import { xtxExamRead, xtxExamResolve } from './providers/xuetang/exam-read.js';
 import { zhsQrLaunch } from './providers/zhs/auth.js';
 import { zhsHikeCourses, zhsHikeOutline, zhsShareCourses, zhsShareOutline } from './providers/zhs/catalog.js';
+import { importFeedbackSet, importLegacyDraft } from './services/drafts.js';
+import { matchDraft } from './content/match.js';
+import { proposeMatches } from './services/model.js';
 import { probeSession } from './auth/flow.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
@@ -85,6 +88,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
   const { scope, runtime } = input;
   const sessionBox = { jar: new SessionCookieJar(), hydrated: false };
   const lifecycle = new AuthLifecycle({ scope, clock: runtime.clock, state: runtime.state, masterKey: runtime.masterKey });
+  const clientRef: { current: LearningClient | null } = { current: null };
   const httpBound = async () => {
     if (!sessionBox.hydrated) {
       const record = await readSession(runtime.state, runtime.masterKey, scope);
@@ -102,7 +106,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
   };
   new AuthLifecycle({ scope, clock: runtime.clock, state: runtime.state, masterKey: runtime.masterKey });
   const platform = scope.platform;
-  return {
+  const client: LearningClient = {
     scope,
     capabilities: () => capabilitiesFor(platform),
     auth: {
@@ -213,11 +217,32 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         if (platform === 'xuetang' && ref.kind === 'exam') return xtxExamRead(await httpBound(), ref);
         return asyncUnsupported(platform, `assessments.get(${ref.assessmentId})`);
       },
-      draft: (ref) => asyncUnsupported(platform, `assessments.draft(${ref.assessmentId})`),
-      importDraft: (_text, format) => asyncUnsupported(platform, `assessments.importDraft(${format})`),
-      importFeedback: (_text, ref) => asyncUnsupported(platform, `assessments.importFeedback(${ref.assessmentId})`),
-      match: () => asyncUnsupported(platform, 'assessments.match'),
-      propose: () => asyncUnsupported(platform, 'assessments.propose'),
+      draft: async (ref) => {
+        const assessment = await clientRef.current!.assessments.get(ref);
+        return {
+          schemaVersion: 1 as const,
+          id: `draft-${ref.assessmentId}`,
+          ref,
+          fingerprint: assessment.fingerprint,
+          entries: assessment.questions.map((question) => ({
+            questionId: question.id,
+            fingerprint: question.fingerprint,
+            answer: { kind: 'unset' as const },
+            evidence: null,
+          })),
+        };
+      },
+      importDraft: (text, format) => importLegacyDraft(text, format, scope),
+      importFeedback: (text, ref) => importFeedbackSet(text, ref),
+      match: async (draft, sources) => {
+        const assessment = await clientRef.current!.assessments.get(draft.ref);
+        return matchDraft(draft, sources, assessment.questions);
+      },
+      propose: async (draft, questionIds) => {
+        const assessment = await clientRef.current!.assessments.get(draft.ref);
+        const questions = assessment.questions.filter((question) => questionIds.includes(question.id));
+        return proposeMatches(runtime.model, draft, questions);
+      },
     },
     discussions: {
       resolve: (resource) => asyncUnsupported(platform, `discussions.resolve(${resource.key})`),
@@ -242,6 +267,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     },
     close: async () => {},
   };
+  clientRef.current = client;
+  return client;
 }
 
 export async function aggregateCourses(
