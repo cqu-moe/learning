@@ -15,7 +15,7 @@ export interface LegacyCookie {
   secure?: boolean;
   httpOnly?: boolean;
   sameSite?: 'Strict' | 'Lax' | 'None';
-  expires?: number;
+  expires?: number | null;
 }
 
 /** Local-only cookie-array import: no network, identity stays unverified (S03). */
@@ -32,7 +32,7 @@ export async function importLegacyCookies(
     if (!/^[a-z0-9.-]+$/.test(host) || !hostAllowed(host, hosts) || !path.startsWith('/') || /[;\r\n]/.test(cookie.name + cookie.value + path) || cookie.name === '' ||
       cookie.secure !== undefined && typeof cookie.secure !== 'boolean' || cookie.httpOnly !== undefined && typeof cookie.httpOnly !== 'boolean' ||
       cookie.sameSite !== undefined && !['Strict', 'Lax', 'None'].includes(cookie.sameSite) ||
-      cookie.expires !== undefined && (!Number.isFinite(cookie.expires) || cookie.expires < -1)) {
+      cookie.expires !== undefined && cookie.expires !== null && (!Number.isFinite(cookie.expires) || cookie.expires < -1)) {
       throw new LearningError({ code: 'INVALID_INPUT', message: 'legacy cookie has invalid scope or attributes', retryAfterMs: null, operationId: null });
     }
     const attributes = [`${cookie.name}=${cookie.value}`, `Path=${path}`];
@@ -40,7 +40,7 @@ export async function importLegacyCookies(
     if (cookie.secure) attributes.push('Secure');
     if (cookie.httpOnly) attributes.push('HttpOnly');
     if (cookie.sameSite !== undefined) attributes.push(`SameSite=${cookie.sameSite}`);
-    if (cookie.expires !== undefined && cookie.expires >= 0) attributes.push(`Expires=${new Date(cookie.expires * 1000).toUTCString()}`);
+    if (cookie.expires !== undefined && cookie.expires !== null && cookie.expires >= 0) attributes.push(`Expires=${new Date(cookie.expires * 1000).toUTCString()}`);
     await jar.absorb(new URL(`https://${host}/`), [attributes.join('; ')]);
   }
   const generation = (await readSessionGeneration(runtime.state, runtime.masterKey, scope)) + 1;

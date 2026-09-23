@@ -21,7 +21,7 @@ function readCookieFile(path: string): string {
     (item.path !== undefined && typeof item.path !== 'string') ||
     (item.secure !== undefined && typeof item.secure !== 'boolean') ||
     (item.httpOnly !== undefined && typeof item.httpOnly !== 'boolean') ||
-    (item.expires !== undefined && typeof item.expires !== 'number') ||
+    (item.expires !== undefined && item.expires !== null && typeof item.expires !== 'number') ||
     (item.sameSite !== undefined && !['Strict', 'Lax', 'None'].includes(item.sameSite)))) {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'cookie import must be a cookie array', retryAfterMs: null, operationId: null });
   }
