@@ -2,6 +2,7 @@ import type { Clock, Transport } from '../../runtime/types.js';
 import type { AuthLaunch } from '../../auth/flow.js';
 import type { SessionCookieJar, SessionHttp } from '../../http/client.js';
 import type { SessionRecord } from '../../session/store.js';
+import { LearningError } from '../../types/errors.js';
 import { REQUESTLOGIN_FRAME, XTX_BASE, XTX_BASE_HEADERS, XTX_WSAPP } from './schemas.js';
 
 export interface LoginSuccessFrame { op: 'loginsuccess'; token?: string; is_new?: boolean; s_s?: string }
@@ -106,14 +107,15 @@ export function xtxProbeProvider(deps: { http: SessionHttp; clock: Clock }) {
         url: `${XTX_BASE}/api/v1/lms/user/user-courses/?status=1&page=1`,
         headers: XTX_BASE_HEADERS,
       });
-      const payload = (await response.json()) as { success?: boolean };
-      if (response.status === 401 || payload.success === false) return null;
+      const payload = (await response.json()) as { success?: boolean; data?: { product_list?: unknown } };
+      if (response.status === 401 || response.status === 403 || payload.success === false) return null;
+      if (response.status !== 200 || payload.success !== true || !Array.isArray(payload.data?.product_list)) throw new LearningError({ code: 'PROTOCOL', message: 'Xuetang login probe returned an invalid course envelope', retryAfterMs: null, operationId: null });
       return {
         scope: record?.scope ?? { userId: 'local', profileId: 'unknown', platform: 'xuetang' as const },
         generation: record?.generation ?? 1,
         displayName: record?.displayName ?? null,
         platformUserId: record?.platformUserId ?? null,
-        identityVerified: record?.identityVerified ?? true,
+        identityVerified: true,
         checkedAtMs: deps.clock.nowMs(),
       };
     },

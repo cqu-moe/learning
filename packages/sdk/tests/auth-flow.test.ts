@@ -243,6 +243,27 @@ describe('SDK factory (A052)', () => {
     expect(hostCookie?.httpOnly).not.toBe(true);
   });
 
+  it('promotes an imported Xuetang session only after the authenticated courses envelope and rejects 403', async () => {
+    const xtxScope: Scope = { userId: 'local', profileId: 'x-probe', platform: 'xuetang' };
+    const transport = new FakeTransport();
+    const runtime = makeRuntime(transport);
+    await importLegacyCookies(runtime, xtxScope, [{ name: 'sessionid', value: 'fixture', domain: '.xuetangx.com', path: '/', secure: true }]);
+    const request = { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/user/user-courses/', query: { status: '1', page: '1' }, headers: { xtbz: 'xt' } };
+    transport.scriptInteractions([{ request, response: { status: 200, body: { success: true, data: { product_list: [] } } } }]);
+    const client = createLearningClient({ scope: xtxScope, runtime });
+    expect(await client.auth.probe()).toMatchObject({ state: 'valid', session: { identityVerified: true } });
+    const { readSession } = await import('../src/session/store.js');
+    expect((await readSession(runtime.state, runtime.masterKey, xtxScope))?.identityVerified).toBe(true);
+    transport.assertNoExtraScripts();
+    const denied = new FakeTransport();
+    const other = makeRuntime(denied);
+    await importLegacyCookies(other, xtxScope, [{ name: 'sessionid', value: 'fixture', domain: '.xuetangx.com' }]);
+    denied.scriptInteractions([{ request, response: { status: 403, body: {} } }]);
+    expect((await createLearningClient({ scope: xtxScope, runtime: other }).auth.probe()).state).toBe('expired');
+    expect((await readSession(other.state, other.masterKey, xtxScope))?.identityVerified).toBe(false);
+    denied.assertNoExtraScripts();
+  });
+
   it('disconnect tombstones the session so stale generations cannot revive', async () => {
     const runtime = makeRuntime(new FakeTransport());
     await importLegacyCookies(runtime, scope, []);
