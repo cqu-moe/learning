@@ -19,8 +19,8 @@ export function registerHomeworkCommands(program: Command): void {
         if (resource.course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
         const client = createLearningClient({ scope: profile.scope, runtime });
         try {
-          const refs = (await client.assessments.resolve(resource)).filter((ref) => ref.kind === 'homework');
-          if (refs.length !== 1) throw new LearningError({ code: 'UNSUPPORTED', message: 'expected one homework assessment for this resource', retryAfterMs: null, operationId: null });
+          const refs = (await client.assessments.resolve(resource)).filter((ref) => ref.kind === 'homework' || ref.kind === 'embedded');
+          if (refs.length !== 1) throw new LearningError({ code: 'UNSUPPORTED', message: 'expected one homework or embedded assessment for this resource', retryAfterMs: null, operationId: null });
           const draft = await client.assessments.draft(refs[0]!);
           try { await writeFile(options.output, exportDraftYaml(draft), { flag: 'wx', mode: 0o600 }); }
           catch (error) {
@@ -47,7 +47,7 @@ export function registerHomeworkCommands(program: Command): void {
         try {
           const imported = await client.assessments.importDraft(text, 'learning');
           const draft = imported.value;
-          if (draft.ref.kind !== 'homework') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not homework', retryAfterMs: null, operationId: null });
+          if (draft.ref.kind !== 'homework' && draft.ref.kind !== 'embedded') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not homework or embedded exercise', retryAfterMs: null, operationId: null });
           const answered = draft.entries.filter((entry) => entry.answer.kind !== 'unset');
           if (answered.length === 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'draft contains no answers to submit', retryAfterMs: null, operationId: null });
           const previews = [];

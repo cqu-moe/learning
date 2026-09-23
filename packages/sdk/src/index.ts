@@ -17,8 +17,9 @@ import type { LegacyCookie } from './auth/legacy.js';
 import { readSession, revokeSession, writeSession } from './session/store.js';
 import { yktCourses, yktOutline, yktResolveCourse } from './providers/ykt/catalog.js';
 import { yktProbeProvider, yktQrLaunch } from './providers/ykt/auth.js';
-import { yktLessons, yktMedia, yktSlides, yktTranscript } from './providers/ykt/resources.js';
-import { yktAssessmentGet, yktAssessmentsResolve } from './providers/ykt/assessments.js';
+import { fetchLeafInfo, yktLessons, yktMedia, yktSlides, yktTranscript } from './providers/ykt/resources.js';
+import { YKT_BASE } from './providers/ykt/schemas.js';
+import { yktAssessmentGet, yktAssessmentsResolve, yktEmbeddedRead } from './providers/ykt/assessments.js';
 import { yktExamRead } from './providers/ykt/exam-read.js';
 import { xtxCourses, xtxOutline } from './providers/xuetang/catalog.js';
 import { xtxProbeProvider, xtxQrLaunch } from './providers/xuetang/auth.js';
@@ -36,7 +37,7 @@ import { probeSession } from './auth/flow.js';
 import { JobRunner } from './services/jobs.js';
 import { advanceExport } from './services/export-runner.js';
 import { ActionStore } from './services/actions.js';
-import { submitHomeworkProblem } from './providers/ykt/homework-write.js';
+import { submitHomeworkProblem, submitEmbeddedAnswer } from './providers/ykt/homework-write.js';
 import { advanceYktStudy, reconcileYktHeartbeat, yktReadProgress } from './providers/ykt/study.js';
 import { advanceXtxStudy, reconcileXtxHeartbeat, xtxReadProgress, xtxReadStudyIdentity } from './providers/xuetang/study.js';
 import { fetchDiscussionComments, fetchUnitDiscussion, postComment, submitXtxProblem } from './providers/xuetang/homework-write.js';
@@ -288,6 +289,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       get: async (ref) => {
         if (platform === 'ykt') {
           if (ref.kind === 'exam') return yktExamRead(await httpBound(), ref);
+          if (ref.kind === 'embedded') return yktEmbeddedRead(await httpBound(), ref);
           return yktAssessmentGet(await httpBound(), ref);
         }
         if (platform === 'xuetang' && ref.kind === 'exam') return xtxExamRead(await httpBound(), ref);
@@ -513,6 +515,23 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         }
         if (course.native.kind !== 'ykt') return asyncUnsupported(platform, 'actions.prepare(homework.apply)');
         const classroomId = course.native.classroomId;
+        if (actionInput.draft.ref.kind === 'embedded') {
+          const resource = actionInput.draft.ref.resource;
+          if (resource.native.kind !== 'ykt') return asyncUnsupported(platform, 'actions.prepare(embedded.apply)');
+          const leafId = resource.native.leafId;
+          return actionStore.prepare(actionInput, session.generation, async () => {
+            const current = await yktEmbeddedRead(await httpBound(), actionInput.draft.ref);
+            const latest = current.questions.find((item) => item.id === questionId);
+            if (current.fingerprint !== actionInput.draft.fingerprint || latest?.fingerprint !== entry.fingerprint || (latest.attemptsUsed ?? 0) > 0) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'embedded question changed or was already solved', retryAfterMs: null, operationId: null });
+            const leaf = await fetchLeafInfo(await httpBound(), classroomId, leafId);
+            const skuId = String(leaf?.sku_id ?? '');
+            if (!/^[1-9]\d*$/.test(skuId) || String(leaf?.content_info?.media?.exercise_id ?? '') !== actionInput.draft.ref.assessmentId) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'embedded exercise identity changed', retryAfterMs: null, operationId: null });
+            const csrf = await sessionBox.jar.cookieValue(new URL(YKT_BASE), 'csrftoken');
+            if (csrf === null) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'Yuketang CSRF cookie is missing', retryAfterMs: null, operationId: null });
+            const result = await submitEmbeddedAnswer(await httpBound(), { classroomId, leafId, skuId, exerciseId: actionInput.draft.ref.assessmentId, problemId: questionId }, entry.answer, csrf);
+            return { operationId: 'ack', state: 'confirmed', message: result.isRight ? 'embedded answer correct' : 'embedded answer submitted but incorrect', result: { questionId, isRight: result.isRight, correctAnswer: result.correctAnswer } };
+          });
+        }
         return actionStore.prepare(actionInput, session.generation, async () => {
           await submitHomeworkProblem(await httpBound(), classroomId, questionId, entry.answer);
           return { operationId: 'ack', state: 'confirmed', message: 'homework problem acknowledged', result: { questionId } };

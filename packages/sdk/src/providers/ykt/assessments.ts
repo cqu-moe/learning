@@ -5,6 +5,7 @@ import type { AssessmentRef, ResourceRef } from '../../types/refs.js';
 import type { SessionHttp } from '../../http/client.js';
 import { fetchLeafInfo } from './resources.js';
 import { moocEnvelopeChecked, YKT_BASE } from './schemas.js';
+import { fetchEmbeddedList } from './homework-write.js';
 
 function richTextFromRaw(html: string | null | undefined, fontLocked: boolean): RichText {
   const raw = html ?? '';
@@ -40,6 +41,9 @@ export async function yktAssessmentsResolve(http: SessionHttp, resource: Resourc
     throw new LearningError({ code: 'INVALID_INPUT', message: 'ykt assessments require ykt refs', retryAfterMs: null, operationId: null });
   }
   const info = await fetchLeafInfo(http, resource.course.native.classroomId, resource.native.leafId);
+  if (info?.leaf_type === 0 && info.content_info?.media?.exercise_id) {
+    return [{ resource, kind: 'embedded', assessmentId: String(info.content_info.media.exercise_id) }];
+  }
   if (info?.leaf_type === 5) {
     const examId = info?.content_info?.leaf_type_id;
     if (examId !== undefined && examId !== null) {
@@ -55,6 +59,24 @@ export async function yktAssessmentsResolve(http: SessionHttp, resource: Resourc
       assessmentId: String(exerciseId),
     },
   ];
+}
+
+export async function yktEmbeddedRead(http: SessionHttp, ref: AssessmentRef): Promise<Assessment> {
+  if (ref.kind !== 'embedded' || ref.resource.native.kind !== 'ykt' || ref.resource.course.native.kind !== 'ykt') throw new LearningError({ code: 'INVALID_INPUT', message: 'Yuketang embedded assessment ref required', retryAfterMs: null, operationId: null });
+  const classroomId = ref.resource.course.native.classroomId;
+  const leafId = ref.resource.native.leafId;
+  const info = await fetchLeafInfo(http, classroomId, leafId);
+  const skuId = String(info?.sku_id ?? '');
+  if (info?.leaf_type !== 0 || String(info.content_info?.media?.exercise_id ?? '') !== ref.assessmentId || !/^[1-9]\d*$/.test(skuId)) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'embedded exercise identity changed', retryAfterMs: null, operationId: null });
+  const problems = await fetchEmbeddedList(http, { classroomId, leafId, skuId, exerciseId: ref.assessmentId });
+  const questions: Question[] = problems.map((problem) => ({
+    id: problem.problemId, kind: questionKindOf(problem.problemType), rawType: String(problem.problemType),
+    body: richTextFromRaw(problem.body, false), options: problem.options.map((option) => ({ key: option.key, body: richTextFromRaw(option.body, false) })),
+    fingerprint: sha256Hex(JSON.stringify([Number(problem.problemId), problem.problemType, problem.body])),
+    attemptsUsed: problem.isRight ? 1 : null, maxAttempts: null, myAnswer: null, feedback: null,
+  }));
+  return { ref, title: `embedded ${leafId}`, state: 'unknown', timed: null,
+    fingerprint: sha256Hex(JSON.stringify(questions.map((question) => question.fingerprint))), questions };
 }
 
 export async function yktAssessmentGet(http: SessionHttp, ref: AssessmentRef): Promise<Assessment> {

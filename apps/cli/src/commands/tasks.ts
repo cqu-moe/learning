@@ -68,7 +68,7 @@ export function registerJobsCommands(program: Command): void {
       });
     });
   const resume = jobs.command('resume <jobId>')
-    .description('resume an interrupted export under its profile')
+    .description('resume an interrupted export, study or live job under its profile')
     .option('--yes', 'confirm a new live checkin when resuming a live job');
   resume
     .action(async (jobId: string) => {
@@ -82,7 +82,7 @@ export function registerJobsCommands(program: Command): void {
           if (before.kind === 'live') {
             if (!resume.opts<{ yes?: boolean }>().yes) { process.stderr.write('learning: live resume requires --yes for a new checkin\n'); process.exitCode = 2; return; }
             await client.jobs.resume(jobId);
-          } else if (before.status === 'paused') await client.jobs.resume(jobId);
+          } else if (before.status === 'paused' || before.status === 'needs-input' && before.kind === 'study') await client.jobs.resume(jobId);
           else if (!['queued', 'waiting', 'succeeded'].includes(before.status)) { process.stderr.write(`learning: ${before.status} job cannot resume without reconciliation\n`); process.exitCode = before.status === 'uncertain' || before.status === 'running' ? 5 : 3; return; }
           const job = await runJobForeground(client, runtime, jobId);
           const files = job.kind === 'export' ? await publishJobArtifacts(runtime, job, dataDir) : [];

@@ -3,9 +3,6 @@ import { encodeHomeworkAnswer, submitHomeworkProblem, submitEmbeddedAnswer, pars
 import { SessionCookieJar, createSessionHttp } from '../src/http/client.js';
 import { FakeClock, FakeTransport } from './helpers/replay.js';
 
-const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
-const classroom = { scope, key: 'k', native: { kind: 'ykt' as const, classroomId: '28930736' } };
-
 function httpFor(transport: FakeTransport) {
   return createSessionHttp({ transport, clock: new FakeClock(), jar: new SessionCookieJar(), allowHosts: ['yuketang.cn', 'xuetangx.com'] });
 }
@@ -37,16 +34,23 @@ describe('ykt homework write (T15, A151/A152)', () => {
     await expect(submitHomeworkProblem(httpFor(transport), '28930736', '11', { kind: 'choice', keys: ['A'] })).rejects.toMatchObject({ data: { code: 'PROTOCOL' } });
   });
 
-  it('embedded list parses; explicit answers submit without fabricating feedback (A152)', async () => {
-    const embedded = parseEmbeddedList({ success: true, data: { problems: [
-      { problemId: 'e1', question: { body: '<p>题</p>', options: [{ key: 'A', body: '<p>a</p>' }] } }
-    ] } });
+  it('embedded list and dedicated reply use the video protocol without fabricating wrong-answer feedback (A152)', async () => {
+    const embedded = parseEmbeddedList({ success: true, data: [
+      { problem_id: 11, content: { ProblemType: 1, Body: '<p>题</p>', Options: [{ key: 'A', value: '<p>a</p>' }] }, user: { is_right: false } },
+    ] });
     expect(embededLength(embedded)).toBe(1);
     const transport = new FakeTransport();
-    transport.script([{ status: 200, headers: {}, body: { success: true, data: { submitted: true, correct: null } } }]);
-    const result = await submitEmbeddedAnswer(httpFor(transport), classroom, 'e1', { kind: 'choice', keys: ['A'] });
+    transport.scriptInteractions([{ request: { method: 'POST', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/exercise/leaf_video/problem/reply/11/', headers: { xtbz: 'ykt', 'classroom-id': '28930736', 'x-csrftoken': 'fixture', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' }, body: { exercise_id: 888, sku_id: 901, leaf_id: 502, answer: ['A'] } }, response: { status: 200, body: { success: true, data: { is_right: false, my_answer: ['A'] } } } }]);
+    const result = await submitEmbeddedAnswer(httpFor(transport), { classroomId: '28930736', leafId: '502', skuId: '901', exerciseId: '888', problemId: '11' }, { kind: 'choice', keys: ['A'] }, 'fixture');
     expect(result.submitted).toBe(true);
     expect(result.correctAnswer).toBeNull();
+    expect(result.isRight).toBe(false);
+    transport.assertNoExtraScripts();
+    expect(() => parseEmbeddedList({ success: true, data: { problems: [] } })).toThrow(/list/);
+    const dropped = new FakeTransport();
+    dropped.failNext(new Error('connection reset after send'));
+    await expect(submitEmbeddedAnswer(httpFor(dropped), { classroomId: '28930736', leafId: '502', skuId: '901', exerciseId: '888', problemId: '11' }, { kind: 'choice', keys: ['A'] }, 'fixture')).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+    expect(dropped.calls).toHaveLength(1);
   });
 });
 

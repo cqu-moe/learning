@@ -6,10 +6,10 @@
 |---|---|---|
 | 三平台 QR、课程树与资料读取 | fixture 通过 | 默认智慧树微信 QR、原生 QR 与在线 UUID probe 均有合成 fixture；真实账号仍待核验。 |
 | 本机 profile、密钥、锁、doctor | fixture 通过 | CLI 进程测试；数据目录 0700，密钥/SQLite 0600，wake 可唤醒前台任务。 |
-| 雨课堂作业单题提交 | fixture 通过 | SDK/CLI 进程测试；内嵌题与真实写入未验收。 |
+| 雨课堂作业与视频内嵌题单题提交 | fixture 通过 | 独立作业和内嵌题各用对应端点与头；错题仅报告未答对，SDK/CLI 进程 fixture 通过；真实写入未授权。 |
 | 学堂作业单题提交与讨论发帖 | fixture 通过 | 作业读取、草稿、CSRF 单题写入及讨论草稿/发帖均有 SDK/CLI 进程 fixture；真实写入未授权。 |
 | 学堂考试 | partial | 只读导出、编辑草稿、独立开卷与选择/判断缓存 fixture；最终交卷被 E05 闸门阻断。 |
-| 雨课堂、学堂视频及图文学习 | partial | 图文完成 GET 按写入处理，完成前后读回与不确定写入只读核对均有 fixture；弹题继续、长任务延迟统计与真实学习未验收。 |
+| 雨课堂、学堂视频及图文学习 | partial | 雨课堂图文完成 GET、内嵌题暂停/手动作答后同 job 继续均有 fixture；学堂长任务延迟统计与真实学习未验收。 |
 | 智慧树 share/hike 学习 | partial | 两类加密/签名保存、弹题暂停、服务端进度回读 fixture；E04/E06 真机核验仍缺。 |
 | 历史课件与本地 PDF | partial | 历史课件图片/PDF 进程 fixture；字体 Canvas 与受控旧页面浏览器未实现，E07 黄金样本缺失。 |
 | MP4/HLS 下载 | partial | MP4 的 Range/validator 及双进程恢复、字幕失败保主文件通过 fixture；HLS 断点和多 GiB 未验收。 |
