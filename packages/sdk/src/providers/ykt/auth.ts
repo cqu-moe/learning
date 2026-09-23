@@ -109,12 +109,14 @@ export function yktProbeProvider(deps: { http: SessionHttp; clock: Clock }) {
       });
       const info = UserinfoWire.parse(await response.json());
       if (info.errcode !== 0) return null;
+      const platformUserId = info.data?.id !== undefined ? String(info.data.id) : null;
+      if (response.status !== 200 || platformUserId === null || platformUserId === '' || platformUserId === '0') throw new LearningError({ code: 'PROTOCOL', message: 'Yuketang userinfo lacks a verified user id', retryAfterMs: null, operationId: null });
       return {
         scope: record?.scope ?? { userId: 'local', profileId: 'unknown', platform: 'ykt' },
         generation: record?.generation ?? 1,
         displayName: info.data?.name ?? record?.displayName ?? null,
-        platformUserId: info.data?.id !== undefined ? String(info.data.id) : record?.platformUserId ?? null,
-        identityVerified: record?.identityVerified ?? true,
+        platformUserId,
+        identityVerified: true,
         checkedAtMs: deps.clock.nowMs(),
       };
     },
