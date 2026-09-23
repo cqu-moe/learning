@@ -24,6 +24,7 @@ import { xtxCourses, xtxOutline } from './providers/xuetang/catalog.js';
 import { xtxProbeProvider, xtxQrLaunch } from './providers/xuetang/auth.js';
 import { xtxMedia, xtxTranscript } from './providers/xuetang/resources.js';
 import { xtxExamRead, xtxExamResolve } from './providers/xuetang/exam-read.js';
+import { xtxHomeworkRead } from './providers/xuetang/homework-read.js';
 import { zhsQrLaunch, zhsWechatQrLaunch } from './providers/zhs/auth.js';
 import { zhsHikeCourses, zhsHikeOutline, zhsShareCourses, zhsShareOutline } from './providers/zhs/catalog.js';
 import { zhidaoQuery } from './providers/zhs/http.js';
@@ -38,7 +39,7 @@ import { ActionStore } from './services/actions.js';
 import { submitHomeworkProblem } from './providers/ykt/homework-write.js';
 import { advanceYktStudy, reconcileYktHeartbeat, yktReadProgress } from './providers/ykt/study.js';
 import { advanceXtxStudy, reconcileXtxHeartbeat, xtxReadProgress, xtxReadStudyIdentity } from './providers/xuetang/study.js';
-import { fetchDiscussionComments, fetchUnitDiscussion, postComment } from './providers/xuetang/homework-write.js';
+import { fetchDiscussionComments, fetchUnitDiscussion, postComment, submitXtxProblem } from './providers/xuetang/homework-write.js';
 import { sha256Hex } from './types/sha256.js';
 import { encodeExamAnswer, xtxReadStartCover, xtxSaveExam, xtxStartExam } from './providers/xuetang/exam-write.js';
 import { advanceHikeStudy, advanceShareStudy, reconcileHikeSave, reconcileShareSave, zhsHikeReadProgress, zhsSharePopupPoints, zhsSharePrelearningNote, zhsShareReadProgress, zhsShareReadState, zhsShareSave } from './providers/zhs/study.js';
@@ -290,6 +291,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           return yktAssessmentGet(await httpBound(), ref);
         }
         if (platform === 'xuetang' && ref.kind === 'exam') return xtxExamRead(await httpBound(), ref);
+        if (platform === 'xuetang' && ref.kind === 'homework') return xtxHomeworkRead(await httpBound(), ref);
         return asyncUnsupported(platform, `assessments.get(${ref.assessmentId})`);
       },
       draft: async (ref) => {
@@ -476,7 +478,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             return { operationId: 'ack', state: 'confirmed', message: 'study job created', result: { jobId: job.id } };
           });
         }
-        if (platform !== 'ykt' || actionInput.kind !== 'homework.apply') return asyncUnsupported(platform, `actions.prepare(${actionInput.kind})`);
+        if ((platform !== 'ykt' && platform !== 'xuetang') || actionInput.kind !== 'homework.apply') return asyncUnsupported(platform, `actions.prepare(${actionInput.kind})`);
         const owner = actionInput.draft.ref.resource.course.scope;
         if (!ownsScope(owner)) throw new LearningError({ code: 'FORBIDDEN', message: 'draft belongs to another profile', retryAfterMs: null, operationId: null });
         if (actionInput.questionIds.length !== 1) throw new LearningError({ code: 'INVALID_INPUT', message: 'submit one homework problem per preview', retryAfterMs: null, operationId: null });
@@ -490,6 +492,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         if (assessment.fingerprint !== actionInput.draft.fingerprint || question === undefined || question.fingerprint !== entry.fingerprint || question.kind === 'unknown') {
           throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'homework content changed since draft creation', retryAfterMs: null, operationId: null });
         }
+        if (question.attemptsUsed !== null && question.attemptsUsed > 0) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'homework problem was already submitted', retryAfterMs: null, operationId: null });
         if ((question.kind === 'single-choice' || question.kind === 'multi-choice') && entry.answer.kind !== 'choice' ||
           question.kind === 'judgement' && entry.answer.kind !== 'judgement' ||
           question.kind === 'fill-blank' && entry.answer.kind !== 'fill-blank' ||
@@ -497,6 +500,17 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           throw new LearningError({ code: 'INVALID_INPUT', message: 'answer kind does not match question kind', retryAfterMs: null, operationId: null });
         }
         const course = actionInput.draft.ref.resource.course;
+        if (platform === 'xuetang') {
+          if (course.native.kind !== 'xuetang' || actionInput.draft.ref.resource.native.kind !== 'xuetang') return asyncUnsupported(platform, 'actions.prepare(homework.apply)');
+          const leafId = actionInput.draft.ref.resource.native.leafId;
+          const ids = { leafId, classroomId: course.native.classroomId, exerciseId: actionInput.draft.ref.assessmentId, problemId: questionId, courseSign: course.native.courseSign };
+          return actionStore.prepare(actionInput, session.generation, async () => {
+            const csrf = await sessionBox.jar.cookieValue(new URL('https://www.xuetangx.com/'), 'csrftoken');
+            if (csrf === null) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'Xuetang CSRF cookie is missing', retryAfterMs: null, operationId: null });
+            await submitXtxProblem(await httpBound(), ids, question.rawType, entry.answer, csrf);
+            return { operationId: 'ack', state: 'confirmed', message: 'homework problem acknowledged', result: { questionId } };
+          });
+        }
         if (course.native.kind !== 'ykt') return asyncUnsupported(platform, 'actions.prepare(homework.apply)');
         const classroomId = course.native.classroomId;
         return actionStore.prepare(actionInput, session.generation, async () => {

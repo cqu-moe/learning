@@ -39,6 +39,11 @@ function kindFromTypeString(type: string | undefined): Question['kind'] {
 
 export async function xtxExamResolve(http: SessionHttp, resource: AssessmentRef['resource']): Promise<AssessmentRef[]> {
   const info = await xtxLeafInfo(http, resource);
+  if (info.leaf_type === 6) {
+    const homeworkId = info.content_info?.leaf_type_id;
+    if (!Number.isSafeInteger(homeworkId) || homeworkId === undefined || homeworkId <= 0) throw new LearningError({ code: 'PROTOCOL', message: 'homework leaf lacks a valid exercise id', retryAfterMs: null, operationId: null });
+    return [{ resource, kind: 'homework', assessmentId: String(homeworkId) }];
+  }
   if (info.leaf_type !== 5) return [];
   const examId = info.content_info?.leaf_type_id;
   if (examId === undefined || examId === null) return [];
