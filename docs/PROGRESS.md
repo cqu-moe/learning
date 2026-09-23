@@ -278,3 +278,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - A311：workspace 仍仅 @learning/sdk+@learning/cli（boundaries 断言），无 Web/executor/cloudflare 代码或云脚本；SDK/CLI 共用唯一 provider 实现（CLI 只调 SDK）。A312：离线 E2E 全通过；真机写入/字体全部如实记 not-run/阻塞（FEATURE-STATUS.md）。
 - 证据缺口汇总：E01 ykt 考试 fixtures、E02 xtx 分页终止、E03 ykt lesson 分页/字体字段、E04 三平台身份字段、E05 xtx 交卷取证、E06 zhs 回读时延、E07 字体黄金样本、E08 本机真实平台/字体实测——均未消除，只阻塞对应能力，不影响本期工程验收。
 - 本期 28 项全部完成（T00–T26、T31；T27–T30 deferred 不计分母）。T31 后停止，不自动进入 Web。
+
+### 2026-09-23 · T31 修正：CLI 对 SDK dist 的构建顺序依赖（CI 发现）
+
+- 问题：apps/cli 的 typecheck/build/test 通过正式 exports（@learning/sdk/node、@learning/sdk/render-node → packages/sdk/dist/*.d.ts）解析类型，全新 checkout 下 CI 先跑 `pnpm typecheck` 后跑 `pnpm build`，SDK dist 不存在 → TS2307。
+- 修复：apps/cli 脚本自足化——typecheck/build 前置 `pnpm --filter @learning/sdk build`，test 前置自身 `pnpm run build`（其内先建 SDK 再建 CLI dist，进程测试需要）。未用 tsconfig paths 伪造包可用性（SPEC §3 禁止），保持正式 exports 消费。
+- 验证（Node v24.11.1，先删除两包 dist 复现 CI）：`pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e` → 全部 exit 0（SDK 154/154 + CLI 8/8 + e2e 4/4）；`pnpm install --frozen-lockfile` → exit 0。root 脚本名与 T31 规定的 test:e2e 内容未变。
