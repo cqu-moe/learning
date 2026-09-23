@@ -187,8 +187,8 @@ export class JobRunner {
     const job = await this.update(id, (current, meta) => {
       if (meta.running) throw error('CONFLICT', 'job is still advancing', id);
       if (current.status === 'uncertain' || meta.pendingOperationId !== null) throw error('UNCERTAIN', 'pending operation must be reconciled first', id);
-      return current.status === 'paused'
-        ? { job: { ...current, status: 'queued', nextRunAtMs: this.clock.nowMs(), updatedAtMs: this.clock.nowMs() }, meta } : null;
+      return current.status === 'paused' || current.status === 'needs-input' && current.kind === 'study'
+        ? { job: { ...current, status: 'queued', items: current.items.filter((item) => item.state !== 'needs-input'), nextRunAtMs: this.clock.nowMs(), updatedAtMs: this.clock.nowMs() }, meta } : null;
     });
     await this.emitState(id);
     return job;

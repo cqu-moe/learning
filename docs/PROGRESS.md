@@ -19,11 +19,11 @@
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | vitest tests/drafts.test.ts → 6/6; 全套 115/115, typecheck/lint/build/boundaries exit 0 | — |
 | T14 | 操作预览、幂等与不确定写入 | done | vitest tests/actions.test.ts → 6/6; 全套 121/121, typecheck/lint/build/boundaries exit 0 | — |
-| T15 | 雨课堂作业与内嵌题写入 | partial | `actions-client` 单题作业 fixture；`ykt-write` 4/4 | 内嵌题执行链未接入；真实写入未授权 |
+| T15 | 雨课堂作业与内嵌题写入 | partial | 独立作业与内嵌题专用题单/回复 SDK、CLI 进程 fixture；`ykt-write` 4/4 | 真实写入未授权 |
 | T16 | 学堂作业与讨论发布 | partial | 学堂作业 resolve/read/draft/apply SDK 与 CLI 两进程 fixture；讨论进程 fixture | 真实作业/讨论写入未授权 |
 | T17 | 学堂考试的三个独立动作 | partial | 开卷、单独缓存选择/判断题与阻断最终交卷的 SDK/CLI fixture | E05 最终交卷独立验证缺失；填空/主观题写入未验证 |
 | T18 | 固定任务模型、暂停恢复与事件 | partial | 持久化、作用域分页、进程恢复与 wake fixture | 20 秒工作片硬期限与全部 job kind 边界仍需核对 |
-| T19 | 雨课堂学习任务 | partial | 当前 `ykt-study.test.ts` 9/9；图文写入、跳过与不确定只读核对 fixture | 内嵌题继续未接线；真实心跳未授权 |
+| T19 | 雨课堂学习任务 | partial | 图文写入/核对及内嵌题暂停、同 job 继续 fixture | 真实心跳/题目未授权 |
 | T20 | 学堂学习任务 | partial | 当前 `xuetang-study.test.ts` 5/5；CLI 实际间隔 fixture | 长任务和统计延迟验收不足；真实心跳未授权 |
 | T21 | 智慧树share/hike学习任务 | partial | 两套保存 handler、题闸/停滞/签名、权威回读 fixture | E04/E06 真机身份与回读时延缺口；真实学习未授权 |
 | T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
@@ -31,7 +31,7 @@
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | profile/login/catalog/doctor、独占锁与 wake CLI 进程 fixture；当前 CLI 45/45 | 真实平台登录未授权，fixture 不代替账号验收 |
 | T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、两平台作业、讨论、三平台学习、雨课堂图文、考试 start/save、直播 fixture | E05 最终交卷阻断；部分恢复与模型配置未闭合 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 213/213、CLI 46/46、E2E 6/6；packed tgz 隔离消费者测试 | 学堂作业检查点待正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 215/215、CLI 47/47、E2E 6/6；packed tgz 隔离消费者测试 | 内嵌题检查点待正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -326,3 +326,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 测试先行：新增 `xuetang-homework-client.test.ts` 先因 `resolve` 返回空失败（2 项、exit 1）；实现后 SDK 读/写与已提交拒绝 fixture 2/2，通过。CLI `catalog.test.ts` 新增双进程草稿/写入 fixture，初次因 SDK dist 未重建而失败；重建 SDK 构建产物后单测 1/1 通过。
 - Node v24.11.1 隔离工作树实际命令：SDK `vitest run` → 213/213 exit 0；CLI `vitest run` → 46/46 exit 0；SDK/CLI `tsc -p tsconfig.json --noEmit`、SDK/CLI build、ESLint、`git diff --check` → exit 0。上一检查点合并到主仓库后正式 `pnpm lint/typecheck/test/build/test:e2e` 五门禁均 exit 0（当时 SDK 211/CLI 45/E2E 6）；本批改动尚待合并后重跑。
 - 未运行：真实学堂账号作业/发帖（无单独授权），不声称业务验收。下一当前任务：T15 雨课堂内嵌题正确协议与继续链，然后 T31 其余可离线矩阵。
+
+### 2026-09-23 · T15/T19 雨课堂内嵌题执行与继续
+
+- 修正旧 `parseEmbeddedList`/`submitEmbeddedAnswer` 的错误作业信封与端点：视频题单取 `leaf_video/problem/{sku}/{leaf}/{exercise}/?classroom_id=...`，`data` 必须为数组；明确作答走 `leaf_video/problem/reply/{problem}/`，数字 ID、心跳式 `x-csrftoken`/`x-requested-with` 身份头。错题只返回 `isRight:false`，绝不推断标准答案；已答对题不重复发送。SDK `assessments.resolve/get/draft` 返回 `embedded` 题，CLI `homework draft/apply` 支持对应视频资源。
+- 学习任务先读题单确认全部 `user.is_right` 才可把视频服务端进度记作完成；未解题 `needs-input`，`jobs resume` 明确重新排队同一 study job 并重读题单，停机期间不补造心跳。用户手动选择答案且逐题确认；无答案不自动选择/穷举。多资源任务遇题也立即暂停。
+- 测试先行：原 parser 用真实数组信封测试先返回 0 项失败（exit 1）；视频已完成但题未解的任务先错误地返回 succeeded（exit 1），修正后通过。Node v24.11.1 隔离工作树实际命令：SDK `vitest run` → 215/215 exit 0；CLI `vitest run` → 47/47 exit 0；CLI E2E → 6/6 exit 0；SDK/CLI typecheck/build、ESLint、boundaries、`git diff --check` → exit 0。上一 T16 合并后的主仓库正式 pnpm 五门禁 exit 0（当时 SDK 213/CLI 46/E2E 6）。
+- 未运行：真实雨课堂视频/图文/内嵌题写入、人工黄金字体样本 E07（用户确认暂无）。本批尚待合并后的正式 pnpm 门禁。下一当前任务：T20 长任务统计、T23 HLS 分段恢复及 T31 剩余本机验收；真实平台证据仍按未授权处理。

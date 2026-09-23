@@ -5,6 +5,7 @@ import type { SessionHttp } from '../../http/client.js';
 import type { Clock } from '../../runtime/types.js';
 import { fetchLeafInfo } from './resources.js';
 import { fetchClassroomContext } from './catalog.js';
+import { fetchEmbeddedList } from './homework-write.js';
 import { YKT_BASE } from './schemas.js';
 import type { SessionCookieJar } from '../../http/cookies.js';
 import type { JobRunner } from '../../services/jobs.js';
@@ -54,7 +55,7 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     const now = clock.nowMs();
     const finish = (state: ItemResult['state'], message: string | null) => {
       const items: ItemResult[] = [...job.items, { key: next.key, state, message, artifacts: [] }];
-      return { completed: items.length === action.resources.length, items };
+      return { completed: items.length === action.resources.length, items, ...(state === 'needs-input' ? { status: 'needs-input' as const } : {}) };
     };
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'study duration budget expired');
     const observed = await yktReadProgress(http, clock, next);
@@ -77,8 +78,14 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
       return after.progress.serverCompleted ? finish('succeeded', 'server completed') : finish('needs-input', 'article finish acknowledged but server completion was not observed');
     }
     const { identity } = observed;
+    if (identity.exerciseId !== null) {
+      const classroomId = next.course.native.kind === 'ykt' ? next.course.native.classroomId : '';
+      const leafId = next.native.kind === 'ykt' ? next.native.leafId : '';
+      const problems = await fetchEmbeddedList(http, { classroomId, leafId, skuId: identity.skuId, exerciseId: identity.exerciseId });
+      const unsolved = problems.filter((problem) => !problem.isRight);
+      if (unsolved.length > 0) return finish('needs-input', `${unsolved.length} embedded question(s) need explicit reviewed answers`);
+    }
     if (progress.serverFraction !== null && (progress.serverCompleted || progress.serverFraction >= action.settings.targetFraction)) return finish('succeeded', progress.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
-    if (identity.exerciseId !== null && action.settings.questionMode === 'pause') return finish('needs-input', 'embedded question requires review');
     const duration = progress.durationSeconds;
     if (duration === null || duration <= 0) return finish('needs-input', 'server duration is unknown');
     const previous = parseCursor((await runner.metadata(job.id)).cursor);

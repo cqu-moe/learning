@@ -200,6 +200,35 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(JSON.parse(applied.stdout).receipts[0].receipt.state).toBe('confirmed');
   });
 
+  it('drafts and applies one Yuketang embedded question using its dedicated reply endpoint', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+    const ref = { course: { scope, key: 'course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'embedded-video', native: { kind: 'ykt', leafId: '502', leafInfoId: null } };
+    expect(await state.commit({ expected: [{ key: 'cli:resource:embedded-video', revision: null }], changes: [{ key: 'cli:resource:embedded-video', value: ref }] })).toBe(true);
+    const jar = new SessionCookieJar();
+    await jar.absorb(new URL('https://www.yuketang.cn/'), ['csrftoken=fixture; Path=/']);
+    await writeSession(state, new Uint8Array(readFileSync(resolve(dir, 'master.key'))), { schemaVersion: 1, scope, generation: 1, platformUserId: '424242', identityVerified: true, cookieJar: await jar.serialize(), displayName: null, checkedAtMs: Date.now() });
+    state.close();
+    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 0, sku_id: 901, content_info: { media: { exercise_id: 888 } } } } } };
+    const list = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/exercise/leaf_video/problem/901/502/888/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: [{ problem_id: 11, content: { ProblemType: 1, Body: '<p>题</p>', Options: [{ key: 'A', value: '<p>甲</p>' }] }, user: { is_right: false } }] } } };
+    const file = resolve(dir, 'embedded.yaml');
+    const draftFixture = resolve(dir, 'embedded-draft.json');
+    writeFileSync(draftFixture, JSON.stringify({ interactions: [leaf, leaf, list] }));
+    const drafted = run(dir, ['homework', 'draft', 'embedded-video', '-o', file, '--profile', 'alpha', '--json'], draftFixture);
+    expect(drafted.code, drafted.stderr).toBe(0);
+    writeFileSync(file, readFileSync(file, 'utf8').replace('kind: unset', 'kind: choice\n      keys:\n        - A'));
+    const write = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/exercise/leaf_video/problem/reply/11/', headers: { xtbz: 'ykt', 'x-csrftoken': 'fixture', 'classroom-id': '28930736', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' }, body: { exercise_id: 888, sku_id: 901, leaf_id: 502, answer: ['A'] } }, response: { status: 200, body: { success: true, data: { is_right: false, my_answer: ['A'] } } } };
+    const applyFixture = resolve(dir, 'embedded-apply.json');
+    writeFileSync(applyFixture, JSON.stringify({ interactions: [leaf, list, leaf, list, leaf, write] }));
+    const applied = run(dir, ['homework', 'apply', file, '--yes', '--profile', 'alpha', '--json'], applyFixture);
+    expect(applied.code, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout).receipts[0].receipt.result).toMatchObject({ isRight: false, correctAnswer: null });
+  });
+
   it('exports historical slide images as a real local PDF', () => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);
