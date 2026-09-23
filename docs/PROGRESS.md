@@ -28,7 +28,7 @@
 | T21 | 智慧树share/hike学习任务 | done | vitest tests/zhs-study.test.ts → 3/3; 全套 145/145 | E06 回读时延待真机 |
 | T22 | 雨课堂实时会话与事件缺口 | done | vitest tests/live.test.ts → 2/2; 全套 147/147, typecheck/lint/build exit 0 | 真实 WS join/checkin 未执行（无授权） |
 | T23 | 流式下载、持久产物与断点恢复 | done | vitest tests/download.test.ts → 3/3; 全套 150/150, typecheck/lint/build/boundaries exit 0 | Node ArtifactStore 文件层在 CLI 组装时接入 |
-| T24 | 本地PDF与字体重型实现 | not-started | 未运行 | — |
+| T24 | 本地PDF与字体重型实现 | done | vitest tests/render.test.ts → 4/4; 全套 154/154, typecheck/lint/build/boundaries exit 0 | E07 字体黄金样本缺失，unresolved 不伪造 |
 | T25 | CLI基础命令与本地运行装配 | not-started | 未运行 | — |
 | T26 | CLI完整功能入口与恢复操作 | not-started | 未运行 | — |
 | T31 | SDK与CLI集成验收、安装说明与本机证据 | not-started | 未运行 | — |
@@ -237,6 +237,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 验收：A231（决策表全覆盖：多 GiB 流式由 8MiB 块+backpressure 的接口约束承接）；A232（同名不覆盖由 manifest path 唯一性承接、scope/path 校验、无云配置）。
 - 命令（Node v24.11.1）：vitest download → 3 passed；全套 150/150；typecheck/lint/build/boundaries → 0。
 - 下一个当前任务：T24。
+
+### 2026-09-23 · T24 本地PDF与字体重型实现（done）
+
+- 实际改动：src/content/{pdf.ts,font-match.ts}、src/runtime/node/render.ts（/render-node 出口）、tests/render.test.ts、package.json（pdf-lib 1.17.1 冻结 + ./render-node exports）。
+- 实现：pdf-lib 有界图片集组 PDF（页数/像素/期限 checkRenderBudget 预检拒绝）；字形参照向量余弦匹配（阈值 0.95、并列/低分/空参照一律 unresolved，不猜字）；renderer/字体摘要版本化（render-node/1.0.0）；LocalHeavyRenderer start/status/cancel（font.decode/pdf.compose 本机路径、slides.legacy 显式 UNSUPPORTED 不执行任意 HTML、cancel 后 missing、旧 attempt 不发布）。不复制系统字体进交付；用户参考字体经 Artifact 注入。
+- 验收：A241（易混字样例 unresolved、向量精确 exact）；A242（超页数/像素/期限提前拒绝、任务结束状态销毁、无 Cookie 进纯字体/PDF 路径）。
+- 未运行项：E07 黄金样本不足——真实字体准确率未验证（明确阻塞质量验收，不伪造）；Chromium 受控页面未安装（浏览器缺失时 UNSUPPORTED，不自动安装）。
+- 命令（Node v24.11.1）：vitest render → 4 passed；全套 154/154；typecheck/lint/build/boundaries → 0。
+- 下一个当前任务：T25。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

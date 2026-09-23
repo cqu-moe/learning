@@ -18,6 +18,10 @@
     "./node": {
       "import": "./dist/runtime/node/index.js",
       "types": "./dist/runtime/node/index.d.ts"
+    },
+    "./render-node": {
+      "import": "./dist/runtime/node/render.js",
+      "types": "./dist/runtime/node/render.d.ts"
     }
   },
   "main": "./dist/index.js",
@@ -31,6 +35,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "pdf-lib": "1.17.1",
     "parse5": "8.0.1",
     "tough-cookie": "6.0.2",
     "yaml": "2.9.1",
