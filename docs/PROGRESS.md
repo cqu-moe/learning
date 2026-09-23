@@ -9,7 +9,7 @@
 | T02 | DTO、稳定标识与测试内存存储 | done | pnpm --filter @learning/sdk exec vitest run tests/types.test.ts → 20/20 exit 0 | — |
 | T03 | 本地StateStore和加密会话记录 | done | vitest tests/store.test.ts → 19/19, typecheck/build/lint/boundaries exit 0 | E08 Node24 本机实测已由本任务覆盖 SQLite/crypto 部分 |
 | T04 | HTTP、Cookie、重定向与协议fixture工具 | done | vitest tests/http.test.ts → 14/14; 全套 53/53, typecheck/build/lint/boundaries exit 0 | — |
-| T05 | 统一登录生命周期、WS和SDK工厂 | not-started | 未运行 | — |
+| T05 | 统一登录生命周期、WS和SDK工厂 | done | vitest tests/auth-flow.test.ts → 14/14; 全套 67/67, typecheck/lint/build/boundaries exit 0 | — |
 | T06 | 雨课堂登录、课程与两类大纲 | not-started | 未运行 | — |
 | T07 | 雨课堂资源、课件及考试只读 | not-started | 未运行 | — |
 | T08 | 学堂WS登录、课程与大纲 | not-started | 未运行 | — |
@@ -87,6 +87,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 实际命令（Node v24.11.1）：pnpm install（tough-cookie 6.0.2 save-exact）→ exit 0，二次 --frozen-lockfile → exit 0；vitest run tests/http.test.ts → 14 passed；根 typecheck/lint/build → exit 0；check-boundaries → exit 0。修复过程：SessionCookieJar 未再导出、hostOnly 跨子域测试场景修正、LIKE/类型细节。
 - 未运行项：真实网络请求未执行（fixture 均为 synthetic 且标注 source ref）。
 - 下一个当前任务：T05。
+
+### 2026-09-23 · T05 统一登录生命周期、WS和SDK工厂（done）
+
+- 实际改动：src/runtime/types.ts（补 Options/BlobWriter/ArtifactStore/HeavyRenderer/ModelClient/Runtime/Socket/Transport/Clock）、src/auth/{flow.ts,legacy.ts}、src/runtime/node/transport.ts（NodeFetchTransport/NodeSocket）、src/types/client.ts（LearningClient 接口）、src/index.ts（createLearningClient/aggregateCourses 真实实现）、tests/helpers/ws.ts、tests/auth-flow.test.ts。
+- 测试先行：先运行 vitest tests/auth-flow.test.ts 按预期失败（auth/runtime 模块缺失，exit 1）；实现后 14/14。
+- 实现：AuthLifecycle 管理 generation（新 begin 取代旧 flow）、惰性 10 分钟总预算（超时 TIMEOUT）、cancel 销毁临时票据并 reject CANCELED、迟到/superseded finish 静默丢弃不写会话；probeSession 将网络/超时错误映射 indeterminate 且不动既有 Cookie；importLegacyCookies 纯本机 cookie-array 导入（identityVerified=false、generation+1）；NodeSocket 基于原生 WebSocket，邮箱 256 帧/单帧 1MiB 上限（超限 PROTOCOL 并关闭）；createLearningClient 工厂零网络（构造/capabilities 均不请求），未实现 provider 方法显式 UNSUPPORTED 不返回空列表；aggregateCourses 按 profile 独立成功/错误保持顺序。平台 allowhost：ykt=yuketang.cn+xuetangx.com（考试子系统）、xuetang=xuetangx.com、zhs=zhihuishu.com（源码核对）。
+- 验收对照：A051（cancel 后 pushLateSuccess 不写会话、socket/timer 释放；旧 QR 迟到确认不能覆盖新 generation——lifecycle 级断言）；A052（probe 网络错 indeterminate 且旧会话原样；工厂/importLegacy cookie-array 零网络请求）。PLAN 片段按 lifecycle 等价实现（provider 接入在 T06/T08/T10）。
+- 实际命令（Node v24.11.1）：vitest run tests/auth-flow.test.ts → 14 passed；全套 67/67；根 typecheck/lint/build → exit 0；check-boundaries → exit 0。
+- 未运行项：真实平台 WS/HTTP 未连接；ykt/xuetang/zhs provider 方法按计划在 T06+。
+- 下一个当前任务：T06。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

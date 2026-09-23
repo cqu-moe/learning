@@ -95,6 +95,18 @@ export function PageSchemaOf<T extends z.ZodType>(item: T) {
   });
 }
 
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+  completeness: Completeness;
+  warnings: Warning[];
+}
+
+export interface Result<T> {
+  value: T;
+  warnings: Warning[];
+}
+
 /** Parse through a DTO schema or throw LearningError(INVALID_INPUT) with a safe message. */
 export function parseDto<T extends z.ZodType>(schema: T, value: unknown, label: string): z.output<T> {
   const result = schema.safeParse(value);

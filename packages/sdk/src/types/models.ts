@@ -9,6 +9,8 @@ import {
   SystemSchema,
   ThreadRefSchema,
 } from './refs.js';
+import type { LessonRef } from './refs.js';
+import type { ErrorData } from './errors.js';
 
 const nonEmpty = z.string().min(1);
 const nonNegativeInt = z
@@ -463,3 +465,32 @@ export const ExportInputSchema = z.discriminatedUnion('type', [
   }),
 ]);
 export type ExportInput = z.infer<typeof ExportInputSchema>;
+
+export interface AuthFlow {
+  id: string;
+  events: AsyncIterable<AuthEvent>;
+  result: Promise<SessionView>;
+  cancel(): Promise<void>;
+}
+
+export interface DecodeResult {
+  mapping: { from: string; to: string; score: number }[];
+  unresolved: string[];
+  rendererVersion: string;
+}
+
+export type RenderInput =
+  | { type: 'font.decode'; fontArtifactId: string; characters: string[] }
+  | { type: 'pdf.compose'; imageArtifactIds: string[]; title: string }
+  | { type: 'slides.legacy'; lesson: LessonRef; approvedUrl: string; sessionGeneration: number };
+
+export type RenderOutput =
+  | { type: 'font.decode'; decoded: DecodeResult }
+  | { type: 'pdf.compose'; artifact: Artifact }
+  | { type: 'slides.legacy'; slides: SlideDeck[] };
+
+export type RenderState =
+  | { status: 'running' }
+  | { status: 'succeeded'; result: RenderOutput }
+  | { status: 'failed'; error: ErrorData }
+  | { status: 'missing' };
