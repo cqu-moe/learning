@@ -11,6 +11,49 @@ import { FakeClock, FakeTransport } from './helpers/replay.js';
 import type { Runtime } from '../src/runtime/types.js';
 
 describe('media Range resume', () => {
+  it('streams a synthetic multi-GiB response in bounded chunks and never publishes over-budget media', async () => {
+    const scope = { userId: 'local', profileId: 'large-stream', platform: 'xuetang' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang' as const, classroomId: '100', courseSign: 'S', skuId: '1' } }, key: 'video', native: { kind: 'xuetang' as const, leafId: '7', leafInfoId: null } };
+    const state = new MemoryStateStore();
+    const clock = new FakeClock();
+    const runner = new JobRunner(state, clock);
+    const saved = { type: 'media' as const, resources: [resource], quality: 'best' as const, subtitles: false };
+    const job = await runner.create(scope, 'export', { total: 1, payload: saved });
+    let written = 0;
+    let maxChunk = 0;
+    let published = false;
+    let aborted = false;
+    const artifactId = `${job.id}:${resource.key}:media`;
+    const artifacts: Runtime['artifacts'] = {
+      create: async () => ({
+        write: async (bytes) => { written += bytes.byteLength; maxChunk = Math.max(maxChunk, bytes.byteLength); },
+        checkpoint: async () => ({ id: artifactId, bytes: written }),
+        finish: async () => { published = true; return { bytes: written, sha256: '0'.repeat(64) }; },
+        abort: async () => { aborted = true; },
+      }),
+      resume: async () => { throw Error('unexpected resume'); },
+      open: async () => { throw Error('unexpected open'); },
+      remove: async () => {},
+    };
+    const runtime: Runtime = { transport: new FakeTransport(), state, clock, artifacts, masterKey: new Uint8Array(32), heavy: null, model: null, log: () => {}, wake: async () => {} };
+    const chunk = new Uint8Array(8 * 1024 * 1024);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({ pull(controller) {
+      if (sent <= 512) { controller.enqueue(chunk); sent += 1; }
+      else controller.close();
+    } });
+    await expect(advanceMedia({ runner, runtime, job, scope,
+      getMedia: async () => ({ resource, variants: [{ id: 'https://www.xuetangx.com/large.mp4', quality: 'hd', mimeType: 'video/mp4', durationSeconds: null }] }),
+      getTranscript: async () => { throw Error('unused'); },
+      getAsset: async () => ({ status: 200, headers: new Headers({ etag: 'fixture' }), mimeType: 'video/mp4', stream }),
+    }, saved)).rejects.toThrow(/4 GiB/);
+    expect(written).toBe(4 * 1024 * 1024 * 1024);
+    expect(maxChunk).toBe(8 * 1024 * 1024);
+    expect(published).toBe(false);
+    expect(aborted).toBe(true);
+    expect((await runner.get(job.id)).status).toBe('paused');
+  }, 20_000);
+
   it('checkpoints a partial MP4 and appends only with 206 and the same validator', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'learning-range-'));
     try {
