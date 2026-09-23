@@ -171,6 +171,35 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(JSON.parse(applied.stdout).receipts[0].receipt.state).toBe('confirmed');
   });
 
+  it('drafts and applies Xuetang homework through two CLI processes with CSRF and numeric ids', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'xuetang']).code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'xuetang' } }).scope;
+    const ref = { course: { scope, key: 'course', native: { kind: 'xuetang', classroomId: '100', courseSign: 'SIGN-A', skuId: '900' } }, key: 'xtx-homework', native: { kind: 'xuetang', leafId: '7', leafInfoId: null } };
+    expect(await state.commit({ expected: [{ key: 'cli:resource:xtx-homework', revision: null }], changes: [{ key: 'cli:resource:xtx-homework', value: ref }] })).toBe(true);
+    const jar = new SessionCookieJar();
+    await jar.absorb(new URL('https://www.xuetangx.com/'), ['csrftoken=fixture-csrf; Path=/']);
+    await writeSession(state, new Uint8Array(readFileSync(resolve(dir, 'master.key'))), { schemaVersion: 1, scope, generation: 1, platformUserId: '77', identityVerified: true, cookieJar: await jar.serialize(), displayName: null, checkedAtMs: Date.now() });
+    state.close();
+    const leaf = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/leaf_info/100/7/', query: { sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 6, content_info: { leaf_type_id: 888 } } } } };
+    const exercise = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/exercise/get_exercise_list/888/900/', headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { exercise_id: 888, problems: [{ problem_id: 11, content: { Type: 'FillBlank', Body: '<p>填空</p>' }, user: { my_count: 0 } }] } } } };
+    const draftFixture = resolve(dir, 'xtx-draft.json');
+    writeFileSync(draftFixture, JSON.stringify({ interactions: [leaf, exercise] }));
+    const file = resolve(dir, 'xtx-answer.yaml');
+    const drafted = run(dir, ['homework', 'draft', 'xtx-homework', '-o', file, '--profile', 'alpha', '--json'], draftFixture);
+    expect(drafted.code, drafted.stderr).toBe(0);
+    writeFileSync(file, readFileSync(file, 'utf8').replace('kind: unset', 'kind: fill-blank\n      blanks:\n        - id: "1"\n          text: fixture answer'));
+    const write = { request: { method: 'POST', host: 'www.xuetangx.com', path: '/api/v1/lms/exercise/problem_apply/', headers: { xtbz: 'xt', 'x-csrftoken': 'fixture-csrf', 'content-type': 'application/json;charset=utf-8' }, body: { leaf_id: 7, classroom_id: 100, exercise_id: 888, problem_id: 11, sign: 'SIGN-A', answers: { '1': 'fixture answer' }, answer: '' } }, response: { status: 200, body: { success: true, data: { saved: true } } } };
+    const applyFixture = resolve(dir, 'xtx-apply.json');
+    writeFileSync(applyFixture, JSON.stringify({ interactions: [exercise, write] }));
+    const applied = run(dir, ['homework', 'apply', file, '--yes', '--profile', 'alpha', '--json'], applyFixture);
+    expect(applied.code, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout).receipts[0].receipt.state).toBe('confirmed');
+  });
+
   it('exports historical slide images as a real local PDF', () => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);

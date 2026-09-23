@@ -5,39 +5,53 @@ import { XTX_BASE, XTX_BASE_HEADERS } from './schemas.js';
 
 export type XtxProblemType = 'SingleChoice' | 'MultiChoice' | 'Judgement' | 'FillInBlank' | 'ShortAnswer';
 
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 /** Type-dependent answer/answers mapping (X09) — never force everything into arrays. */
 export function encodeXtxProblemAnswer(type: XtxProblemType | string, answer: Answer): { answer: string[] | string | Record<string, unknown>; answers: Record<string, string> } {
   if (answer.kind === 'unset') {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'unset answers are never submitted', retryAfterMs: null, operationId: null });
   }
-  switch (type) {
-    case 'SingleChoice':
-    case 'MultiChoice':
+  switch (type.trim().toLowerCase()) {
+    case 'singlechoice':
+    case 'multichoice':
+    case 'multiplechoice':
       if (answer.kind !== 'choice') throw new LearningError({ code: 'INVALID_INPUT', message: `${type} requires a choice answer`, retryAfterMs: null, operationId: null });
       return { answer: [...answer.keys].sort(), answers: {} };
-    case 'Judgement':
+    case 'judgement':
       if (answer.kind !== 'judgement') throw new LearningError({ code: 'INVALID_INPUT', message: 'Judgement requires a boolean answer', retryAfterMs: null, operationId: null });
       return { answer: [String(answer.value)], answers: {} };
-    case 'FillInBlank':
+    case 'fillinblank':
+    case 'fillblank':
       if (answer.kind !== 'fill-blank') throw new LearningError({ code: 'INVALID_INPUT', message: 'FillInBlank requires blanks', retryAfterMs: null, operationId: null });
       return { answer: '', answers: Object.fromEntries(answer.blanks.map((blank) => [blank.id, blank.text])) };
-    case 'ShortAnswer':
+    case 'shortanswer':
+    case 'essay':
       if (answer.kind !== 'short-answer') throw new LearningError({ code: 'INVALID_INPUT', message: 'ShortAnswer requires text', retryAfterMs: null, operationId: null });
-      return { answer: { time: Math.floor(Date.now() / 1000), content: `<p>${answer.text}</p>`, oSubject: 1 }, answers: {} };
+      return { answer: { time: '0', content: answer.text.replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).map((line) => `<p>${escapeHtml(line)}</p>`).join(''), oSubject: { attachments: { filelist: [] } } }, answers: {} };
     default:
       throw new LearningError({ code: 'UNSUPPORTED', message: `unverified xtx problem type ${String(type)}; refusing to submit`, retryAfterMs: null, operationId: null });
   }
 }
 
-export async function submitXtxProblem(http: SessionHttp, ids: { leafId: string; classroomId: string; exerciseId: string; problemId: string; courseSign: string }, type: string, answer: Answer): Promise<void> {
+export async function submitXtxProblem(http: SessionHttp, ids: { leafId: string; classroomId: string; exerciseId: string; problemId: string; courseSign: string }, type: string, answer: Answer, csrfToken: string): Promise<void> {
   const encoded = encodeXtxProblemAnswer(type, answer);
+  const integer = (raw: string): number => {
+    const value = Number(raw);
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(value)) throw new LearningError({ code: 'INVALID_INPUT', message: 'Xuetang homework id is invalid', retryAfterMs: null, operationId: null });
+    return value;
+  };
+  if (csrfToken === '') throw new LearningError({ code: 'AUTH_REQUIRED', message: 'Xuetang CSRF cookie is missing', retryAfterMs: null, operationId: null });
   const response = await http.request({
     kind: 'write',
     method: 'POST',
     url: `${XTX_BASE}/api/v1/lms/exercise/problem_apply/`,
-    body: JSON.stringify({ leaf_id: ids.leafId, classroom_id: ids.classroomId, exercise_id: ids.exerciseId, problem_id: ids.problemId, sign: ids.courseSign, answers: encoded.answers, answer: encoded.answer }),
-    headers: { ...XTX_BASE_HEADERS, 'content-type': 'application/json;charset=utf-8' },
+    body: JSON.stringify({ leaf_id: integer(ids.leafId), classroom_id: integer(ids.classroomId), exercise_id: integer(ids.exerciseId), problem_id: integer(ids.problemId), sign: ids.courseSign, answers: encoded.answers, answer: encoded.answer }),
+    headers: { ...XTX_BASE_HEADERS, 'x-csrftoken': csrfToken, 'content-type': 'application/json;charset=utf-8' },
   });
+  if (response.status !== 200) throw new LearningError({ code: 'PROTOCOL', message: `problem_apply returned HTTP ${response.status}`, retryAfterMs: null, operationId: null });
   const payload = (await response.json()) as { success?: boolean; msg?: string };
   if (payload.success !== true) {
     throw new LearningError({ code: 'PROTOCOL', message: `problem_apply failed: ${payload.msg ?? 'success=false'}`, retryAfterMs: null, operationId: null });

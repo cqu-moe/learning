@@ -14,24 +14,29 @@ describe('xtx homework/discussion write (T16, A161/A162)', () => {
     expect(encodeXtxProblemAnswer('Judgement', { kind: 'judgement', value: true })).toEqual({ answer: ['true'], answers: {} });
     expect(encodeXtxProblemAnswer('FillInBlank', { kind: 'fill-blank', blanks: [{ id: '1', text: 'fixture answer' }] })).toEqual({ answer: '', answers: { '1': 'fixture answer' } });
     expect(encodeXtxProblemAnswer('ShortAnswer', { kind: 'short-answer', text: '主观内容' })).toEqual({
-      answer: { time: expect.any(Number), content: '<p>主观内容</p>', oSubject: expect.any(Number) },
+      answer: { time: '0', content: '<p>主观内容</p>', oSubject: { attachments: { filelist: [] } } },
       answers: {},
     });
+    expect(encodeXtxProblemAnswer('Essay', { kind: 'short-answer', text: 'A < B & C\n下一行' }).answer).toEqual({ time: '0', content: '<p>A &lt; B &amp; C</p><p>下一行</p>', oSubject: { attachments: { filelist: [] } } });
     expect(() => encodeXtxProblemAnswer('SingleChoice', { kind: 'unset' })).toThrow(/unset/);
   });
 
   it('submits with the exact seven-field body (A161)', async () => {
     const transport = new FakeTransport();
     transport.script([{ status: 200, headers: {}, body: { success: true, data: { saved: true } } }]);
-    await submitXtxProblem(httpFor(transport), { leafId: '7', classroomId: '100', exerciseId: '888', problemId: '11', courseSign: 'SIGN-A' }, 'FillInBlank', { kind: 'fill-blank', blanks: [{ id: '1', text: 'fixture answer' }] });
+    await submitXtxProblem(httpFor(transport), { leafId: '7', classroomId: '100', exerciseId: '888', problemId: '11', courseSign: 'SIGN-A' }, 'FillInBlank', { kind: 'fill-blank', blanks: [{ id: '1', text: 'fixture answer' }] }, 'fixture-csrf');
     const body = JSON.parse(transport.calls[0]?.bodyText ?? '{}');
-    expect(body).toEqual({ leaf_id: '7', classroom_id: '100', exercise_id: '888', problem_id: '11', sign: 'SIGN-A', answers: { '1': 'fixture answer' }, answer: '' });
+    expect(body).toEqual({ leaf_id: 7, classroom_id: 100, exercise_id: 888, problem_id: 11, sign: 'SIGN-A', answers: { '1': 'fixture answer' }, answer: '' });
+    expect(transport.calls[0]?.headers['x-csrftoken']).toBe('fixture-csrf');
   });
 
   it('HTTP 200 success=false is a failure; unknown schemas cannot become an empty thread (A162)', async () => {
     const transport = new FakeTransport();
     transport.script([{ status: 200, headers: {}, body: { success: false, msg: 'not allowed' } }]);
-    await expect(submitXtxProblem(httpFor(transport), { leafId: '7', classroomId: '100', exerciseId: '888', problemId: '11', courseSign: 'S' }, 'SingleChoice', { kind: 'choice', keys: ['A'] })).rejects.toMatchObject({ data: { code: 'PROTOCOL' } });
+    await expect(submitXtxProblem(httpFor(transport), { leafId: '7', classroomId: '100', exerciseId: '888', problemId: '11', courseSign: 'S' }, 'SingleChoice', { kind: 'choice', keys: ['A'] }, 'fixture-csrf')).rejects.toMatchObject({ data: { code: 'PROTOCOL' } });
+    const forbidden = new FakeTransport();
+    forbidden.script([{ status: 403, body: { success: true } }]);
+    await expect(submitXtxProblem(httpFor(forbidden), { leafId: '7', classroomId: '100', exerciseId: '888', problemId: '11', courseSign: 'S' }, 'SingleChoice', { kind: 'choice', keys: ['A'] }, 'fixture-csrf')).rejects.toMatchObject({ data: { code: 'PROTOCOL' } });
     const empty = new FakeTransport();
     empty.script([{ status: 200, headers: {}, body: {} }]);
     await expect(fetchUnitDiscussion(httpFor(empty), '100', '7', 'SIGN-A')).rejects.toMatchObject({ data: { code: 'PROTOCOL' } });

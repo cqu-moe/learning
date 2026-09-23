@@ -7,7 +7,7 @@
 | 三平台 QR、课程树与资料读取 | fixture 通过 | 默认智慧树微信 QR、原生 QR 与在线 UUID probe 均有合成 fixture；真实账号仍待核验。 |
 | 本机 profile、密钥、锁、doctor | fixture 通过 | CLI 进程测试；数据目录 0700，密钥/SQLite 0600，wake 可唤醒前台任务。 |
 | 雨课堂作业单题提交 | fixture 通过 | SDK/CLI 进程测试；内嵌题与真实写入未验收。 |
-| 学堂讨论草稿与发帖 | fixture 通过 | SDK/CLI 进程测试；真实发帖未授权。学堂作业提交仍未接线。 |
+| 学堂作业单题提交与讨论发帖 | fixture 通过 | 作业读取、草稿、CSRF 单题写入及讨论草稿/发帖均有 SDK/CLI 进程 fixture；真实写入未授权。 |
 | 学堂考试 | partial | 只读导出、编辑草稿、独立开卷与选择/判断缓存 fixture；最终交卷被 E05 闸门阻断。 |
 | 雨课堂、学堂视频及图文学习 | partial | 图文完成 GET 按写入处理，完成前后读回与不确定写入只读核对均有 fixture；弹题继续、长任务延迟统计与真实学习未验收。 |
 | 智慧树 share/hike 学习 | partial | 两类加密/签名保存、弹题暂停、服务端进度回读 fixture；E04/E06 真机核验仍缺。 |
