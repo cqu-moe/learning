@@ -1,0 +1,18 @@
+{
+  "id": "zhs/hike-tree",
+  "platform": "zhs",
+  "source": { "repo": "cqu-moe/zhs-cli", "ref": "56d02171cf73c45694d69f886c902d2ecedadaaa", "path": "src/hike.py", "symbol": "resource_tree" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "POST", "host": "studyresources.zhihuishu.com", "path": "/studyResources/stuResouce/queryResourceMenuTree", "query": { "courseId": "77" } },
+      "response": { "status": 200, "headers": {}, "body": { "code": 0, "rt": [
+        { "id": "f1", "name": "讲义目录", "dataType": null, "children": [
+          { "id": "f2", "name": "第一视频", "dataType": 1, "children": [] }
+        ] }
+      ] } }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "outline", "input": { "courseId": "77" } },
+  "expected": null
+}

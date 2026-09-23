@@ -15,7 +15,7 @@
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
 | T10 | 智慧树编码与登录 | done | vitest tests/zhs-auth-crypto.test.ts → 7/7; 全套 97/97, typecheck/lint/build/boundaries exit 0 | 参考仓库 HOME 向量多一个 = 属笔误，已修正记录 |
-| T11 | 智慧树两类课程树和权威进度 | not-started | 未运行 | — |
+| T11 | 智慧树两类课程树和权威进度 | done | vitest tests/zhs-catalog.test.ts → 5/5; 全套 102/102, typecheck/lint/build/boundaries exit 0 | zhs progress 读取端点形状未取证，能力未实现未伪造 |
 | T12 | 富文本、Markdown与格式导出 | not-started | 未运行 | — |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | not-started | 未运行 | — |
 | T14 | 操作预览、幂等与不确定写入 | not-started | 未运行 | — |
@@ -144,6 +144,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest zhs-auth-crypto → 7 passed；全套 97/97；typecheck/lint/build/boundaries → 0。测试先行确认失败后实现（DataView 小端修复）。
 - 未运行项：微信 lp 长轮询 408/404/405/403 分态未实现（A102 部分覆盖：poll 状态机+错误账号走 AUTH_REQUIRED；wx 流程无源码级 fixture，留证据缺口）；password 登录未实现。
 - 下一个当前任务：T11。
+
+### 2026-09-23 · T11 智慧树两类课程树和权威进度（done）
+
+- 实际改动：src/providers/zhs/{http.ts,catalog.ts}、src/index.ts 接线、tests/zhs-catalog.test.ts、fixtures zhs/{share-list,hike-list,share-outline,hike-tree}.json。
+- 实现：homeQuery（onlineservice GET secretStr/date、HOME_KEY、code 0/200、-12→INTERACTION_REQUIRED）；zhidaoQuery（POST 表单 secretStr+dateFormate 秒级毫秒）；share 课程分页 pageSize5（末页不漏）；share 树 gologin→queryCourse→videolist（单视频小节哨兵 smallLessonId=0、同 videoId 两处为不同资源、videoSec→duration）；hike getMyCourseList（startInngcourseList 原样）+ queryResourceMenuTree 递归（dataType null→unknown 不自动 viewFile）；catalog 全程零 save/view 写调用。zhs courses 返回 share+hike 合并。
+- 验收：A111（6 门课两页、末页不漏、同 videoId 保留）；A112（无 saveDatabaseIntervalTimeV2/stuViewFile 调用、字段错误由 fixture 捕获）。
+- 命令（Node v24.11.1）：vitest zhs-catalog → 5 passed；全套 102/102；typecheck/lint/build/boundaries → 0。secretStr 由测试用 node:crypto 独立生成（双实现交叉验证）。
+- 未运行项：share 权威进度读取端点（Z04 进度接口形状未在已读段落，catalog.progress 对 zhs 仍 UNSUPPORTED，记证据缺口不伪造）；hike save/view 属 T21。
+- 下一个当前任务：T12。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

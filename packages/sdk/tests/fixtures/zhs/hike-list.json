@@ -1,0 +1,16 @@
+{
+  "id": "zhs/hike-list",
+  "platform": "zhs",
+  "source": { "repo": "cqu-moe/zhs-cli", "ref": "56d02171cf73c45694d69f886c902d2ecedadaaa", "path": "src/hike.py", "symbol": "list_courses" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "POST", "host": "hikeservice.zhihuishu.com", "path": "/student/course/aided/getMyCourseList" },
+      "response": { "status": 200, "headers": {}, "body": { "code": 0, "result": { "startInngcourseList": [
+        { "courseId": 77, "courseName": "校内课A" }
+      ] } } }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "courses", "input": {} },
+  "expected": null
+}

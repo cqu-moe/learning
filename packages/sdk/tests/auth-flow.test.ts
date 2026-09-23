@@ -205,7 +205,7 @@ describe('SDK factory (A052)', () => {
   it('unimplemented provider methods throw UNSUPPORTED, never empty lists', async () => {
     const zhsScope: Scope = { userId: 'local', profileId: 'p3', platform: 'zhs' };
     const client = createLearningClient({ scope: zhsScope, runtime: makeRuntime(new FakeTransport()) });
-    await expect(client.catalog.courses()).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
+    await expect(client.discussions.get({ resource: { course: { scope: zhsScope, key: 'k', native: { kind: 'zhs-hike', courseId: 'c1' } }, key: 'r', native: { kind: 'zhs-hike', fileId: 'f1' } }, topicId: 't1' })).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
     await expect(client.actions.prepare({ kind: 'exam.start', ref: { resource: { course: { scope: zhsScope, key: 'k', native: { kind: 'zhs-hike', courseId: 'c1' } }, key: 'r', native: { kind: 'zhs-hike', fileId: 'f1' } }, kind: 'exam', assessmentId: 'a1' } })).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
   });
 
@@ -233,6 +233,6 @@ describe('SDK factory (A052)', () => {
     const client = createLearningClient({ scope: zhsScope, runtime: makeRuntime(new FakeTransport()) });
     const results = await aggregateCourses([client]);
     expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ scope: zhsScope, error: { code: 'UNSUPPORTED' } });
+    expect(results[0]).toMatchObject({ scope: zhsScope, error: { code: 'NETWORK' } });
   });
 });

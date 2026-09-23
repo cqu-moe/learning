@@ -24,6 +24,7 @@ import { xtxProbeProvider, xtxQrLaunch } from './providers/xuetang/auth.js';
 import { xtxMedia, xtxTranscript } from './providers/xuetang/resources.js';
 import { xtxExamRead, xtxExamResolve } from './providers/xuetang/exam-read.js';
 import { zhsQrLaunch } from './providers/zhs/auth.js';
+import { zhsHikeCourses, zhsHikeOutline, zhsShareCourses, zhsShareOutline } from './providers/zhs/catalog.js';
 import { probeSession } from './auth/flow.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
@@ -67,7 +68,7 @@ const CAPABILITY_IDS = [
 const IMPLEMENTED: Record<Platform, Set<string>> = {
   ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse', 'resources.media', 'resources.transcript', 'resources.lessons', 'resources.slides', 'assessments.resolve', 'assessments.get']),
   xuetang: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'resources.media', 'resources.transcript', 'assessments.resolve', 'assessments.get']),
-  zhs: new Set(['auth.begin', 'auth.importLegacy']),
+  zhs: new Set(['auth.begin', 'auth.importLegacy', 'catalog.courses', 'catalog.outline']),
 };
 
 function capabilitiesFor(platform: Platform): Capability[] {
@@ -158,11 +159,21 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       courses: async (): Promise<Page<Course>> => {
         if (platform === 'ykt') return yktCourses(await httpBound(), scope);
         if (platform === 'xuetang') return xtxCourses(await httpBound(), scope);
+        if (platform === 'zhs') {
+          const http = await httpBound();
+          const share = await zhsShareCourses(http, runtime.clock, scope);
+          const hike = await zhsHikeCourses(http, scope);
+          return { items: [...share.items, ...hike.items], nextCursor: null, completeness: 'complete', warnings: [] };
+        }
         return asyncUnsupported(platform, 'catalog.courses');
       },
       outline: async (course) => {
         if (platform === 'ykt') return yktOutline(await httpBound(), scope, course);
         if (platform === 'xuetang') return xtxOutline(await httpBound(), course);
+        if (platform === 'zhs') {
+          const http = await httpBound();
+          return course.native.kind === 'zhs-hike' ? zhsHikeOutline(http, course) : zhsShareOutline(http, runtime.clock, course);
+        }
         return asyncUnsupported(platform, `catalog.outline(${course.key})`);
       },
       progress: (resource) => asyncUnsupported(platform, `catalog.progress(${resource.key})`),

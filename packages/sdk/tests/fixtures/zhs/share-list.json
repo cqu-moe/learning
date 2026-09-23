@@ -1,0 +1,24 @@
+{
+  "id": "zhs/share-list",
+  "platform": "zhs",
+  "source": { "repo": "cqu-moe/zhs-cli", "ref": "56d02171cf73c45694d69f886c902d2ecedadaaa", "path": "src/share.py", "symbol": "list_courses" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "onlineservice-api.zhihuishu.com", "path": "/gateway/t/v1/student/course/share/queryShareCourseInfo", "query": { "secretStr": "PLACEHOLDER", "date": "0" } },
+      "response": { "status": 200, "headers": {}, "body": { "code": 200, "result": { "totalCount": 6, "courseOpenDtos": [
+        { "recruitAndCourseId": "R1", "courseName": "共享课1" }, { "recruitAndCourseId": "R2", "courseName": "共享课2" },
+        { "recruitAndCourseId": "R3", "courseName": "共享课3" }, { "recruitAndCourseId": "R4", "courseName": "共享课4" },
+        { "recruitAndCourseId": "R5", "courseName": "共享课5" }
+      ] } } }
+    },
+    {
+      "request": { "method": "GET", "host": "onlineservice-api.zhihuishu.com", "path": "/gateway/t/v1/student/course/share/queryShareCourseInfo", "query": { "secretStr": "PLACEHOLDER2", "date": "0" } },
+      "response": { "status": 200, "headers": {}, "body": { "code": 200, "result": { "totalCount": 6, "courseOpenDtos": [
+        { "recruitAndCourseId": "R6", "courseName": "共享课6" }
+      ] } } }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "courses", "input": {} },
+  "expected": null
+}

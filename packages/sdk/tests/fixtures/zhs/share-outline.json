@@ -1,0 +1,26 @@
+{
+  "id": "zhs/share-outline",
+  "platform": "zhs",
+  "source": { "repo": "cqu-moe/zhs-cli", "ref": "56d02171cf73c45694d69f886c902d2ecedadaaa", "path": "src/share.py", "symbol": "load_course" },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "studyservice-api.zhihuishu.com", "path": "/login/gologin", "query": { "fromurl": "https://studyvideoh5.zhihuishu.com/stuStudy?recruitAndCourseId=R1" } },
+      "response": { "status": 200, "headers": {}, "body": {} }
+    },
+    {
+      "request": { "method": "POST", "host": "studyservice-api.zhihuishu.com", "path": "/gateway/learning/queryCourse", "query": { "dateFormate": "1728000000000" } },
+      "response": { "status": 200, "headers": {}, "body": { "code": 0, "data": { "recruitId": 9, "courseInfo": { "courseName": "共享课1" } } } }
+    },
+    {
+      "request": { "method": "POST", "host": "studyservice-api.zhihuishu.com", "path": "/gateway/learning/videolist", "query": { "dateFormate": "1728000000000" } },
+      "response": { "status": 200, "headers": {}, "body": { "code": 0, "data": { "courseId": 55, "videoChapterDtos": [
+        { "id": 1, "name": "第一章", "videoLessons": [
+          { "id": 10, "name": "第一节", "videoId": "V1", "videoSec": 100 }
+        ] }
+      ] } } }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "outline", "input": { "racId": "R1" } },
+  "expected": null
+}

@@ -70,6 +70,10 @@ export class FakeClock implements Clock {
     this.sleepHook = hook;
   }
 
+  setNow(ms: number): void {
+    this.now = ms;
+  }
+
   async sleep(ms: number, signal: AbortSignal): Promise<void> {
     this.waits.push(ms);
     this.sleepHook?.();
