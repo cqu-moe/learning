@@ -59,3 +59,7 @@ E01（ykt 考试 fixtures）、E02（学堂分页终止）、E03（ykt lesson �
 固定参考 `.reference/zhs-cli` 的 `src/client.py::zhidao_query/hike_query`、`src/share.py::load_course`、`src/hike.py::HikeApi`：共享课 studyservice 使用 `VIDEO_KEY`、`/gateway/t/v1/`、POST 表单 `secretStr` + `dateFormate`；home 列表才使用 `HOME_KEY` 的 GET。原 SDK 的 studyservice 路径/密钥及只校验请求地址的合成 fixture 均错，已更正并逐项校验 body、Origin、Referer。Hike 课程/资源树是 GET；树嵌套字段为 `childList`，视频 `dataType=3`，而非旧 fixture 的 `children`/`1`。对应合成 fixture 和解析器已同改。
 
 此校正不证明智慧树登录后的身份 UUID、真实保存进度、验证码或账号风控可用；E04/E06 仍待授权的实际平台核验。
+
+### P-E05 · 2026-09-23 已授权本机只读 userinfo 形态校正
+
+使用用户授权的本机旧雨课堂会话，仅调用 `GET https://www.yuketang.cn/v2/api/web/userinfo`。真实响应 HTTP 200、`errcode:0`，但 `data` 是单项数组，元素含 `user_id`（number）、`name`（string）等字段；先前合成 fixture 的 `data:{id,name}` 单对象仍可作为兼容形态，不能把它当唯一真实形态。旧解析器因此抛 ZodError，被探测层误标 `NETWORK`；现以两形态严格解析，并要求可识别 `user_id` 才可升级导入会话。没有保存/提交响应原文、学号、姓名或 Cookie。此项只补 E04 的雨课堂身份字段形态；不证明课程写入或字体质量。

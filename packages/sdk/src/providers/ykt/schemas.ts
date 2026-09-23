@@ -28,7 +28,10 @@ export const AppLoginWire = z.object({
 
 export const UserinfoWire = z.object({
   errcode: z.number(),
-  data: z.object({ id: z.union([z.number(), z.string()]).optional(), name: z.string().optional() }).optional(),
+  data: z.union([
+    z.object({ id: z.union([z.number(), z.string()]).optional(), user_id: z.union([z.number(), z.string()]).optional(), name: z.string().optional() }),
+    z.array(z.object({ id: z.union([z.number(), z.string()]).optional(), user_id: z.union([z.number(), z.string()]).optional(), name: z.string().optional() })),
+  ]).optional(),
 });
 
 export const CourseListWire = z.object({
