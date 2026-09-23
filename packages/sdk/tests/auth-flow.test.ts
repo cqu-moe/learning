@@ -268,7 +268,7 @@ describe('SDK factory (A052)', () => {
     const transport = new FakeTransport();
     const runtime = makeRuntime(transport);
     await importLegacyCookies(runtime, scope, [{ name: 'sessionid', value: 'fixture', domain: '.yuketang.cn', secure: true }]);
-    transport.scriptInteractions([{ request: { method: 'GET', host: 'www.yuketang.cn', path: '/v2/api/web/userinfo' }, response: { status: 200, body: { errcode: 0, data: { id: 424242, name: 'Fixture' } } } }]);
+    transport.scriptInteractions([{ request: { method: 'GET', host: 'www.yuketang.cn', path: '/v2/api/web/userinfo' }, response: { status: 200, body: { errcode: 0, data: [{ user_id: 424242, name: 'Fixture' }] } } }]);
     expect(await createLearningClient({ scope, runtime }).auth.probe()).toMatchObject({ state: 'valid', session: { platformUserId: '424242', identityVerified: true } });
     const { readSession } = await import('../src/session/store.js');
     expect(await readSession(runtime.state, runtime.masterKey, scope)).toMatchObject({ platformUserId: '424242', identityVerified: true });
