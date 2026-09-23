@@ -65,6 +65,90 @@ describe('ykt authoritative progress', () => {
 });
 
 describe('ykt study job', () => {
+  it('marks an unfinished article with the exact write GET and succeeds only after leaf readback', async () => {
+    const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'article', native: { kind: 'ykt' as const, leafId: '83937494', leafInfoId: null } };
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const masterKey = new Uint8Array(32).fill(5);
+    await writeSession(state, masterKey, { schemaVersion: 1, scope, generation: 3, platformUserId: '424242', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: clock.nowMs() });
+    const runtime: Runtime = { transport, state, clock, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} };
+    const leaf = (finish: boolean) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/83937494/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 3, sku_id: 901, finish } } } });
+    const context = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/v2/api/web/classrooms/28930736', query: { role: '5' } }, response: { status: 200, body: { data: { course_sign: 's', free_sku_id: 901, uv_id: 42 } } } };
+    const write = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/user_article_finish/83937494/', query: { cid: '28930736', sid: '901' }, headers: { xtbz: 'ykt', 'university-id': '42', 'uv-id': '42', 'classroom-id': '28930736', 'xt-agent': 'web' } }, response: { status: 200, body: { msg: '', data: {}, success: true } } };
+    transport.scriptInteractions([leaf(false)]);
+    const client = createLearningClient({ scope, runtime });
+    expect((await client.catalog.progress(resource)).value).toMatchObject({ serverCompleted: false, serverFraction: 0, durationSeconds: null });
+    transport.assertNoExtraScripts();
+    transport.scriptInteractions([leaf(false)]);
+    const preview = await client.actions.prepare({ kind: 'study', resources: [resource], settings: { speed: 1, targetFraction: 1, questionMode: 'pause', maxDurationSeconds: 60 } });
+    const execution = await client.actions.execute(preview.id);
+    if (execution.type !== 'job') throw Error('missing article job');
+    transport.scriptInteractions([leaf(false), context, write, leaf(true)]);
+    const done = await client.jobs.advance(execution.job.id);
+    expect(done).toMatchObject({ status: 'succeeded', completed: 1, items: [{ key: 'article', state: 'succeeded' }] });
+    transport.assertNoExtraScripts();
+  });
+
+  it('does not write a completed article or an article without a valid sku', async () => {
+    const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'article', native: { kind: 'ykt' as const, leafId: '83937494', leafInfoId: null } };
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const masterKey = new Uint8Array(32).fill(5);
+    await writeSession(state, masterKey, { schemaVersion: 1, scope, generation: 3, platformUserId: '424242', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: clock.nowMs() });
+    const runtime: Runtime = { transport, state, clock, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} };
+    const leaf = (finish: boolean, skuId: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/83937494/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 3, sku_id: skuId, finish } } } });
+    const client = createLearningClient({ scope, runtime });
+    transport.scriptInteractions([leaf(true, 901)]);
+    const preview = await client.actions.prepare({ kind: 'study', resources: [resource], settings: { speed: 1, targetFraction: 1, questionMode: 'pause', maxDurationSeconds: 60 } });
+    const execution = await client.actions.execute(preview.id);
+    if (execution.type !== 'job') throw Error('missing article job');
+    transport.scriptInteractions([leaf(true, 901)]);
+    expect((await client.jobs.advance(execution.job.id)).status).toBe('succeeded');
+    transport.assertNoExtraScripts();
+    transport.scriptInteractions([leaf(false, 0)]);
+    await expect(client.actions.prepare({ kind: 'study', resources: [resource], settings: { speed: 1, targetFraction: 1, questionMode: 'pause', maxDurationSeconds: 60 } })).rejects.toThrow(/sku/i);
+    transport.assertNoExtraScripts();
+  });
+
+  it('reconciles an uncertain article finish by leaf readback without repeating the write', async () => {
+    const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'article', native: { kind: 'ykt' as const, leafId: '83937494', leafInfoId: null } };
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const masterKey = new Uint8Array(32).fill(5);
+    await writeSession(state, masterKey, { schemaVersion: 1, scope, generation: 3, platformUserId: '424242', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: clock.nowMs() });
+    const runtime: Runtime = { transport, state, clock, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} };
+    const runner = new JobRunner(state, clock);
+    const action = { kind: 'study' as const, resources: [resource], settings: { speed: 1, targetFraction: 1, questionMode: 'pause' as const, maxDurationSeconds: 60 } };
+    const job = await runner.create(scope, 'study', { total: 1, payload: action, generation: 3 });
+    const operationId = `article:${job.id}:article`;
+    await expect(runner.advance(job.id, async () => {
+      await runner.setPendingOperation(job.id, operationId);
+      throw Error('simulated lost article response');
+    })).rejects.toThrow();
+    const leaf = (finish: boolean) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/83937494/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 3, sku_id: 901, finish } } } });
+    const client = createLearningClient({ scope, runtime });
+    transport.scriptInteractions([leaf(false)]);
+    expect((await client.actions.reconcile(operationId)).state).toBe('uncertain');
+    expect((await runner.metadata(job.id)).pendingOperationId).toBe(operationId);
+    transport.scriptInteractions([leaf(true)]);
+    expect((await client.actions.reconcile(operationId)).state).toBe('confirmed');
+    expect((await runner.get(job.id)).status).toBe('paused');
+    expect((await runner.metadata(job.id)).pendingOperationId).toBeNull();
+    transport.assertNoExtraScripts();
+  });
+
   it('creates a durable job and confirms one current-time heartbeat from server progress', async () => {
     const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
     const resource = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'video', native: { kind: 'ykt' as const, leafId: '502', leafInfoId: null } };

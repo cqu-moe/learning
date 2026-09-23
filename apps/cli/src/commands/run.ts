@@ -5,10 +5,10 @@ import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 import { runJobForeground } from '../foreground.js';
 
-function videos(nodes: OutlineNode[]): ResourceRef[] {
+function studyResources(nodes: OutlineNode[], includeDocuments: boolean): ResourceRef[] {
   return nodes.flatMap((node) => [
-    ...node.resources.filter((resource) => resource.kind === 'video').map((resource) => resource.ref),
-    ...videos(node.children),
+    ...node.resources.filter((resource) => resource.kind === 'video' || includeDocuments && resource.kind === 'document').map((resource) => resource.ref),
+    ...studyResources(node.children, includeDocuments),
   ]);
 }
 
@@ -45,16 +45,16 @@ export function registerRunCommands(program: Command): void {
             course = CourseSchema.parse(cachedCourse.value).ref;
           }
           if (course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'course belongs to another profile', retryAfterMs: null, operationId: null });
-          resources = videos((await client.catalog.outline(course)).value.roots);
+          resources = studyResources((await client.catalog.outline(course)).value.roots, profile.scope.platform === 'ykt');
         }
         if (resources.length === 0 || resources.some((resource) => resource.course.scope.profileId !== profile.scope.profileId)) {
-          throw new LearningError({ code: 'INVALID_INPUT', message: 'no videos in this profile were selected', retryAfterMs: null, operationId: null });
+          throw new LearningError({ code: 'INVALID_INPUT', message: 'no study resources in this profile were selected', retryAfterMs: null, operationId: null });
         }
         if (profile.scope.platform === 'zhs' && resources.some((resource) => resource.native.kind === 'zhs-hike') && speed > 1.25) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS hike speed cannot exceed 1.25', retryAfterMs: null, operationId: null });
         const preview = await client.actions.prepare({ kind: 'study', resources, settings: { speed, targetFraction, questionMode: 'pause', maxDurationSeconds: 24 * 60 * 60 } });
         if (options.dryRun || !options.yes) {
           if (!options.dryRun) { process.stderr.write('learning: preview only; rerun with --yes to start\n'); process.exitCode = 3; }
-          printResult(program, preview, `${resources.length} video(s) previewed at ${speed}x to ${targetFraction}`);
+          printResult(program, preview, `${resources.length} study resource(s) previewed at ${speed}x to ${targetFraction}`);
           return;
         }
         const execution = await client.actions.execute(preview.id);

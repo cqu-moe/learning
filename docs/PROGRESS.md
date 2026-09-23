@@ -23,15 +23,15 @@
 | T16 | 学堂作业与讨论发布 | partial | `discussions-client`、`actions-client` 与 CLI 讨论进程 fixture | 学堂作业执行链未接入；真实写入未授权 |
 | T17 | 学堂考试的三个独立动作 | partial | 开卷、单独缓存选择/判断题与阻断最终交卷的 SDK/CLI fixture | E05 最终交卷独立验证缺失；填空/主观题写入未验证 |
 | T18 | 固定任务模型、暂停恢复与事件 | partial | 持久化、作用域分页、进程恢复与 wake fixture | 20 秒工作片硬期限与全部 job kind 边界仍需核对 |
-| T19 | 雨课堂学习任务 | partial | 当前 `ykt-study.test.ts` 6/6；CLI 一拍与只读核对 fixture | 图文、内嵌题继续未接线；真实心跳未授权 |
+| T19 | 雨课堂学习任务 | partial | 当前 `ykt-study.test.ts` 9/9；图文写入、跳过与不确定只读核对 fixture | 内嵌题继续未接线；真实心跳未授权 |
 | T20 | 学堂学习任务 | partial | 当前 `xuetang-study.test.ts` 5/5；CLI 实际间隔 fixture | 长任务和统计延迟验收不足；真实心跳未授权 |
 | T21 | 智慧树share/hike学习任务 | partial | 两套保存 handler、题闸/停滞/签名、权威回读 fixture | E04/E06 真机身份与回读时延缺口；真实学习未授权 |
 | T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
 | T23 | 流式下载、持久产物与断点恢复 | partial | MP4 206/200/416/ETag 恢复、CLI 双进程与字幕降级 fixture | HLS 分段断点及多 GiB 预算实测未完成 |
 | T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
 | T25 | CLI基础命令与本地运行装配 | done | profile/login/catalog/doctor、独占锁与 wake CLI 进程 fixture；当前 CLI 45/45 | 真实平台登录未授权，fixture 不代替账号验收 |
-| T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、草稿、讨论、三平台学习、考试 start/save、直播 fixture | E05 最终交卷阻断；学堂作业/图文、部分恢复与模型配置未闭合 |
-| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 208/208、CLI 45/45、E2E 4/4；第一次合并后正式 pnpm 五门禁 exit 0 | 第二阶段需重跑正式门禁；干净消费者打包和 A312 全矩阵未完成 |
+| T26 | CLI完整功能入口与恢复操作 | partial | 28 个计划入口及操作核对入口注册；下载、课件、草稿、讨论、三平台学习、雨课堂图文、考试 start/save、直播 fixture | E05 最终交卷阻断；学堂作业、部分恢复与模型配置未闭合 |
+| T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | 当前 SDK 211/211、CLI 45/45、E2E 6/6；packed tgz 隔离消费者测试 | 待本检查点合并后正式门禁；离线独立安装缺 pdf-lib tarball；A312 全矩阵未完成 |
 
 ## 延期（不计本期分母，不是下一任务）
 
@@ -312,3 +312,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 安全修复：新建 LEARNING_HOME 0700，SQLite/master.key 0600；操作预览的答题/讨论正文改为 AES-GCM 密文，旧明文 sending 记录在读取时原地迁移且保持 uncertain、不重交。新增 `operations reconcile <operation-id>`，无法权威核对时返回 uncertain/退出码 5。
 - 本阶段离线实际命令（Node v24.11.1、隔离工作树）：SDK `vitest run` → 208/208 exit 0；CLI `vitest run` → 45/45 exit 0；CLI 独立 E2E → 4/4 exit 0；SDK/CLI `tsc -p tsconfig.json` → exit 0；ESLint、boundaries、source-lock、`git diff --check` → exit 0。因隔离工作树的 `node_modules` 为复用拷贝，pnpm 在此处会触发重建依赖目录；合并后须在主仓库重跑正式 pnpm 五门禁。
 - 未完成：T24 的 E07 三份独立参考字体和 200 个人工核实字形（用户确认暂无），字体 Canvas/旧课件受控浏览器不能报通过；E05 最终交卷独立真机验证缺失；平台真实登录/学习/写入/直播未授权，均未运行。T31 的干净消费者打包、全命令正常/异常矩阵仍未完成。下一步先做正式合并后门禁与消费者安装，再继续剩余工程与证据缺口。
+
+### 2026-09-23 · 第三阶段检查点（T19 图文、T31 包消费者）
+
+- T19 新增雨课堂图文 `leaf_type=3` 权威进度：`leaf_info.finish` 直接决定完成；未完成时从叶子取 `sku_id`、从班级上下文取 `uv_id`，将 `user_article_finish` 的 GET 按写入发送且带全身份头；ACK 后重新读取 `finish`，未确认不记成功。响应丢失保留 pending operation，`actions.reconcile` 只读核对，不重复写。CLI `run <course>` 现在纳入雨课堂 document 资源；已完成图文不重报，缺 sku 阻止准备。
+- T31 将 28 个 A02 命令路径注册检查与 SDK/CLI 双 tgz 解包消费者测试固化到 `test:e2e`。消费者用已冻结的工作区依赖链接，执行正式 bin、包导出、扫码/课程/大纲、试卷导出和双进程 Range 恢复。CLI `package.json` 的 `files` 只发布 dist；`pnpm pack` 内容核对通过。尝试离线 `pnpm add` 因本机缺 `pdf-lib` tarball 而失败（`ERR_PNPM_NO_OFFLINE_TARBALL`），因此不声称全新独立依赖安装已通过。
+- 测试先行：图文正常/异常测试先以 `leaf_info lacks the identifiers required for progress` 失败（exit 1），实现后 `ykt-study.test.ts` 9/9 exit 0。Node v24.11.1 隔离工作树实际命令：SDK `vitest run` 211/211、CLI `vitest run` 45/45、CLI E2E 6/6、SDK/CLI `tsc -p tsconfig.json --noEmit`、ESLint、boundaries、source-lock、`git diff --check` 均 exit 0。正式 pnpm 五门禁需合并到主仓库后重跑。
+- 未运行：真实平台登录、图文写入、视频、答题、交卷、直播（没有单独授权）；E07 参考字体样本用户确认暂无，E05 交卷独立证据缺失。下一当前任务：继续 T16 学堂作业及 T15 内嵌题工程，再补 T31 剩余矩阵；Web 延期。
