@@ -90,6 +90,15 @@ describe('zhs catalog (T11)', () => {
     expect(transport.calls.some((c) => c.url.includes('stuViewFile'))).toBe(false);
   });
 
+  it('accepts the observed hike course-list success code 200', async () => {
+    const transport = new FakeTransport();
+    const { http, clock } = makeContext(transport);
+    const query = { uuid: 'u-fixture', date: new Date(clock.nowMs()).toISOString() };
+    transport.scriptInteractions([{ request: { method: 'GET', host: 'hikeservice.zhihuishu.com', path: '/student/course/aided/getMyCourseList', query }, response: { status: 200, body: { code: 200, result: { startInngcourseList: [{ courseId: 77, courseName: '校内课A' }] } } } }]);
+    expect((await zhsHikeCourses(http, clock, scope, 'u-fixture')).items[0]?.title).toBe('校内课A');
+    transport.assertNoExtraScripts();
+  });
+
   it('share outline walks gologin → queryCourse → videolist', async () => {
     const transport = new FakeTransport();
     const fixture = loadFixture('zhs/share-outline');

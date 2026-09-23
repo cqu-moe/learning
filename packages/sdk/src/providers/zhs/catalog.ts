@@ -127,10 +127,10 @@ export async function zhsHikeCourses(http: SessionHttp, clock: Clock, scope: Sco
     url: `https://hikeservice.zhihuishu.com/student/course/aided/getMyCourseList?${query.toString()}`,
   });
   const payload = (await response.json()) as { code?: number; result?: { startInngcourseList?: Array<{ courseId?: number; courseName?: string }> } };
-  if (payload.code !== undefined && payload.code !== 0) {
+  if (response.status !== 200 || (payload.code !== 0 && payload.code !== 200) || !Array.isArray(payload.result?.startInngcourseList)) {
     throw new LearningError({ code: 'PROTOCOL', message: `getMyCourseList code=${payload.code}`, retryAfterMs: null, operationId: null });
   }
-  const items = (payload.result?.startInngcourseList ?? []).map((row) => {
+  const items = payload.result.startInngcourseList.map((row) => {
     if (row.courseId === undefined) {
       throw new LearningError({ code: 'PROTOCOL', message: 'hike course missing courseId', retryAfterMs: null, operationId: null });
     }
