@@ -40,4 +40,18 @@ describe('NodeArtifactStore', () => {
     await expect(store.resume({ id: '../escape', checkpoint: { ...checkpoint, sha256: '0'.repeat(64) } })).rejects.toThrow();
     await expect(store.open('../escape')).rejects.toThrow();
   });
+
+  it('can explicitly roll back uncommitted segment bytes to a verified checkpoint', async () => {
+    const store = new NodeArtifactStore(temp());
+    const writer = await store.create({ id: 'hls-segments', mimeType: 'video/mp2t' });
+    await writer.write(Buffer.from('AAA'));
+    const checkpoint = await writer.checkpoint();
+    await writer.write(Buffer.from('incomplete'));
+    await writer.abort();
+    await expect(store.resume({ id: 'hls-segments', checkpoint })).rejects.toThrow(/length/);
+    const resumed = await store.resume({ id: 'hls-segments', checkpoint, truncateUncommitted: true });
+    await resumed.write(Buffer.from('BBB'));
+    expect((await resumed.finish()).bytes).toBe(6);
+    expect(Buffer.from(await bytes(await store.open('hls-segments'))).toString()).toBe('AAABBB');
+  });
 });
