@@ -228,7 +228,7 @@ describe('SDK factory (A052)', () => {
     const xtxScope: Scope = { userId: 'local', profileId: 'x-cookie', platform: 'xuetang' };
     await importLegacyCookies(runtime, xtxScope, [
       { name: 'domain-token', value: 'fixture-one', domain: '.xuetangx.com', path: '/', secure: true, httpOnly: true, sameSite: 'Lax', expires: 4102444800 },
-      { name: 'host-token', value: 'fixture-two', domain: 'www.xuetangx.com', path: '/private', secure: true, httpOnly: false, sameSite: 'Strict', expires: -1 },
+      { name: 'host-token', value: 'fixture-two', domain: 'www.xuetangx.com', path: '/private', secure: true, httpOnly: false, sameSite: 'Strict', expires: null },
     ]);
     const { readSession } = await import('../src/session/store.js');
     const saved = await readSession(runtime.state, runtime.masterKey, xtxScope);
