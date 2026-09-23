@@ -1,4 +1,24 @@
 import type { Socket } from '../../src/runtime/types.js';
+import { FakeTransport } from './replay.js';
+
+/** FakeTransport plus scripted WebSocket connects for wsapp login tests. */
+export class FakeWsTransport extends FakeTransport {
+  readonly servers: FakeWsPair['server'][] = [];
+  private readonly pendingConnects: FakeWsPair[] = [];
+
+  connectNext(): FakeWsPair['server'] {
+    const pair = fakeWsPair();
+    this.pendingConnects.push(pair);
+    return pair.server;
+  }
+
+  override async connect(): Promise<Socket> {
+    const pair = this.pendingConnects.shift();
+    if (pair === undefined) throw new Error('no scripted ws connect');
+    this.servers.push(pair.server);
+    return pair.client;
+  }
+}
 
 /** Event-target shaped fake that NodeSocket.fromWebSocket can wrap. */
 export class FakeWebSocketLike {

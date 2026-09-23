@@ -19,6 +19,8 @@ import { yktProbeProvider, yktQrLaunch } from './providers/ykt/auth.js';
 import { yktLessons, yktMedia, yktSlides, yktTranscript } from './providers/ykt/resources.js';
 import { yktAssessmentGet, yktAssessmentsResolve } from './providers/ykt/assessments.js';
 import { yktExamRead } from './providers/ykt/exam-read.js';
+import { xtxCourses, xtxOutline } from './providers/xuetang/catalog.js';
+import { xtxProbeProvider, xtxQrLaunch } from './providers/xuetang/auth.js';
 import { probeSession } from './auth/flow.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
@@ -61,7 +63,7 @@ const CAPABILITY_IDS = [
 
 const IMPLEMENTED: Record<Platform, Set<string>> = {
   ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse', 'resources.media', 'resources.transcript', 'resources.lessons', 'resources.slides', 'assessments.resolve', 'assessments.get']),
-  xuetang: new Set(['auth.importLegacy']),
+  xuetang: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline']),
   zhs: new Set(['auth.importLegacy']),
 };
 
@@ -105,6 +107,10 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           const http = await httpBound();
           return lifecycle.begin(yktQrLaunch({ http, jar: sessionBox.jar, clock: runtime.clock }));
         }
+        if (platform === 'xuetang' && loginInput.method === 'qr') {
+          const http = await httpBound();
+          return lifecycle.begin(xtxQrLaunch({ http, jar: sessionBox.jar, transport: runtime.transport, clock: runtime.clock }));
+        }
         throw unsupported(platform, `auth.begin(${loginInput.method})`);
       },
       probe: async () => {
@@ -114,6 +120,14 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             state: runtime.state,
             masterKey: runtime.masterKey,
             provider: yktProbeProvider({ http: await httpBound(), clock: runtime.clock }),
+          });
+        }
+        if (platform === 'xuetang') {
+          return probeSession({
+            scope,
+            state: runtime.state,
+            masterKey: runtime.masterKey,
+            provider: xtxProbeProvider({ http: await httpBound(), clock: runtime.clock }),
           });
         }
         return asyncUnsupported(platform, 'auth.probe');
@@ -136,10 +150,12 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       },
       courses: async (): Promise<Page<Course>> => {
         if (platform === 'ykt') return yktCourses(await httpBound(), scope);
+        if (platform === 'xuetang') return xtxCourses(await httpBound(), scope);
         return asyncUnsupported(platform, 'catalog.courses');
       },
       outline: async (course) => {
         if (platform === 'ykt') return yktOutline(await httpBound(), scope, course);
+        if (platform === 'xuetang') return xtxOutline(await httpBound(), course);
         return asyncUnsupported(platform, `catalog.outline(${course.key})`);
       },
       progress: (resource) => asyncUnsupported(platform, `catalog.progress(${resource.key})`),

@@ -203,8 +203,8 @@ describe('SDK factory (A052)', () => {
   });
 
   it('unimplemented provider methods throw UNSUPPORTED, never empty lists', async () => {
-    const xtxScope: Scope = { userId: 'local', profileId: 'p2', platform: 'xuetang' };
-    const client = createLearningClient({ scope: xtxScope, runtime: makeRuntime(new FakeTransport()) });
+    const zhsScope: Scope = { userId: 'local', profileId: 'p3', platform: 'zhs' };
+    const client = createLearningClient({ scope: zhsScope, runtime: makeRuntime(new FakeTransport()) });
     await expect(client.catalog.courses()).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
     await expect(client.auth.begin({ method: 'qr' })).rejects.toMatchObject({ data: { code: 'UNSUPPORTED' } });
   });
@@ -229,10 +229,10 @@ describe('SDK factory (A052)', () => {
   });
 
   it('aggregateCourses keeps per-profile errors separate and ordered', async () => {
-    const xtxScope: Scope = { userId: 'local', profileId: 'p2', platform: 'xuetang' };
-    const client = createLearningClient({ scope: xtxScope, runtime: makeRuntime(new FakeTransport()) });
+    const zhsScope: Scope = { userId: 'local', profileId: 'p3', platform: 'zhs' };
+    const client = createLearningClient({ scope: zhsScope, runtime: makeRuntime(new FakeTransport()) });
     const results = await aggregateCourses([client]);
     expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ scope: xtxScope, error: { code: 'UNSUPPORTED' } });
+    expect(results[0]).toMatchObject({ scope: zhsScope, error: { code: 'UNSUPPORTED' } });
   });
 });

@@ -12,7 +12,7 @@
 | T05 | 统一登录生命周期、WS和SDK工厂 | done | vitest tests/auth-flow.test.ts → 14/14; 全套 67/67, typecheck/lint/build/boundaries exit 0 | — |
 | T06 | 雨课堂登录、课程与两类大纲 | done | vitest tests/ykt-catalog.test.ts → 7/7; 全套 74/74, typecheck/lint/build/boundaries exit 0 | E04 身份字段仅 fixture；真实登录未执行 |
 | T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
-| T08 | 学堂WS登录、课程与大纲 | not-started | 未运行 | — |
+| T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | not-started | 未运行 | — |
 | T10 | 智慧树编码与登录 | not-started | 未运行 | — |
 | T11 | 智慧树两类课程树和权威进度 | not-started | 未运行 | — |
@@ -117,6 +117,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 命令（Node v24.11.1）：vitest ykt-resources → 6 passed；全套 80/80；typecheck/lint/build → 0。
 - 未运行项：真实考试 SSO/字幕 CDN（allowlist 限制记录于 E01）；font 实际解码在 T24。
 - 下一个当前任务：T08。
+
+### 2026-09-23 · T08 学堂WS登录、课程与大纲（done）
+
+- 实际改动：src/providers/xuetang/{schemas.ts,auth.ts,catalog.ts}、src/index.ts 接线、tests/helpers/{replay.ts 增 loadFixture、ws.ts 增 FakeWsTransport}、tests/xuetang-catalog.test.ts、fixtures xuetang/{qr-is-new,courses,outline}.json。
+- 测试先行确认失败后实现 6/6；全套 86/86。
+- 实现：wsapp 扫码登录（匿名 GET / 种 csrftoken → WS 六字段 requestlogin → requestlogin 票据 ticket/follow_url/expire → loginsuccess is_new 分支取 s_s/token → POST /api/v1/u/login/wx/ {s_s} + X-CSRFToken）；课程列表 product_list → 完整 xuetang locator（缺 skuId 抛错不 0 兜底），仅第一页 → completeness unknown（E02）；kg_learn_chapter 递归树（根 leaf 保留、章提升为根、深层嵌套 children、path=容器链、树 node id 与 leaf.chapter_id 差异按源码处理）；probe 走 user-courses 401/success=false → expired，网络错 indeterminate 不清 Cookie。
+- 验收：A081（第一页不标全量、缺 skuId 拒绝、根 resource 不丢）；A082（迟到/取消竞态由 T05 lifecycle 覆盖、probe 网络错 indeterminate 且旧会话原样——auth-flow 套件）。
+- 命令（Node v24.11.1）：vitest xuetang-catalog → 6 passed；全套 86/86；typecheck/lint/build/boundaries → 0。
+- 未运行项：真实 wsapp 连接；QR 过期重连循环仅实现骨架（ticket expire 事件已带 expiresAtMs）。
+- 下一个当前任务：T09。
 
 按任务编号与日期追加：实际改动文件、命令/环境/退出码、通过与未运行层级、source/fixture变化、具体blocker和影响、下一个当前任务编号。done需要真实证据；partial/blocked不能写完成。延期不是blocked。
 

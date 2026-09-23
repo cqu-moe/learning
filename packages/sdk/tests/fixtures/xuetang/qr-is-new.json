@@ -1,0 +1,33 @@
+{
+  "id": "xuetang/qr-is-new",
+  "platform": "xuetang",
+  "source": {
+    "repo": "cqu-moe/xuetang-cli",
+    "ref": "628a8fa8a4b90897f285a109aa591a8f6263846d",
+    "path": "src/core/ws_login.py",
+    "symbol": "qr_login"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.xuetangx.com", "path": "/" },
+      "response": { "status": 200, "headers": { "set-cookie": ["csrftoken=xtx-csrf-fixture; Path=/; Domain=xuetangx.com"] }, "body": "<html>home</html>" }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "host": "www.xuetangx.com",
+        "path": "/api/v1/u/login/wx/",
+        "headers": { "x-csrftoken": "xtx-csrf-fixture", "xtbz": "xt", "content-type": "application/json;charset=utf-8" },
+        "body": { "s_s": "fixture-token" }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "set-cookie": ["sessionid=xtx-sess-fixture; Path=/; Domain=xuetangx.com", "csrftoken=xtx-csrf-2; Path=/; Domain=xuetangx.com"] },
+        "body": { "success": true }
+      }
+    }
+  ],
+  "entry": { "service": "auth", "method": "begin", "input": { "method": "qr" } },
+  "expected": null
+}

@@ -1,0 +1,22 @@
+{
+  "id": "xuetang/courses",
+  "platform": "xuetang",
+  "source": {
+    "repo": "cqu-moe/xuetang-cli",
+    "ref": "628a8fa8a4b90897f285a109aa591a8f6263846d",
+    "path": "src/core/api.py",
+    "symbol": "fetch_courses"
+  },
+  "synthetic": true,
+  "interactions": [
+    {
+      "request": { "method": "GET", "host": "www.xuetangx.com", "path": "/api/v1/lms/user/user-courses/", "query": { "status": "1", "page": "1" }, "headers": { "xtbz": "xt", "app-name": "xtzx", "x-client": "web", "terminal-type": "web" } },
+      "response": { "status": 200, "headers": {}, "body": { "success": true, "data": { "product_list": [
+        { "classroom_id": 100, "course_sign": "SIGN-A", "name": "电路原理", "sku_id": 900 },
+        { "classroom_id": 200, "course_sign": "SIGN-B", "name": "数据结构", "sku_id": 901 }
+      ] } } }
+    }
+  ],
+  "entry": { "service": "catalog", "method": "courses", "input": {} },
+  "expected": null
+}

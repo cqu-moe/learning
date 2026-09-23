@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Json } from '../../src/types/errors.js';
-import type { Clock, Transport } from '../../src/runtime/types.js';
+import type { Clock, Socket, Transport } from '../../src/runtime/types.js';
 
 const testsDir = resolve(fileURLToPath(new URL('../', import.meta.url)));
 
@@ -143,7 +143,7 @@ export class FakeTransport implements Transport {
     );
   }
 
-  async connect(): Promise<never> {
+  async connect(): Promise<Socket> {
     throw new Error('FakeTransport does not support connect(); use tests/helpers/ws.ts');
   }
 
@@ -212,4 +212,9 @@ export async function replay<T>(
     throw new Error(`fixture ${name}: ${transport.unconsumedScripts()} interactions never consumed`);
   }
   return result;
+}
+
+/** Loads a fixture without scripting a transport (for WS-based flows). */
+export function loadFixture(name: string): Fixture {
+  return JSON.parse(readFileSync(resolve(testsDir, 'fixtures', `${name}.json`), 'utf8')) as Fixture;
 }
