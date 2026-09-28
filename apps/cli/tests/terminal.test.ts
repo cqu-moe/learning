@@ -7,7 +7,7 @@ const root = mkdtempSync(resolve(tmpdir(), 'learning-terminal-'));
 const cli = resolve(import.meta.dirname, '../dist/index.js');
 const driver = resolve(import.meta.dirname, 'helpers/terminal-driver.py');
 afterAll(() => rmSync(root, { recursive: true, force: true }));
-function terminal(args: string[], steps: Array<{ wait: string; send?: string; signal?: string }>, columns = 80, term = 'xterm-256color') {
+function terminal(args: string[], steps: Array<{ wait: string; send?: string; signal?: string; occurrences?: number }>, columns = 80, term = 'xterm-256color') {
   const result = spawnSync('python3', [driver, JSON.stringify({ argv: [process.execPath, cli, '--home', root, ...args], steps, columns, term })], { encoding: 'utf8', timeout: 15_000 });
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
@@ -21,12 +21,50 @@ describe('real terminal interaction', () => {
     expect(result.screen).not.toContain('选择平台');
     expect(result.screen).not.toContain('\u001b');
   }, 20_000);
-  it('runs one selected command then exits', () => {
-    const result = terminal(['--output-format','plain'], [{ wait: '请选择操作', send: '2\n' }]);
+  it('returns home after each operation and exits explicitly', () => {
+    const result = terminal(['--output-format','plain'], [
+      { wait: '请选择操作', send: '2\n' },
+      { wait: '请选择操作', occurrences: 2, send: '2\n' },
+      { wait: '请选择操作', occurrences: 3, send: '19\n' },
+    ]);
     expect(result.code).toBe(0);
-    expect(result.screen).toContain('Node：');
-    expect(result.screen.match(/请选择操作/g)).toHaveLength(1);
-    expect(result.screen).toContain('等价命令');
+    expect(result.steps).toBe(3);
+    expect(result.screen.match(/Node：/g)).toHaveLength(2);
+    expect(result.screen.match(/请选择操作/g)).toHaveLength(3);
+    expect(result.screen).toContain('退出');
+  }, 20_000);
+  it('returns home after an operation error without leaking its exit code', () => {
+    const result = terminal(['--output-format','plain'], [
+      { wait: '请选择操作', send: '7\n' },
+      { wait: '请选择操作', occurrences: 2, send: '1\n' },
+      { wait: '账号名称', send: 'plain-user\n' },
+      { wait: '选择平台', send: '1\n' },
+      { wait: '请选择操作', occurrences: 3, send: '19\n' },
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.steps).toBe(5);
+    expect(result.screen).toContain('错误');
+  }, 20_000);
+  it('collects fresh arguments and releases the lock between home operations', () => {
+    const result = terminal(['--output-format','plain'], [
+      { wait: '请选择操作', send: '7\n' },
+      { wait: '请选择操作', occurrences: 2, send: '1\n' },
+      { wait: '账号名称', send: 'home-first\n' },
+      { wait: '选择平台', send: '1\n' },
+      { wait: '请选择操作', occurrences: 3, send: '7\n' },
+      { wait: '请选择操作', occurrences: 4, send: '1\n' },
+      { wait: '账号名称', occurrences: 2, send: 'home-second\n' },
+      { wait: '选择平台', occurrences: 2, send: '2\n' },
+      { wait: '请选择操作', occurrences: 5, send: '19\n' },
+    ]);
+    expect(result.code).toBe(0);
+    expect(result.steps).toBe(9);
+    const list = spawnSync(process.execPath, [cli,'--home',root,'profile','list','--json'], {encoding:'utf8'});
+    expect(list.status).toBe(0);
+    expect(JSON.parse(list.stdout).data.profiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({name:'home-first',scope:expect.objectContaining({platform:'ykt'})}),
+      expect.objectContaining({name:'home-second',scope:expect.objectContaining({platform:'xuetang'})}),
+    ]));
   }, 20_000);
   it('uses Clack in a real terminal', () => {
     const result = terminal(['profile','add','--platform','ykt'], [{ wait: '账号名称', send: 'pretty-user\r' }]);

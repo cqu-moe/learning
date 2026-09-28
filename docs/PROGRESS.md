@@ -431,3 +431,24 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 在加载应用依赖前收集 Node warning 和 console.warn；SDK runtime.log、Result/Job 警告进入同一队列。输入期间暂存，提示结束统一展示；进度展示先清理 spinner 再打印。JSON 收入 warnings，JSONL 输出 warning 事件；机器模式不再漏原始 Node 警告。只取警告 code/message，不输出 SDK 日志私有 fields；同 code/message 在一次调用内合并。
 - 回归先观察 5 项失败及 Result 解包警告缺失，再修复。真实 PTY 注入方向键期间的 Node/console 警告；本机 pyte 还原 80×30、56×30、32×20 的可见屏幕，均仅一个 Search，doctor 高亮且输入区无插入警告。pyte 仅用于本次诊断，未增加项目依赖。
 - Node24.11.1：lint、typecheck、CLI97/97、打包 E2E7/7、boundaries、git diff --check 全部 exit 0；修复主体阶段还运行 SDK233/233。已重建 apps/cli/dist，现有 learning-ux 函数重新启动即可使用。未合并/推送，未访问真实平台。
+
+### 2026-09-29 · 首页持续交互（用户修订一次性向导决策）
+
+- 裸跑进入首页后，操作成功或报错均先展示结果再返回首页；新增“退出”，Ctrl+C/取消仍结束当前调用。直接指定子命令及机器模式继续单次运行。每轮新建 Commander/输出对象，保留启动参数，释放信号监听、终端状态和运行时锁，避免复用已补填参数或错误退出码。
+- 修改 index.ts、wizard.ts、terminal.test.ts，同步 CLI-MIGRATION 与设计文档。原一次性行为的两项新终端回归先失败，修改后通过；另验证连续创建两个不同平台账号与写锁释放。新增断言首次误把平台字段写在顶层，按实际 scope.platform 修正后通过，未修改产品 DTO。
+- Node24.11.1/pnpm11.19.0/macOS 离线验证：lint、typecheck、SDK233/233、CLI99/99、打包 E2E7/7、boundaries、git diff --check 均 exit 0；CLI test 已重建 dist。未执行真实平台操作，未合并或推送。下一步继续用户本机试用现有 learning-ux 函数。
+
+
+### 主工作区历史进度记录（合并时保留，状态以最新记录为准）
+
+### 2026-09-28 · CLI 体验计划已编写（未实施）
+
+- 用户已确认收敛方案并同意编写计划。应用托管工作树 `/Users/uu/.codex/worktrees/cli-ux-plan/learning` 基于本机 main bbb4a3d，包含 `docs/superpowers/specs/2026-09-28-cli-ux-design.md` 与 `docs/superpowers/plans/2026-09-28-cli-ux.md`；原工作区访谈日志保留。
+- 设计覆盖现有 30 条命令及新增 3 条偏好命令；计划有 UX01–UX09 九个步骤，明确输出契约、依赖、补参/确认/恢复、测试及迁移。文档静态检查（命令矩阵、任务归属、相对链接、代码围栏、未勾选清单）与 `git diff --check` 均 exit 0。新增文档未提交，未修改产品代码或依赖，未运行产品构建/测试/真实平台操作。
+- 下一步：用户审阅计划并选择执行方式后，在该隔离工作树逐任务实施；既有 PLAN/tasks.json 的状态保持不变。
+
+### 2026-09-28 · CLI 0.2 已在隔离分支完成
+
+- 用户要求继续后，已在 `/Users/uu/.codex/worktrees/cli-ux-plan/learning` 的 `codex/cli-ux` 完成 UX01–UX09，最终实现提交 `cf0a0f0`。独立评审 7 项均已修复；详细实现、裁定及迁移说明在该工作树的 PROGRESS 和 CLI-MIGRATION 中。
+- Node24.11.1/pnpm11.19.0 的最终 lint、typecheck、test（SDK233/CLI92）、build、实际离线打包消费者 E2E（7/7）、boundaries、source-lock、diff 检查均 exit 0。未进行真实平台、真实考试或付费模型操作。
+- 当前主工作区尚未合并这些代码，等待用户选择本地合并 main、推送 PR 或保留分支；原有任务和业务证据缺口不重置。

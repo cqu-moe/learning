@@ -3,12 +3,15 @@ import { createPrompts } from './prompts.js';
 import type { Prompts } from './prompts.js';
 import { CliError, getOutput, shellQuote } from './output.js';
 const wizard = new WeakSet<Command>();
+const home = new WeakSet<Command>();
+export function returnsHome(program: Command): boolean { return home.has(program); }
 export function isWizard(program: Command): boolean { while (program.parent) program = program.parent; return wizard.has(program); }
 export async function chooseCommand(program: Command, prompts: Prompts): Promise<string[]> {
   const route: string[] = [];
   let current = program;
   while (current.commands.length) {
-    const selected = String(await prompts.ask({ name: 'command', message: '请选择操作', options: current.commands.map(command => ({ value: command.name(), label: `${command.name()} — ${command.description()}` })) }));
+    const selected = String(await prompts.ask({ name: 'command', message: '请选择操作', options: [...current.commands.map(command => ({ value: command.name(), label: `${command.name()} — ${command.description()}` })), ...(!current.parent ? [{ value: '__exit', label: '退出' }] : [])] }));
+    if (selected === '__exit') { home.delete(program); return []; }
     const next = current.commands.find(command => command.name() === selected);
     if (!next) throw new CliError('INVALID_INPUT', '所选命令不存在。');
     route.push(selected); current = next;
@@ -22,7 +25,9 @@ export function installWizard(program: Command): void {
       const output = getOutput(program);
       if (!output.mode.interactive) throw new CliError('INVALID_INPUT', '请选择子命令。', 2, ['command'], [group.helpInformation()]);
       wizard.add(program);
+      if (group === program) home.add(program);
       const route = await chooseCommand(group, createPrompts(output.mode));
+      if (!route.length) return;
       let leaf = group;
       for (const name of route) leaf = leaf.commands.find(command => command.name() === name)!;
       await leaf.parseAsync([], { from: 'user' });
