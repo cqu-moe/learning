@@ -35,7 +35,7 @@ export function registerJobsCommands(program: Command): void {
           for (const item of page.items) jobs.push(JobSchema.parse(item.record.value));
           cursor = page.nextCursor;
         } while (cursor !== null);
-        process.stdout.write(JSON.stringify(jobs) + '\n');
+        printResult(program, jobs, jobs.map(job => `${job.id}\t${job.kind}\t${job.status}`).join('\n') || '暂无任务');
       } finally {
         state.close();
       }

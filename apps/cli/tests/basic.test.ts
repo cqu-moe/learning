@@ -88,7 +88,7 @@ describe('cli basics (T25, A251/A252)', () => {
     const init = runCli(['init']);
     const doctor = runCli(['doctor', '--json'], { home: init.home });
     expect(doctor.exitCode).toBe(0);
-    const status = JSON.parse(doctor.stdout) as { initialized: boolean; pdf: string; font: string; browser: string };
+    const status = JSON.parse(doctor.stdout).data as { initialized: boolean; pdf: string; font: string; browser: string };
     expect(status.initialized).toBe(true);
     expect(status.pdf).toBe('available');
     expect(status.font).toContain('unavailable');

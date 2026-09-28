@@ -43,12 +43,12 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);
     expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
-    expect(JSON.parse(run(dir, ['whoami', '--profile', 'alpha', '--json']).stdout)).toEqual({ state: 'expired' });
+    expect(JSON.parse(run(dir, ['whoami', '--profile', 'alpha', '--json']).stdout).data).toEqual({ state: 'expired' });
     const cookieFile = resolve(dir, 'cookies.json');
     writeFileSync(cookieFile, JSON.stringify([{ name: 'sessionid', value: 'top-secret-cookie', domain: 'yuketang.cn' }]));
     const imported = run(dir, ['login', '--profile', 'alpha', '--import', cookieFile, '--json']);
     expect(imported.code).toBe(0);
-    expect(JSON.parse(imported.stdout).identityVerified).toBe(false);
+    expect(JSON.parse(imported.stdout).data.identityVerified).toBe(false);
     expect(imported.stdout + imported.stderr).not.toContain('top-secret-cookie');
   });
 
@@ -61,17 +61,17 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(run(dir, ['login', '--profile', 'alpha', '--import', importFile]).code).toBe(0);
     const login = run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login');
     expect(login.code).toBe(0);
-    const session = JSON.parse(login.stdout) as { identityVerified: boolean; platformUserId: string; generation: number };
+    const session = JSON.parse(login.stdout).data as { identityVerified: boolean; platformUserId: string; generation: number };
     expect(session).toMatchObject({ identityVerified: true, platformUserId: '424242', generation: 2 });
     expect(login.stdout).not.toContain('sessionid');
     const courses = run(dir, ['courses', '--profile', 'alpha', '--json'], 'ykt/courses-list', 'sessionid=sess-fixture');
     expect(courses.code).toBe(0);
-    const page = JSON.parse(courses.stdout) as { items: Array<{ ref: { key: string }; title: string }> };
+    const page = JSON.parse(courses.stdout).data as { items: Array<{ ref: { key: string }; title: string }> };
     expect(page.items).toHaveLength(2);
     expect(page.items[0]?.title).toBe('学术写作');
     const outline = run(dir, ['outline', page.items[0]!.ref.key, '--profile', 'alpha', '--json'], 'ykt/nested-outline');
     expect(outline.code).toBe(0);
-    expect(JSON.parse(outline.stdout).value.roots.length).toBeGreaterThan(0);
+    expect(JSON.parse(outline.stdout).data.value.roots.length).toBeGreaterThan(0);
   });
 
   it('runs default ZHS WeChat QR entirely through allowlisted API requests', () => {
@@ -89,7 +89,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(path, JSON.stringify(fixture));
     const result = run(dir, ['login', '--profile', 'alpha', '--json'], path);
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout).identityVerified).toBe(false);
+    expect(JSON.parse(result.stdout).data.identityVerified).toBe(false);
     expect(result.stdout + result.stderr).not.toContain('CASLOGC');
   });
 
@@ -100,7 +100,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(run(dir, ['profile', 'add', 'beta', '--platform', 'zhs']).code).toBe(0);
     const ambiguous = run(dir, ['whoami', '--json']);
     expect(ambiguous.code).toBe(2);
-    expect(ambiguous.stdout).toBe('');
+    expect(JSON.parse(ambiguous.stdout)).toMatchObject({ ok: false, exitCode: ambiguous.code });
   });
 
   it('exports a fixture exam through a persisted SDK job and materializes the file', async () => {
@@ -115,12 +115,12 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     state.close();
     const exported = run(dir, ['exam', 'export', 'fixture-exam', '--profile', 'alpha', '--json'], 'ykt/exam-read');
     expect(exported.code, exported.stderr).toBe(0);
-    const result = JSON.parse(exported.stdout) as { job: { status: string; id: string }; files: string[] };
+    const result = JSON.parse(exported.stdout).data as { job: { status: string; id: string }; files: string[] };
     expect(result.job.status).toBe('succeeded');
     expect(result.files).toHaveLength(1);
     expect(JSON.parse(readFileSync(result.files[0]!, 'utf8')).questions).toHaveLength(2);
     const shown = run(dir, ['jobs', 'list', '--json']);
-    expect(JSON.parse(shown.stdout)[0].id).toBe(result.job.id);
+    expect(JSON.parse(shown.stdout).data[0].id).toBe(result.job.id);
   });
 
   it('writes a reimportable homework draft once without overwriting it', async () => {
@@ -136,11 +136,11 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const output = resolve(dir, 'draft.yaml');
     const first = run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha', '--json'], 'ykt/exercise-read');
     expect(first.code, first.stderr).toBe(0);
-    expect(JSON.parse(first.stdout).questions).toBe(1);
+    expect(JSON.parse(first.stdout).data.questions).toBe(1);
     expect(readFileSync(output, 'utf8')).toContain('schemaVersion: 1');
     const second = run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha', '--json'], 'ykt/exercise-read');
     expect(second.code).toBe(3);
-    expect(second.stdout).toBe('');
+    expect(JSON.parse(second.stdout)).toMatchObject({ ok: false, exitCode: second.code });
   });
 
   it('keeps homework dry-run read-only and sends exactly one confirmed answer', async () => {
@@ -166,10 +166,10 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(applyFixture, JSON.stringify({ interactions: [read, write] }));
     const dry = run(dir, ['homework', 'apply', output, '--profile', 'alpha', '--dry-run', '--json'], dryFixture);
     expect(dry.code, dry.stderr).toBe(0);
-    expect(JSON.parse(dry.stdout).receipts).toEqual([]);
+    expect(JSON.parse(dry.stdout).data.receipts).toEqual([]);
     const applied = run(dir, ['homework', 'apply', output, '--profile', 'alpha', '--yes', '--json'], applyFixture);
     expect(applied.code, applied.stderr).toBe(0);
-    expect(JSON.parse(applied.stdout).receipts[0].receipt.state).toBe('confirmed');
+    expect(JSON.parse(applied.stdout).data.receipts[0].receipt.state).toBe('confirmed');
   });
 
   it('drafts and applies Xuetang homework through two CLI processes with CSRF and numeric ids', async () => {
@@ -198,7 +198,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(applyFixture, JSON.stringify({ interactions: [exercise, write] }));
     const applied = run(dir, ['homework', 'apply', file, '--yes', '--profile', 'alpha', '--json'], applyFixture);
     expect(applied.code, applied.stderr).toBe(0);
-    expect(JSON.parse(applied.stdout).receipts[0].receipt.state).toBe('confirmed');
+    expect(JSON.parse(applied.stdout).data.receipts[0].receipt.state).toBe('confirmed');
   });
 
   it('drafts and applies one Yuketang embedded question using its dedicated reply endpoint', async () => {
@@ -227,7 +227,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(applyFixture, JSON.stringify({ interactions: [leaf, list, leaf, list, leaf, write] }));
     const applied = run(dir, ['homework', 'apply', file, '--yes', '--profile', 'alpha', '--json'], applyFixture);
     expect(applied.code, applied.stderr).toBe(0);
-    expect(JSON.parse(applied.stdout).receipts[0].receipt.result).toMatchObject({ isRight: false, correctAnswer: null });
+    expect(JSON.parse(applied.stdout).data.receipts[0].receipt.result).toMatchObject({ isRight: false, correctAnswer: null });
   });
 
   it('exports historical slide images as a real local PDF', () => {
@@ -241,7 +241,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(file, JSON.stringify({ interactions: [...fixture.interactions.slice(1), ...imageCalls] }));
     const result = run(dir, ['slide', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--format', 'pdf', '--profile', 'alpha', '--json'], file);
     expect(result.code, result.stderr).toBe(0);
-    const parsed = JSON.parse(result.stdout) as { job: { status: string }; files: string[] };
+    const parsed = JSON.parse(result.stdout).data as { job: { status: string }; files: string[] };
     expect(parsed.job.status).toBe('succeeded');
     expect(parsed.files).toHaveLength(1);
     expect(readFileSync(parsed.files[0]!).subarray(0, 4).toString()).toBe('%PDF');
@@ -263,7 +263,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(file, JSON.stringify({ interactions: [...fixture.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4' }, response: { status: 200, headers: { 'content-type': 'video/mp4' }, base64: body.toString('base64') } }] }));
     const result = run(dir, ['download', 'fixture-video', '--types', 'video', '--profile', 'alpha', '--json'], file);
     expect(result.code, result.stderr).toBe(0);
-    const parsed = JSON.parse(result.stdout) as { job: { status: string }; files: string[] };
+    const parsed = JSON.parse(result.stdout).data as { job: { status: string }; files: string[] };
     expect(parsed.job.status).toBe('succeeded');
     expect(parsed.files).toHaveLength(1);
     expect(readFileSync(parsed.files[0]!)).toEqual(body);
@@ -284,15 +284,15 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(first, JSON.stringify({ interactions: [...fixture.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4' }, response: { status: 200, headers: { etag: '"v1"', 'content-type': 'video/mp4' }, chunks: [Buffer.from('abc').toString('base64')], failAfterChunks: true } }] }));
     const interrupted = run(dir, ['download', 'fixture-video', '--types', 'video', '--profile', 'alpha', '--json'], first);
     expect(interrupted.code).not.toBe(0);
-    expect(interrupted.stdout).toBe('');
-    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout) as Array<{ id: string; status: string }>;
+    expect(JSON.parse(interrupted.stdout)).toMatchObject({ ok: false, exitCode: interrupted.code });
+    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data as Array<{ id: string; status: string }>;
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.status).toBe('paused');
     const second = resolve(dir, 'second-mp4.json');
     writeFileSync(second, JSON.stringify({ interactions: [...fixture.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4', headers: { range: 'bytes=3-', 'if-range': '"v1"' } }, response: { status: 206, headers: { etag: '"v1"', 'content-range': 'bytes 3-5/6', 'content-type': 'video/mp4' }, base64: Buffer.from('def').toString('base64') } }] }));
     const resumed = run(dir, ['jobs', 'resume', jobs[0]!.id, '--profile', 'alpha', '--json'], second);
     expect(resumed.code, resumed.stderr).toBe(0);
-    const result = JSON.parse(resumed.stdout) as { job: { status: string }; files: string[] };
+    const result = JSON.parse(resumed.stdout).data as { job: { status: string }; files: string[] };
     expect(result.job.status).toBe('succeeded');
     expect(readFileSync(result.files[0]!, 'utf8')).toBe('abcdef');
   });
@@ -314,7 +314,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(file, JSON.stringify({ interactions: [...fixture.interactions, binary('/hd.m3u8', Buffer.from(playlist)), binary('/a.ts', Buffer.from('AAA')), binary('/b.ts', Buffer.from('BBB'))] }));
     const result = run(dir, ['download', 'fixture-hls', '--types', 'video', '--profile', 'alpha', '--json'], file);
     expect(result.code, result.stderr).toBe(0);
-    const parsed = JSON.parse(result.stdout) as { files: string[] };
+    const parsed = JSON.parse(result.stdout).data as { files: string[] };
     expect(parsed.files[0]).toMatch(/\.ts$/);
     expect(readFileSync(parsed.files[0]!, 'utf8')).toBe('AAABBB');
   });
@@ -337,14 +337,14 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
       { request: { method: 'GET', host: 'www.yuketang.cn', path: '/b.ts' }, response: { status: 200, chunks: [Buffer.from('discard').toString('base64')], failAfterChunks: true } }] }));
     const interrupted = run(dir, ['download', 'fixture-hls-resume', '--types', 'video', '--profile', 'alpha', '--json'], first);
     expect(interrupted.code).not.toBe(0);
-    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout) as Array<{ id: string; status: string }>;
+    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data as Array<{ id: string; status: string }>;
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.status).toBe('paused');
     const second = resolve(dir, 'hls-second.json');
     writeFileSync(second, JSON.stringify({ interactions: [...fixture.interactions, binary('/hd.m3u8', Buffer.from(playlist)), binary('/b.ts', Buffer.from('BBB'))] }));
     const resumed = run(dir, ['jobs', 'resume', jobs[0]!.id, '--profile', 'alpha', '--json'], second);
     expect(resumed.code, resumed.stderr).toBe(0);
-    const parsed = JSON.parse(resumed.stdout) as { job: { status: string }; files: string[] };
+    const parsed = JSON.parse(resumed.stdout).data as { job: { status: string }; files: string[] };
     expect(parsed.job.status).toBe('succeeded');
     expect(readFileSync(parsed.files[0]!, 'utf8')).toBe('AAABBB');
   });
@@ -366,7 +366,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(dryFixture, JSON.stringify({ interactions: [leaf, progress(0, 0)] }));
     const dry = run(dir, ['run', 'study-video', '--target', '0.5', '--speed', '1', '--dry-run', '--profile', 'alpha', '--json'], dryFixture);
     expect(dry.code, dry.stderr).toBe(0);
-    expect(JSON.parse(dry.stdout).kind).toBe('study');
+    expect(JSON.parse(dry.stdout).data.kind).toBe('study');
     const row = { i: 5, et: 'heartbeat', p: 'web', n: 'ali-cdn.xuetangx.com', lob: 'ykt', cp: 5, fp: 0, tp: 10, sp: 1,
       ts: '__NOW_MS__', u: '424242', uip: '', c: '5184094', v: '502', skuid: '901', classroomid: '28930736', cc: 'CC1', d: 10,
       pg: '__JOB_PG_502__', sq: 1, t: 'video', cards_id: 0, slide: 0 };
@@ -375,7 +375,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(runFixture, JSON.stringify({ interactions: [leaf, progress(0, 0), leaf, progress(0, 0), write, leaf, progress(0.5, 5)] }));
     const actual = run(dir, ['run', 'study-video', '--target', '0.5', '--speed', '1', '--yes', '--profile', 'alpha', '--json'], runFixture);
     expect(actual.code, actual.stderr).toBe(0);
-    expect(JSON.parse(actual.stdout).status).toBe('succeeded');
+    expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
   });
 
   it('reconciles an uncertain saved study job with only two GETs', async () => {
@@ -403,7 +403,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     ] }));
     const result = run(dir, ['jobs', 'reconcile', job.id, '--profile', 'alpha', '--json'], fixture);
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ receipt: { state: 'confirmed' }, job: { status: 'paused' } });
+    expect(JSON.parse(result.stdout).data).toMatchObject({ receipt: { state: 'confirmed' }, job: { status: 'paused' } });
   });
 
   it('matches an exact feedback answer into a new draft without submitting it', async () => {
@@ -429,7 +429,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const matchedFile = resolve(dir, 'matched.yaml');
     const matched = run(dir, ['answers', 'match', draftFile, '--source', feedbackFile, '-o', matchedFile, '--profile', 'alpha', '--json'], matchFixture);
     expect(matched.code, matched.stderr).toBe(0);
-    expect(JSON.parse(matched.stdout).matches[0].state).toBe('exact');
+    expect(JSON.parse(matched.stdout).data.matches[0].state).toBe('exact');
     expect(readFileSync(matchedFile, 'utf8')).toContain('kind: choice');
   });
 
@@ -461,10 +461,10 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(path, JSON.stringify(draft));
     const preview = run(dir, ['discuss', 'post', path, '--dry-run', '--profile', 'alpha', '--json'], previewFixture);
     expect(preview.code, preview.stderr).toBe(0);
-    expect(JSON.parse(preview.stdout).kind).toBe('discussion.post');
+    expect(JSON.parse(preview.stdout).data.kind).toBe('discussion.post');
     const posted = run(dir, ['discuss', 'post', path, '--yes', '--profile', 'alpha', '--json'], postFixture);
     expect(posted.code, posted.stderr).toBe(0);
-    expect(JSON.parse(posted.stdout).receipt.state).toBe('confirmed');
+    expect(JSON.parse(posted.stdout).data.receipt.state).toBe('confirmed');
   });
 
   it('creates an editable AI discussion draft only when a model is explicitly configured', async () => {
@@ -506,7 +506,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     state.close();
     const refused = run(dir, ['exam', 'start', 'exam-resource', '--profile', 'alpha', '--json']);
     expect(refused.code).toBe(2);
-    expect(refused.stdout).toBe('');
+    expect(JSON.parse(refused.stdout)).toMatchObject({ ok: false, exitCode: refused.code });
     const leaf = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/leaf_info/100/7/', query: { sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 5, content_info: { leaf_type_id: 777001 } } } } };
     const cover = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/exam/cover', query: { exam_id: '777001' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { data: { data: { result: { status: 0 }, user: { user_id: 88 } } } } } };
     const token = { request: { method: 'POST', host: 'www.xuetangx.com', path: '/api/v1/lms/exam/gen_token', headers: { xtbz: 'xt', 'content-type': 'application/json;charset=utf-8' }, body: { exam_id: '777001', classroom_id: '100', is_teacher: 0 } }, response: { status: 200, body: { success: true, data: { errcode: 0, data: { crypt: 'fixture-crypt', exam_host: 'https://examination.xuetangx.com' } } } } };
@@ -516,7 +516,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(fixture, JSON.stringify({ interactions: [leaf, cover, cover, token, login, start] }));
     const actual = run(dir, ['exam', 'start', 'exam-resource', '--yes', '--profile', 'alpha', '--json'], fixture);
     expect(actual.code, actual.stderr).toBe(0);
-    expect(JSON.parse(actual.stdout).receipt.state).toBe('confirmed');
+    expect(JSON.parse(actual.stdout).data.receipt.state).toBe('confirmed');
   });
 
   it('saves an in-progress exam draft without finalizing the paper', async () => {
@@ -539,7 +539,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(file, JSON.stringify(draft));
     const withoutYes = run(dir, ['exam', 'save', file, '--profile', 'alpha', '--json']);
     expect(withoutYes.code).toBe(2);
-    expect(withoutYes.stdout).toBe('');
+    expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
     const original = JSON.parse(readFileSync(resolve(fixtureRoot, 'xuetang/exam-read.json'), 'utf8')) as { interactions: Array<{ request: { path: string }; response: { body: { data?: { data?: { result?: { status: number } } } } } }> };
     const reads = original.interactions.slice(1);
     reads[0]!.response.body.data!.data!.result!.status = 1;
@@ -550,7 +550,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(fixture, JSON.stringify({ interactions: [...reads, ...final, save] }));
     const result = run(dir, ['exam', 'save', file, '--yes', '--profile', 'alpha', '--json'], fixture);
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout).receipt.state).toBe('confirmed');
+    expect(JSON.parse(result.stdout).data.receipt.state).toBe('confirmed');
   });
 
   it('writes an editable exam draft from a permitted paper without starting it', async () => {
@@ -566,7 +566,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const path = resolve(dir, 'exam-draft.yaml');
     const result = run(dir, ['exam', 'draft', 'exam-resource', '-o', path, '--profile', 'alpha', '--json'], 'xuetang/exam-read');
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout).questions).toBe(2);
+    expect(JSON.parse(result.stdout).data.questions).toBe(2);
     expect(readFileSync(path, 'utf8')).toContain('schemaVersion: 1');
   });
 
@@ -584,7 +584,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     writeFileSync(file, JSON.stringify({ schemaVersion: 1, id: 'draft-final', ref: { resource, kind: 'exam', assessmentId: '3908258' }, fingerprint: 'fp', entries: [] }));
     const result = run(dir, ['exam', 'submit', file, '--yes', '--final', '--profile', 'alpha', '--json']);
     expect(result.code).toBe(3);
-    expect(JSON.parse(result.stdout).blockers.join(' ')).toContain('E05');
+    expect(JSON.parse(result.stdout).data.blockers.join(' ')).toContain('E05');
     expect(result.stderr).toContain('E05');
   });
 
@@ -595,7 +595,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
     const withoutYes = run(dir, ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--profile', 'alpha', '--json']);
     expect(withoutYes.code).toBe(2);
-    expect(withoutYes.stdout).toBe('');
+    expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
     const fixture = resolve(dir, 'live-fixture.json');
     writeFileSync(fixture, JSON.stringify({ interactions: [
       { request: { method: 'POST', host: 'www.yuketang.cn', path: '/api/v3/lesson/checkin', headers: { 'content-type': 'application/json;charset=utf-8' }, body: { source: 1, lessonId: '9000' } }, response: { status: 200, headers: { 'set-auth': 'fixture-jwt' }, body: { code: 0, data: { lessonToken: 'fixture-live-token' } } } },
@@ -604,7 +604,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     ] } }));
     const result = run(dir, ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--yes', '--profile', 'alpha', '--json'], fixture);
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout).status).toBe('succeeded');
+    expect(JSON.parse(result.stdout).data.status).toBe('succeeded');
     expect(result.stderr).toContain('live question 11');
   });
 
@@ -622,14 +622,14 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     state.close();
     const withoutYes = run(dir, ['jobs', 'resume', job.id, '--profile', 'alpha', '--json']);
     expect(withoutYes.code).toBe(2);
-    expect(withoutYes.stdout).toBe('');
+    expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
     const fixture = resolve(dir, 'live-resume.json');
     writeFileSync(fixture, JSON.stringify({ interactions: [
       { request: { method: 'POST', host: 'www.yuketang.cn', path: '/api/v3/lesson/checkin', headers: { 'content-type': 'application/json;charset=utf-8' }, body: { source: 1, lessonId: '9000' } }, response: { status: 200, body: { code: 0, data: { lessonToken: 'fixture-rejoin-token' } } } },
     ], websocket: { url: 'wss://www.yuketang.cn/wsapp/', hello: { op: 'hello', userid: '77', role: 'student', auth: 'fixture-rejoin-token', lessonid: '9000' }, frames: [{ op: 'hello' }, { op: 'lessonfinished' }] } }));
     const result = run(dir, ['jobs', 'resume', job.id, '--yes', '--profile', 'alpha', '--json'], fixture);
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout).job).toMatchObject({ id: job.id, status: 'succeeded' });
+    expect(JSON.parse(result.stdout).data.job).toMatchObject({ id: job.id, status: 'succeeded' });
     const reopened = new SqliteStateStore(resolve(dir, 'state.db'));
     const events = await new JobRunner(reopened, { nowMs: () => Date.now(), sleep: async () => {} }).events(job.id, 0);
     expect(events.some((event) => event.type === 'gap')).toBe(true);
@@ -660,6 +660,6 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
       schedule(0), leaf, write([row('heartbeat', 5, 5)]), schedule(0.5)] }));
     const actual = run(dir, ['run', 'xtx-video', '--target', '0.5', '--speed', '2', '--yes', '--profile', 'alpha', '--json'], fixture);
     expect(actual.code, actual.stderr).toBe(0);
-    expect(JSON.parse(actual.stdout).status).toBe('succeeded');
+    expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
   }, 20_000);
 });

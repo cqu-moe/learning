@@ -45,9 +45,9 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     const doctor = runPackedCli(['doctor'], init.home);
     expect(doctor.exitCode).toBe(0);
     expect(doctor.stdout).toContain('node:');
-    const jobs = runPackedCli(['jobs', 'list'], init.home);
+    const jobs = runPackedCli(['jobs', 'list', '--json'], init.home);
     expect(jobs.exitCode).toBe(0);
-    expect(JSON.parse(jobs.stdout)).toEqual([]);
+    expect(JSON.parse(jobs.stdout).data).toEqual([]);
   });
 
   it('no unapproved live platform writes happen in offline e2e', () => {
@@ -171,28 +171,28 @@ describe('packed cli e2e (T31, A311/A312)', () => {
       return result.stdout;
     };
     expect(run(['init'])).toContain(home);
-    const alpha = JSON.parse(run(['profile', 'add', 'alpha', '--platform', 'ykt', '--json'])) as { scope: { profileId: string } };
-    const beta = JSON.parse(run(['profile', 'add', 'beta', '--platform', 'xuetang', '--json'])) as { scope: { profileId: string } };
-    expect(JSON.parse(run(['login', '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/qr-login.json'))).identityVerified).toBe(true);
-    const courses = JSON.parse(run(['courses', '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/courses-list.json'), 0, 'sessionid=sess-fixture')) as { items: Array<{ ref: { key: string } }> };
+    const alpha = JSON.parse(run(['profile', 'add', 'alpha', '--platform', 'ykt', '--json'])).data as { scope: { profileId: string } };
+    const beta = JSON.parse(run(['profile', 'add', 'beta', '--platform', 'xuetang', '--json'])).data as { scope: { profileId: string } };
+    expect(JSON.parse(run(['login', '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/qr-login.json'))).data.identityVerified).toBe(true);
+    const courses = JSON.parse(run(['courses', '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/courses-list.json'), 0, 'sessionid=sess-fixture')).data as { items: Array<{ ref: { key: string } }> };
     expect(courses.items.length).toBeGreaterThan(0);
-    const outline = JSON.parse(run(['outline', courses.items[0]!.ref.key, '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/nested-outline.json'))) as { value: { roots: unknown[] } };
+    const outline = JSON.parse(run(['outline', courses.items[0]!.ref.key, '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/nested-outline.json'))).data as { value: { roots: unknown[] } };
     expect(outline.value.roots.length).toBeGreaterThan(0);
     const seedScript = `import {SqliteStateStore} from '@learning/sdk/node'; const store=new SqliteStateStore(process.env.PACKED_HOME+'/state.db'); const a=(await store.get('cli:profile:alpha')).value.scope; const b=(await store.get('cli:profile:beta')).value.scope; const rows=[['cli:resource:fixture-exam',{course:{scope:a,key:'fixture-course',native:{kind:'ykt',classroomId:'28930736'}},key:'fixture-exam',native:{kind:'ykt',leafId:'510',leafInfoId:null}}],['cli:resource:fixture-video',{course:{scope:b,key:'fixture-course',native:{kind:'xuetang',classroomId:'100',courseSign:'SIGN-A',skuId:'1'}},key:'fixture-video',native:{kind:'xuetang',leafId:'7',leafInfoId:null}}]]; if(!await store.commit({expected:rows.map(([key])=>({key,revision:null})),changes:rows.map(([key,value])=>({key,value}))})) process.exit(2); store.close();`;
     const seeded = spawnSync(process.execPath, ['--input-type=module', '-e', seedScript], { cwd: directory, env: { ...process.env, PACKED_HOME: home }, encoding: 'utf8' });
     expect(seeded.status, seeded.stderr).toBe(0);
-    const exported = JSON.parse(run(['exam', 'export', 'fixture-exam', '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/exam-read.json'))) as { job: { status: string }; files: string[] };
+    const exported = JSON.parse(run(['exam', 'export', 'fixture-exam', '--profile', 'alpha', '--json'], resolve(fixtureRoot, 'ykt/exam-read.json'))).data as { job: { status: string }; files: string[] };
     expect(exported.job.status).toBe('succeeded');
     expect(JSON.parse(readFileSync(exported.files[0]!, 'utf8')).questions).toHaveLength(2);
     const base = JSON.parse(readFileSync(resolve(fixtureRoot, 'xuetang/media.json'), 'utf8')) as { interactions: unknown[] };
     const first = resolve(directory, 'first.json');
     writeFileSync(first, JSON.stringify({ interactions: [...base.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4' }, response: { status: 200, headers: { etag: '"v1"', 'content-type': 'video/mp4' }, chunks: [Buffer.from('abc').toString('base64')], failAfterChunks: true } }] }));
     expect(run(['download', 'fixture-video', '--types', 'video', '--profile', 'beta', '--json'], first, 1)).toBe('');
-    const paused = (JSON.parse(run(['jobs', 'list', '--json'])) as Array<{ id: string; status: string; scope: { profileId: string } }>).find((job) => job.status === 'paused' && job.scope.profileId === beta.scope.profileId);
+    const paused = (JSON.parse(run(['jobs', 'list', '--json'])).data as Array<{ id: string; status: string; scope: { profileId: string } }>).find((job) => job.status === 'paused' && job.scope.profileId === beta.scope.profileId);
     expect(paused).toBeDefined();
     const second = resolve(directory, 'second.json');
     writeFileSync(second, JSON.stringify({ interactions: [...base.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4', headers: { range: 'bytes=3-', 'if-range': '"v1"' } }, response: { status: 206, headers: { etag: '"v1"', 'content-range': 'bytes 3-5/6', 'content-type': 'video/mp4' }, base64: Buffer.from('def').toString('base64') } }] }));
-    const resumed = JSON.parse(run(['jobs', 'resume', paused!.id, '--profile', 'beta', '--json'], second)) as { job: { id: string; status: string }; files: string[] };
+    const resumed = JSON.parse(run(['jobs', 'resume', paused!.id, '--profile', 'beta', '--json'], second)).data as { job: { id: string; status: string }; files: string[] };
     expect(resumed.job).toMatchObject({ id: paused!.id, status: 'succeeded' });
     expect(readFileSync(resumed.files[0]!, 'utf8')).toBe('abcdef');
     expect(alpha.scope.profileId).not.toBe(beta.scope.profileId);

@@ -1,3 +1,4 @@
+import { getOutput } from './output.js';
 import type { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -39,11 +40,7 @@ export async function withCliRuntime(
 }
 
 export function printResult(program: Command, value: unknown, human: string): void {
-  if (program.opts<{ json?: boolean }>().json === true) {
-    process.stdout.write(JSON.stringify(value) + '\n');
-  } else {
-    process.stdout.write(human + '\n');
-  }
+  getOutput(program).set(value, human);
 }
 
 export async function selectProfile(program: Command, runtime: CliRuntime): Promise<LocalProfile | null> {

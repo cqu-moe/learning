@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+import { Command } from 'commander';
+import pkg from '../package.json' with { type: 'json' };
+import { registerInitCommand } from './commands/init.js';
+import { registerDoctorCommand } from './commands/doctor.js';
+import { registerJobsCommands } from './commands/tasks.js';
+import { registerExamCommands } from './commands/exams.js';
+import { registerRunCommands } from './commands/run.js';
+import { registerDownloadCommands } from './commands/download.js';
+import { registerProfileCommands } from './commands/profile.js';
+import { registerLoginCommands } from './commands/login.js';
+import { registerCatalogCommands } from './commands/catalog.js';
+import { registerHomeworkCommands } from './commands/homework.js';
+import { registerSlideCommand } from './commands/slide.js';
+import { registerAnswersCommands } from './commands/answers.js';
+import { registerDiscussCommands } from './commands/discuss.js';
+import { registerLiveCommand } from './commands/live.js';
+import { registerOperationsCommands } from './commands/operations.js';
+
+export function createProgram(): Command {
+const program = new Command();
+program.exitOverride();
+program.name('learning').description('local learning SDK CLI (Web deferred)').version(pkg.version);
+program.option('--home <dir>', 'LEARNING_HOME override');
+program.option('--profile <name>', 'select a local platform profile');
+program.option('--json', '输出 JSON 结果');
+program.option('--output-format <format>', '输出格式：pretty、plain、json、jsonl');
+program.option('--no-interactive', '禁止交互询问');
+program.option('--quiet', '隐藏日常进度');
+program.option('--no-color', '禁用颜色');
+program.option('--debug', 'print diagnostics on stderr');
+registerInitCommand(program);
+registerDoctorCommand(program);
+registerJobsCommands(program);
+registerExamCommands(program);
+registerRunCommands(program);
+registerDownloadCommands(program);
+registerProfileCommands(program);
+registerLoginCommands(program);
+registerCatalogCommands(program);
+registerHomeworkCommands(program);
+registerSlideCommand(program);
+registerAnswersCommands(program);
+registerDiscussCommands(program);
+registerLiveCommand(program);
+registerOperationsCommands(program);
+return program;
+}

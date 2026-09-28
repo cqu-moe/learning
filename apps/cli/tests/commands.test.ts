@@ -65,9 +65,9 @@ describe('cli commands (T26, A261/A262)', () => {
   it('jobs list reads initialized local state and unknown reconcile fails', () => {
     const init = runCli(['init']);
     expect(init.exitCode).toBe(0);
-    const list = runCli(['jobs', 'list'], init.home);
+    const list = runCli(['jobs', 'list', '--json'], init.home);
     expect(list.exitCode).toBe(0);
-    expect(JSON.parse(list.stdout)).toEqual([]);
+    expect(JSON.parse(list.stdout).data).toEqual([]);
     const rec = runCli(['jobs', 'reconcile', 'missing-job'], init.home);
     expect(rec.exitCode).not.toBe(0);
     expect(rec.stdout).toBe('');
@@ -88,12 +88,12 @@ describe('cli commands (T26, A261/A262)', () => {
     } finally {
       state.close();
     }
-    const list = runCli(['jobs', 'list'], init.home);
+    const list = runCli(['jobs', 'list', '--json'], init.home);
     expect(list.exitCode).toBe(0);
-    expect(JSON.parse(list.stdout)).toEqual([job]);
+    expect(JSON.parse(list.stdout).data).toEqual([job]);
     const show = runCli(['jobs', 'show', job.id, '--json'], init.home);
     expect(show.exitCode).toBe(0);
-    expect(JSON.parse(show.stdout)).toEqual(job);
+    expect(JSON.parse(show.stdout).data).toEqual(job);
   });
 
   it('jobs cancel changes a saved job under its matching profile', async () => {
@@ -107,8 +107,8 @@ describe('cli commands (T26, A261/A262)', () => {
     state.close();
     const canceled = runCli(['jobs', 'cancel', job.id, '--profile', 'alpha', '--json'], init.home);
     expect(canceled.exitCode, canceled.stderr).toBe(0);
-    expect(JSON.parse(canceled.stdout).status).toBe('canceled');
-    expect(JSON.parse(runCli(['jobs', 'show', job.id, '--json'], init.home).stdout).status).toBe('canceled');
+    expect(JSON.parse(canceled.stdout).data.status).toBe('canceled');
+    expect(JSON.parse(runCli(['jobs', 'show', job.id, '--json'], init.home).stdout).data.status).toBe('canceled');
   });
 
   it('final exam submit cannot claim success without a verified session', () => {
@@ -121,7 +121,7 @@ describe('cli commands (T26, A261/A262)', () => {
     const init = runCli(['init']);
     expect(init.exitCode).toBe(0);
     const add = runCli(['profile', 'add', 'alpha', '--platform', 'ykt', '--json'], init.home);
-    const profile = JSON.parse(add.stdout) as { scope: { userId: string; profileId: string; platform: 'ykt' } };
+    const profile = JSON.parse(add.stdout).data as { scope: { userId: string; profileId: string; platform: 'ykt' } };
     const scope = profile.scope;
     const state = new SqliteStateStore(resolve(init.home, 'state.db'));
     const store = new ActionStore(state, { nowMs: () => Date.now(), sleep: async () => {} }, new Uint8Array(readFileSync(resolve(init.home, 'master.key'))));
@@ -133,7 +133,7 @@ describe('cli commands (T26, A261/A262)', () => {
     state.close();
     const reconciled = runCli(['operations', 'reconcile', operationId, '--profile', 'alpha', '--json'], init.home);
     expect(reconciled.exitCode, reconciled.stderr).toBe(5);
-    expect(JSON.parse(reconciled.stdout).state).toBe('uncertain');
+    expect(JSON.parse(reconciled.stdout).data.state).toBe('uncertain');
     expect(reconciled.stderr).not.toContain('sessionid');
   });
 

@@ -1,58 +1,41 @@
 #!/usr/bin/env node
-import { Command, CommanderError } from 'commander';
-import pkg from '../package.json' with { type: 'json' };
-import { registerInitCommand } from './commands/init.js';
-import { registerDoctorCommand } from './commands/doctor.js';
-import { registerJobsCommands } from './commands/tasks.js';
-import { registerExamCommands } from './commands/exams.js';
-import { registerRunCommands } from './commands/run.js';
-import { registerDownloadCommands } from './commands/download.js';
-import { registerProfileCommands } from './commands/profile.js';
-import { registerLoginCommands } from './commands/login.js';
-import { registerCatalogCommands } from './commands/catalog.js';
-import { registerHomeworkCommands } from './commands/homework.js';
-import { registerSlideCommand } from './commands/slide.js';
-import { registerAnswersCommands } from './commands/answers.js';
-import { registerDiscussCommands } from './commands/discuss.js';
-import { registerLiveCommand } from './commands/live.js';
-import { registerOperationsCommands } from './commands/operations.js';
-import { LearningError } from '@learning/sdk/public';
+import { CommanderError } from 'commander';
+import { createProgram } from './program.js';
+import { bindOutput, CliError, createOutput, resolveOutputMode } from './output.js';
+import type { Command } from 'commander';
 
-const program = new Command();
-program.exitOverride();
-program.name('learning').description('local learning SDK CLI (Web deferred)').version(pkg.version);
-program.option('--home <dir>', 'LEARNING_HOME override');
-program.option('--profile <name>', 'select a local platform profile');
-program.option('--json', 'print one JSON result on stdout');
-program.option('--debug', 'print diagnostics on stderr');
-registerInitCommand(program);
-registerDoctorCommand(program);
-registerJobsCommands(program);
-registerExamCommands(program);
-registerRunCommands(program);
-registerDownloadCommands(program);
-registerProfileCommands(program);
-registerLoginCommands(program);
-registerCatalogCommands(program);
-registerHomeworkCommands(program);
-registerSlideCommand(program);
-registerAnswersCommands(program);
-registerDiscussCommands(program);
-registerLiveCommand(program);
-registerOperationsCommands(program);
-program.parseAsync(process.argv).catch((error: unknown) => {
-  if (error instanceof CommanderError) {
-    process.exitCode = error.exitCode === 0 ? 0 : 2;
-    return;
-  }
-  if (error instanceof LearningError) {
-    process.stderr.write(`learning: ${error.data.message}${error.data.code === 'UNCERTAIN' && error.data.operationId !== null ? ` (operation ${error.data.operationId})` : ''}\n`);
-    if (error.data.code === 'INVALID_INPUT' || error.data.code === 'PREVIEW_EXPIRED' || error.data.code === 'PRECONDITION_CHANGED') process.exitCode = 2;
-    else if (error.data.code === 'UNCERTAIN') process.exitCode = 5;
-    else if (['AUTH_REQUIRED', 'AUTH_EXPIRED', 'FORBIDDEN', 'INTERACTION_REQUIRED', 'UNSUPPORTED', 'MISSING_RUNTIME', 'CONFLICT', 'CANCELED'].includes(error.data.code)) process.exitCode = 3;
-    else process.exitCode = 1;
-    return;
-  }
-  process.stderr.write(`learning: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+const program = createProgram();
+const argv = process.argv.slice(2);
+// Only bootstrap output flags for errors that occur before Commander reaches them.
+const flags: Record<string, unknown> = {};
+const allOptions = (p: Command): Command['options'] => [...p.options, ...p.commands.flatMap(allOptions)];
+const options = allOptions(program);
+for (let i = 0; i < argv.length; i++) {
+  const token = argv[i]!;
+  if (token === '--') break;
+  const name = token.split('=')[0]!;
+  const option = options.find(o => o.long === name || o.short === name);
+  if (!option) continue;
+  const value = token.includes('=') ? token.slice(token.indexOf('=') + 1) : option.required ? argv[++i] : !option.negate;
+  if (['json','outputFormat','interactive','quiet','color','debug'].includes(option.attributeName())) flags[option.attributeName()] = value;
+}
+const output = createOutput(resolveOutputMode(flags));
+bindOutput(program, output);
+let help = '';
+program.configureOutput({ writeOut: value => { help += value; }, writeErr: () => {} });
+program.hook('preAction', (_root, command) => {
+  const names: string[] = [];
+  for (let p: Command | null = command; p?.parent; p = p.parent) names.unshift(p.name());
+  output.setCommand(names.join(' '));
 });
+try {
+  if (flags.json && flags.outputFormat !== undefined && flags.outputFormat !== 'json') throw new CliError('INVALID_INPUT', '--json 与 --output-format 冲突。');
+  if (flags.outputFormat !== undefined && !['pretty','plain','json','jsonl'].includes(String(flags.outputFormat))) throw new CliError('INVALID_INPUT', '输出格式必须为 pretty、plain、json 或 jsonl。');
+  await program.parseAsync(argv, { from: 'user' });
+  await output.finish();
+} catch (error) {
+  if (error instanceof CommanderError && error.exitCode === 0) {
+    output.set({ text: help.trim() }, help.trim());
+    await output.finish();
+  } else await output.finish(error instanceof CommanderError ? new CliError('INVALID_INPUT', error.message) : error);
+} finally { output.close(); }

@@ -1,3 +1,4 @@
+import { printResult } from '../context.js';
 import { acquireDataDirLock, createCliRuntime, resolveDataDir } from '../runtime.js';
 import type { Command } from 'commander';
 
@@ -16,7 +17,7 @@ export function registerInitCommand(program: Command): void {
       try {
         const runtime = createCliRuntime(dataDir);
         runtime.state.close();
-        process.stdout.write(`initialized ${dataDir}\n`);
+        printResult(program, { home: dataDir, initialized: true }, `initialized ${dataDir}`);
       } finally {
         lock.release();
       }

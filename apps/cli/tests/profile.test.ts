@@ -39,24 +39,24 @@ describe('local profiles', () => {
     expect(run(dir, 'init').code).toBe(0);
     const add = run(dir, 'profile', 'add', 'alpha', '--platform', 'ykt', '--json');
     expect(add.code).toBe(0);
-    const created = JSON.parse(add.stdout) as { name: string; scope: { profileId: string; platform: string; userId: string } };
+    const created = JSON.parse(add.stdout).data as { name: string; scope: { profileId: string; platform: string; userId: string } };
     expect(created.name).toBe('alpha');
     expect(created.scope).toMatchObject({ platform: 'ykt', userId: 'local' });
     expect(created.scope.profileId).toBeTruthy();
     expect(run(dir, 'profile', 'add', 'alpha', '--platform', 'zhs').code).toBe(2);
     const listed = run(dir, 'profile', 'list', '--json');
     expect(listed.code).toBe(0);
-    expect(JSON.parse(listed.stdout)).toEqual({ profiles: [created] });
+    expect(JSON.parse(listed.stdout).data).toEqual({ profiles: [created] });
     expect(listed.stdout).not.toContain('cookie');
     expect(run(dir, 'profile', 'remove', 'alpha').code).toBe(2);
     expect(run(dir, 'profile', 'remove', 'alpha', '--yes').code).toBe(0);
-    expect(JSON.parse(run(dir, 'profile', 'list', '--json').stdout)).toEqual({ profiles: [] });
+    expect(JSON.parse(run(dir, 'profile', 'list', '--json').stdout).data).toEqual({ profiles: [] });
   });
 
   it('removes profile-owned jobs, metadata, inputs and cached catalog records', async () => {
     const dir = home();
     expect(run(dir, 'init').code).toBe(0);
-    const created = JSON.parse(run(dir, 'profile', 'add', 'alpha', '--platform', 'ykt', '--json').stdout) as { scope: { userId: string; profileId: string; platform: 'ykt' } };
+    const created = JSON.parse(run(dir, 'profile', 'add', 'alpha', '--platform', 'ykt', '--json').stdout).data as { scope: { userId: string; profileId: string; platform: 'ykt' } };
     const scope = created.scope;
     const course = { ref: { scope, key: 'course', native: { kind: 'ykt', classroomId: '1' } }, title: 'course', system: null, term: null, teachers: [], locked: null };
     const resource = { course: course.ref, key: 'resource', native: { kind: 'ykt', leafId: '2', leafInfoId: null } };
