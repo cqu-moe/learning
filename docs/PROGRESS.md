@@ -380,3 +380,20 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 
 - 对智慧树 share/hike 的多资源 study job，`needs-input` 现在立即暂停整个任务，不会把弹题未解的资源记入 items 后继续下一视频。share save 已收到 ACK 但后续权威进度读回失败时保留 pending operation，job 为 uncertain，`actions.reconcile` 只读确认后才可恢复；不重发保存。
 - 测试先行：多资源弹题 fixture 原结果错误为 `running`；ACK 后读回丢失 fixture 原结果无 pending，均先失败后修复。Node v24.11.1 main 最终运行 `pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 233/233、CLI 49/49）、`pnpm build`、`pnpm test:e2e`（7/7）、boundaries、source-lock、`git diff --check` 全部 exit 0。没有新增真实课程写入。T18 的 20 秒硬工作片及全 job kind 崩溃矩阵仍未完成，不能据此将 T18/T31 标 done。
+
+### 2026-09-28 · CLI 使用体验调研与方案访谈（进行中）
+
+- 用户要求完整交互与参数调用共用流程、按缺失参数补问、美观终端 UI 和自动化简洁输出，并指定 grill-me 逐题访谈；当前仅调研，尚未确认实施方案。
+- 已静态检查 CLI 入口、context、前台任务循环、课程/登录/学习/下载及部分辅助命令和测试：现有 Commander 15.0.0；profile 选择使用 readline；必填位置参数/requiredOption 在 action 前拒绝；run/download 尚无持续进度展示；JSON 模式未统一覆盖 init 等直接输出路径，profile 的交互判断未检查 JSON 模式。
+- 已通过 Context7 与 Exa 官方仓库资料核实 Commander、Clack、Inquirer、cli-table3 和 Node util.styleText 能力。候选为保留 Commander、Clack 负责提示及进度、按需使用表格库；当前上游文档能力不等于已安装版本验收，未安装或升级依赖。
+- 本轮文件变更仅本进度记录。macOS/zsh 下 `git status --short`、`git diff --stat`、源码检索/读取、`node --version`（v22.22.3）、`git diff --check` 均 exit 0；未在该 Node 22 环境运行产品构建或测试，未访问真实平台/账号、未执行写入、未变更既有任务状态。
+- 已完成十项访谈选择（前九项 A，第十项 B）：一次性向导；裸跑展示常用设置、子命令仅补必填；终端自动补问而 JSON/CI/非交互环境及显式禁交互模式不询问；显式错误参数报错、向导输入原地纠正；写操作预览后确认一次、--yes 仅跳过普通确认；同时支持 JSON 最终结果和 JSONL 实时事件；中文人类界面、英文命令/参数/机器字段；偏好明确保存才生效、显式参数优先；保留滚动记录且局部刷新；允许调整参数和 JSON 结构并提供迁移说明。
+- 方案建议继续使用 Commander + Clack，按需添加表格库；统一参数补齐/验证和输出入口，复用 SDK 执行与任务事件。以上是设计方向，未修改产品代码、未安装依赖、未运行产品测试。本次补记前检查 `git status --short` 与本记录尾部，exit 0；补记后 `git diff --check`，exit 0。
+- 下一步：核对收敛方案，形成逐命令覆盖矩阵、机器输出契约与实施计划；共同确认后再进入隔离工作树实施。既有平台能力和证据缺口状态不因 UI 方案变更而提升。
+
+### 2026-09-28 · CLI 体验设计与实施计划
+
+- 用户确认十项访谈结论，并授权编写完整改造计划。基于本机 main bbb4a3d 创建应用托管的 cli-ux-plan 隔离工作树；未改变产品代码、依赖或旧任务状态。
+- 新增 docs/superpowers/specs/2026-09-28-cli-ux-design.md 与 docs/superpowers/plans/2026-09-28-cli-ux.md，定义 33 条现有/新增命令覆盖、输出协议、补参/确认/偏好/恢复规则和 UX01–UX09 测试先行步骤。全局采用 --output-format，避免与文件 --output、slide --format 冲突；实际现有 30 条命令，原 28 条帮助检查漏 exam draft/operations reconcile。
+- 读取源码时两个假设路径 types/jobs.ts、src/jobs/handlers.ts 不存在，检索命令分别 exit 1/2；已改读真实 types/models.ts、services/jobs.ts 与 foreground.ts 确认事件类型，没有据猜测路径写实现。
+- 已实际运行 Python 标准库文档检查 → exit 0：33 行命令/30 条现有命令集合/9 个任务归属/相对链接/代码围栏/未勾选清单均通过；`git diff --check` → exit 0。人工复核补充统一 envelope 的旧测试迁移及删除账号时清理新增 job 输出路径记录。未执行产品安装、构建、测试或真实平台操作。下一步等待用户审阅计划与选择执行方式；已确认产品方向不等于开始实现或通过验收。
