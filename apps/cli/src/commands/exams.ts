@@ -1,3 +1,4 @@
+import { CliError } from '../output.js';
 import type { Command } from 'commander';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
@@ -39,7 +40,7 @@ export function registerExamCommands(program: Command): void {
     .option('--dry-run', 'preview without saving');
   save.action(async (path: string) => {
     const options = save.opts<{ yes?: boolean; dryRun?: boolean }>();
-    if (!options.yes && !options.dryRun) { process.stderr.write('learning: exam save requires --yes or --dry-run\n'); process.exitCode = 2; return; }
+    if (!options.yes && !options.dryRun) { throw new CliError('INVALID_INPUT', String('learning: exam save requires --yes or --dry-run\n').replace(/^learning: /, '').trim(), 2); }
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
       if (profile === null) return;
@@ -62,7 +63,7 @@ export function registerExamCommands(program: Command): void {
     .option('--dry-run', 'show the preview without starting');
   start.action(async (key: string) => {
     const options = start.opts<{ yes?: boolean; dryRun?: boolean }>();
-    if (!options.yes && !options.dryRun) { process.stderr.write('learning: exam start requires --yes (may begin a timer)\n'); process.exitCode = 2; return; }
+    if (!options.yes && !options.dryRun) { throw new CliError('INVALID_INPUT', String('learning: exam start requires --yes (may begin a timer)\n').replace(/^learning: /, '').trim(), 2); }
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
       if (profile === null) return;
@@ -113,9 +114,7 @@ export function registerExamCommands(program: Command): void {
   submit.action(async (path: string) => {
       const options = submit.opts<{ yes?: boolean; final?: boolean; dryRun?: boolean }>();
       if ((!options.yes || !options.final) && !options.dryRun) {
-        process.stderr.write('learning: exam submit requires --yes --final\n');
-        process.exitCode = 2;
-        return;
+        throw new CliError('INVALID_INPUT', String('learning: exam submit requires --yes --final\n').replace(/^learning: /, '').trim(), 2);
       }
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);

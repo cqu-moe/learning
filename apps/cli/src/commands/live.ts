@@ -1,3 +1,4 @@
+import { CliError } from '../output.js';
 import type { Command } from 'commander';
 import { createLearningClient, LearningError } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
@@ -34,7 +35,7 @@ export function registerLiveCommand(program: Command): void {
     .description('check in and watch a Yuketang live lesson in the current terminal')
     .option('--yes', 'explicitly confirm checkin');
   live.action(async (url: string) => {
-    if (!live.opts<{ yes?: boolean }>().yes) { process.stderr.write('learning: live checkin requires --yes\n'); process.exitCode = 2; return; }
+    if (!live.opts<{ yes?: boolean }>().yes) { throw new CliError('INVALID_INPUT', String('learning: live checkin requires --yes\n').replace(/^learning: /, '').trim(), 2); }
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
       if (profile === null) return;

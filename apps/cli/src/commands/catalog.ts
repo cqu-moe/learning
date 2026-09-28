@@ -56,9 +56,7 @@ export function registerCatalogCommands(program: Command): void {
       if (courses.opts<{ allProfiles?: boolean }>().allProfiles) {
         const profiles = await listProfiles(runtime.state);
         if (profiles.length === 0) {
-          process.stderr.write('learning: no profiles configured\n');
-          process.exitCode = 3;
-          return;
+          throw new CliError('INTERACTION_REQUIRED', String('learning: no profiles configured\n').replace(/^learning: /, '').trim(), 3);
         }
         const clients = profiles.map((profile) => createLearningClient({ scope: profile.scope, runtime }));
         try {
@@ -100,15 +98,11 @@ export function registerCatalogCommands(program: Command): void {
         } else {
           const stored = await runtime.state.get(cacheKey(input));
           if (stored === null) {
-            process.stderr.write('learning: unknown course key; run learning courses first\n');
-            process.exitCode = 2;
-            return;
+            throw new CliError('INVALID_INPUT', String('learning: unknown course key; run learning courses first\n').replace(/^learning: /, '').trim(), 2);
           }
           const course = CourseSchema.parse(stored.value);
           if (course.ref.scope.profileId !== profile.scope.profileId) {
-            process.stderr.write('learning: course belongs to a different profile\n');
-            process.exitCode = 2;
-            return;
+            throw new CliError('INVALID_INPUT', String('learning: course belongs to a different profile\n').replace(/^learning: /, '').trim(), 2);
           }
           ref = course.ref;
         }

@@ -22,6 +22,7 @@ function home() {
 
 function run(dir: string, args: string[], fixture?: string, expectedCookie?: string, extraEnv: Record<string, string> = {}) {
   const nodeArgs = fixture ? ['--import', preload, cli] : [cli];
+  if (args[0] === 'login' && !args.includes('--import') && !args.includes('--qr-file')) args = [...args, '--qr-file', resolve(dir, 'fixture-login-qr.png')];
   const result = spawnSync(process.execPath, [...nodeArgs, '--home', dir, ...args], {
     cwd: dir,
     env: {

@@ -1,3 +1,4 @@
+import { CliError } from '../output.js';
 import type { Command } from 'commander';
 import { JobSchema } from '@learning/sdk/public';
 import { createLearningClient } from '@learning/sdk';
@@ -48,7 +49,7 @@ export function registerJobsCommands(program: Command): void {
       if (state === null) return;
       try {
         const stored = await state.get(`job:${jobId}`);
-        if (stored === null) { process.stderr.write(`learning: unknown job id ${jobId}\n`); process.exitCode = 2; return; }
+        if (stored === null) { throw new CliError('INVALID_INPUT', String(`learning: unknown job id ${jobId}\n`).replace(/^learning: /, '').trim(), 2); }
         const job = JobSchema.parse(stored.value);
         printResult(program, job, `${job.id}\t${job.kind}\t${job.status}\t${job.completed}/${job.total ?? '?'}`);
       } finally { state.close(); }
@@ -78,9 +79,9 @@ export function registerJobsCommands(program: Command): void {
         const client = createLearningClient({ scope: profile.scope, runtime });
         try {
           const before = await client.jobs.get(jobId);
-          if (before.kind !== 'export' && before.kind !== 'study' && before.kind !== 'live') { process.stderr.write('learning: this job type has no CLI resume handler\n'); process.exitCode = 3; return; }
+          if (before.kind !== 'export' && before.kind !== 'study' && before.kind !== 'live') { throw new CliError('INTERACTION_REQUIRED', String('learning: this job type has no CLI resume handler\n').replace(/^learning: /, '').trim(), 3); }
           if (before.kind === 'live') {
-            if (!resume.opts<{ yes?: boolean }>().yes) { process.stderr.write('learning: live resume requires --yes for a new checkin\n'); process.exitCode = 2; return; }
+            if (!resume.opts<{ yes?: boolean }>().yes) { throw new CliError('INVALID_INPUT', String('learning: live resume requires --yes for a new checkin\n').replace(/^learning: /, '').trim(), 2); }
             await client.jobs.resume(jobId);
           } else if (before.status === 'paused' || before.status === 'needs-input' && before.kind === 'study') await client.jobs.resume(jobId);
           else if (!['queued', 'waiting', 'succeeded'].includes(before.status)) { process.stderr.write(`learning: ${before.status} job cannot resume without reconciliation\n`); process.exitCode = before.status === 'uncertain' || before.status === 'running' ? 5 : 3; return; }
@@ -106,9 +107,7 @@ export function registerJobsCommands(program: Command): void {
           const meta = await runtime.state.get(`job-meta:${jobId}`);
           const pending = meta?.value && typeof meta.value === 'object' && !Array.isArray(meta.value) ? meta.value.pendingOperationId : null;
           if (typeof pending !== 'string' || pending.length === 0) {
-            process.stderr.write('learning: job has no pending operation to reconcile\n');
-            process.exitCode = 3;
-            return;
+            throw new CliError('INTERACTION_REQUIRED', String('learning: job has no pending operation to reconcile\n').replace(/^learning: /, '').trim(), 3);
           }
           const receipt = await client.actions.reconcile(pending);
           const job = await client.jobs.get(jobId);

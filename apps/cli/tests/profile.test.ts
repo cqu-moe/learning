@@ -48,7 +48,7 @@ describe('local profiles', () => {
     expect(listed.code).toBe(0);
     expect(JSON.parse(listed.stdout).data).toEqual({ profiles: [created] });
     expect(listed.stdout).not.toContain('cookie');
-    expect(run(dir, 'profile', 'remove', 'alpha').code).toBe(2);
+    expect(run(dir, 'profile', 'remove', 'alpha').code).toBe(3);
     expect(run(dir, 'profile', 'remove', 'alpha', '--yes').code).toBe(0);
     expect(JSON.parse(run(dir, 'profile', 'list', '--json').stdout).data).toEqual({ profiles: [] });
   });

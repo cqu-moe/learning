@@ -1,3 +1,4 @@
+import { CliError } from '../output.js';
 import { printResult } from '../context.js';
 import { acquireDataDirLock, createCliRuntime, resolveDataDir } from '../runtime.js';
 import type { Command } from 'commander';
@@ -10,9 +11,7 @@ export function registerInitCommand(program: Command): void {
       const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
       const lock = acquireDataDirLock(dataDir, process.pid);
       if (!lock.ok) {
-        process.stderr.write(`learning: ${lock.reason}\n`);
-        process.exitCode = 3;
-        return;
+        throw new CliError('INTERACTION_REQUIRED', String(`learning: ${lock.reason}\n`).replace(/^learning: /, '').trim(), 3);
       }
       try {
         const runtime = createCliRuntime(dataDir);
