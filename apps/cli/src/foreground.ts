@@ -1,3 +1,5 @@
+import { CliError } from './output.js';
+import { getJobOutputRoot } from './preferences.js';
 import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -5,42 +7,68 @@ import type { LearningClient } from '@learning/sdk';
 import type { Job, JobEvent } from '@learning/sdk/public';
 import type { CliRuntime } from './context.js';
 
-export async function runJobForeground(client: LearningClient, runtime: CliRuntime, id: string, onEvent?: (event: JobEvent) => void | Promise<void>): Promise<Job> {
+export async function runJobForeground(client: LearningClient, runtime: CliRuntime, id: string, callbacks: { onEvent?: (event: JobEvent) => void | Promise<void>; onState?: (job: Job) => void | Promise<void>; signal?: AbortSignal } = {}): Promise<Job> {
   const abort = new AbortController();
   const onSignal = () => abort.abort();
+  const signals = [callbacks.signal, runtime.output?.signal].filter((signal): signal is AbortSignal => signal !== undefined);
+  for (const signal of signals) { signal.addEventListener('abort', onSignal, { once: true }); if (signal.aborted) onSignal(); }
   let afterSequence = 0;
-  const flushEvents = async () => {
-    if (onEvent === undefined) return;
-    const events = await client.jobs.events(id, afterSequence);
-    for (const event of events) { await onEvent(event); afterSequence = Math.max(afterSequence, event.sequence); }
+  let lastState = '';
+  const warnings = new Set<string>();
+  const report = async (job: Job, event?: Extract<JobEvent, { type: 'progress' | 'state' }>) => {
+    const signature = JSON.stringify([job.id, job.status, job.completed, job.total]);
+    if (event?.type !== 'progress' && signature === lastState) return;
+    lastState = signature;
+    await callbacks.onState?.(job);
+    await runtime.output?.progress({ jobId: id, resourceKey: event?.type === 'progress' ? event.resourceKey : null, status: job.status, completed: job.completed, total: job.total, serverFraction: event?.type === 'progress' ? event.serverFraction : null, estimatedSeconds: event?.type === 'progress' ? event.estimatedSeconds : null, sourceSequence: event?.sequence ?? null });
+    for (const warning of job.warnings) { const key = JSON.stringify(warning); if (!warnings.has(key)) { warnings.add(key); await runtime.output?.warning(warning.code, warning.message); } }
   };
-  process.once('SIGINT', onSignal);
+  const flushEvents = async (job: Job) => {
+    if (!runtime.output && !callbacks.onEvent) return;
+    const events = await client.jobs.events(id, afterSequence);
+    for (const event of events) {
+      afterSequence = Math.max(afterSequence, event.sequence);
+      if (event.type === 'state') await report(event.job, event);
+      else if (event.type === 'progress') await report(job, event);
+      else if (event.type === 'question') await runtime.output?.event({ type: 'question', data: { jobId: id, phaseId: event.phaseId, question: event.question, closesAtMs: event.closesAtMs, sourceSequence: event.sequence } });
+      else await runtime.output?.event({ type: 'gap', data: { jobId: id, message: event.message, sourceSequence: event.sequence } });
+      await callbacks.onEvent?.(event);
+    }
+  };
+  const pause = async () => {
+    const job = await client.jobs.get(id);
+    if (['queued', 'running', 'waiting'].includes(job.status)) await client.jobs.pause(id);
+    process.exitCode = job.status === 'uncertain' ? 5 : 3;
+    return client.jobs.get(id);
+  };
+  process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
   try {
     for (;;) {
       const job = await client.jobs.get(id);
-      await flushEvents();
-      if (abort.signal.aborted) {
-        if (['queued', 'running', 'waiting'].includes(job.status)) await client.jobs.pause(id);
-        process.exitCode = 3;
-        return client.jobs.get(id);
-      }
+      if (abort.signal.aborted) return await pause();
+      await flushEvents(job); await report(job);
+      if (abort.signal.aborted) return await pause();
       if (!['queued', 'running', 'waiting'].includes(job.status)) return job;
       if (job.nextRunAtMs !== null && job.nextRunAtMs > runtime.clock.nowMs()) {
         try { await runtime.waitForWake(job.nextRunAtMs - runtime.clock.nowMs(), abort.signal); }
-        catch { continue; }
+        catch (error) { if (!abort.signal.aborted) throw error; }
         continue;
       }
       await client.jobs.advance(id);
-      await flushEvents();
     }
+  } catch (error) {
+    if (error instanceof CliError && error.code === 'CANCELED' || abort.signal.aborted) return await pause();
+    throw error;
   } finally {
-    process.off('SIGINT', onSignal);
+    runtime.output?.pauseProgress();
+    process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal);
+    for (const signal of signals) signal.removeEventListener('abort', onSignal);
   }
 }
 
 /** Materialize verified, profile-owned blobs as user-readable files, without overwriting. */
-export async function publishJobArtifacts(runtime: CliRuntime, job: Job, dataDir: string): Promise<string[]> {
-  const outputDir = resolve(dataDir, 'exports', job.id);
+export async function publishJobArtifacts(runtime: CliRuntime, job: Job, dataDir: string, outputRoot?: string): Promise<string[]> {
+  const outputDir = resolve(outputRoot ?? await getJobOutputRoot(runtime.state, job.id) ?? resolve(dataDir, 'exports'), job.id);
   await mkdir(outputDir, { recursive: true, mode: 0o700 });
   const paths: string[] = [];
   for (const item of job.items) for (const artifact of item.artifacts) {

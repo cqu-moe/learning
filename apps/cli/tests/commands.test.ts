@@ -49,11 +49,11 @@ describe('cli commands (T26, A261/A262)', () => {
     const pendingStudy = runCli(['run', 'course-key', '--dry-run']);
     expect(pendingStudy.exitCode).toBe(3);
     expect(pendingStudy.stdout).toBe('');
-    expect(pendingStudy.stderr).toContain('not initialized');
+    expect(pendingStudy.stderr).toContain('尚未初始化');
     const uninitializedDownload = runCli(['download', 'course-key', '--dry-run']);
     expect(uninitializedDownload.exitCode).toBe(3);
     expect(uninitializedDownload.stdout).toBe('');
-    expect(uninitializedDownload.stderr).toContain('not initialized');
+    expect(uninitializedDownload.stderr).toContain('尚未初始化');
     const init = runCli(['init']);
     expect(init.exitCode).toBe(0);
     expect(runCli(['profile', 'add', 'alpha', '--platform', 'ykt'], init.home).exitCode).toBe(0);

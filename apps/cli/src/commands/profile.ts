@@ -75,7 +75,7 @@ export function registerProfileCommands(program: Command): void {
         const job = JobSchema.parse(row.record.value);
         if (job.scope.profileId !== existing.scope.profileId) continue;
         deletions.set(row.key, row.record.revision);
-        for (const suffix of ['job-meta:', 'job-input:', 'job-events:']) await queue(`${suffix}${job.id}`);
+        for (const suffix of ['job-meta:', 'job-input:', 'job-events:', 'cli:job-output:']) await queue(`${suffix}${job.id}`);
         for (const item of job.items) for (const artifact of item.artifacts) artifactIds.add(artifact.id);
       }
       for (const row of await all('cli:course:')) {

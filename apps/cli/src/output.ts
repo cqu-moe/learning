@@ -1,3 +1,4 @@
+import { spinner } from '@clack/prompts';
 import Table from 'cli-table3';
 import { z } from 'zod';
 import { JsonSchema, QuestionSchema, LearningError } from '@learning/sdk/public';
@@ -42,6 +43,8 @@ export function errorInfo(error: unknown): { error: z.infer<typeof ErrorSchema>;
   const hints: Record<string, string[]> = { INVALID_INPUT: ['运行对应命令 --help 查看参数。'], AUTH_REQUIRED: ['请先运行 learning login --profile <账号>。'], AUTH_EXPIRED: ['登录已过期，请重新登录。'], UNCERTAIN: ['先运行 learning operations reconcile <operationId> 核对结果，勿重复提交。'], CONFLICT: ['确认其他写入进程已退出后再继续；不要删除密钥或数据库。'], MISSING_RUNTIME: ['运行 learning doctor 检查本地依赖。'], CANCELED: ['操作已取消；已执行的写入不会回滚。'] };
   return { exitCode, error: { code, message: cleanText(error instanceof CliError ? error.message : data?.message ?? '发生本地错误，请使用 --debug 查看错误类别。'), hint: error instanceof CliError && error.hint.length ? error.hint : hints[code] ?? [], fields: error instanceof CliError ? error.fields : [], operationId: data?.operationId ?? null, retryAfterMs: data?.retryAfterMs ?? null } };
 }
+const progressPauses = new WeakMap<OutputMode, () => void>();
+export function pauseProgress(mode: OutputMode): void { progressPauses.get(mode)?.(); }
 export function createOutput(mode: OutputMode, streams: { stdout: Writable; stderr: Writable } = process) {
   let command = 'learning';
   let sequence = 0;
@@ -49,6 +52,11 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   let human = '';
   let status: CliResult['status'] | undefined;
   let finished = false;
+  let indicator: ReturnType<typeof spinner> | null = null;
+  let lastProgressAt = 0;
+  let lastPhase = '';
+  const pause = () => { indicator?.clear(); indicator = null; };
+  progressPauses.set(mode, pause);
   const warnings: Array<z.infer<typeof WarningSchema>> = [];
   const abort = new AbortController();
   const onError = () => abort.abort();
@@ -73,11 +81,31 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     setCommand(value: string) { command = value; },
     set(value: unknown, text: string, nextStatus?: CliResult['status']) { data = value; human = cleanText(text); status = nextStatus; },
     event,
+    pauseProgress: pause,
+    activity(message: string) {
+      if (mode.format !== 'pretty' || mode.quiet) return;
+      if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(cleanText(message)); }
+      else indicator.message(cleanText(message));
+    },
+    async progress(value: Extract<CliEvent, { type: 'progress' }>['data']) {
+      await event({ type: 'progress', data: value });
+      if (machine || mode.quiet) return;
+      const phase = `${value.jobId}:${value.status}:${value.resourceKey ?? ''}`;
+      const interval = mode.format === 'pretty' ? 100 : 5000;
+      if (phase === lastPhase && Date.now() - lastProgressAt < interval) return;
+      lastPhase = phase; lastProgressAt = Date.now();
+      const states: Record<string, string> = { queued: '已排队', running: '进行中', waiting: '等待下一阶段', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
+      const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
+      if (mode.format === 'pretty' && ['queued','running','waiting'].includes(value.status)) {
+        if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(text); } else indicator.message(text);
+      } else { pause(); await write(streams.stderr, cleanText(text) + '\n'); }
+    },
     async message(text: string) { if (!machine && !mode.quiet) await write(streams.stderr, cleanText(text) + '\n'); },
     async warning(code: string, message: string) { const warning = { code, message: cleanText(message) }; warnings.push(warning); await event({ type: 'warning', data: warning }); if (!machine) await write(streams.stderr, `警告 [${code}] ${warning.message}\n`); },
     async finish(error?: unknown) {
       if (finished) return;
       finished = true;
+      pause();
       const info = error === undefined ? null : errorInfo(error);
       const exitCode = info?.exitCode ?? Number(process.exitCode ?? 0);
       process.exitCode = exitCode;
@@ -87,7 +115,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       else { if (human) await write(streams.stdout, human + '\n'); if (info) await write(streams.stderr, `错误 [${info.error.code}] ${info.error.message}\n${info.error.hint.join('\n')}${info.error.hint.length ? '\n' : ''}`); }
       if (mode.debug && error !== undefined) await write(streams.stderr, JSON.stringify({ diagnostic: error instanceof Error ? error.name : typeof error, code: info?.error.code }) + '\n');
     },
-    close() { streams.stdout.off('error', onError); streams.stderr.off('error', onError); },
+    close() { pause(); progressPauses.delete(mode); streams.stdout.off('error', onError); streams.stderr.off('error', onError); },
   };
 }
 export type Output = ReturnType<typeof createOutput>;

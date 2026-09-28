@@ -152,3 +152,8 @@ export async function chooseResource(client: LearningClient, runtime: CliRuntime
   if (!resource || resource.ref.course.scope.profileId !== client.scope.profileId) throw new CliError('INVALID_INPUT', '没有选中当前账号的有效资源。');
   return resource.ref;
 }
+
+export async function chooseTarget(client: LearningClient, runtime: CliRuntime, prompts: Prompts, kinds: ResourceKind[]): Promise<string> {
+  const range = await prompts.ask({ name: 'range', message: '选择操作范围', options: [{ value: 'course', label: '整门课程' }, { value: 'resource', label: '单个资源' }] });
+  return range === 'course' ? (await chooseCourse(client, runtime, prompts)).key : (await chooseResource(client, runtime, prompts, kinds)).key;
+}

@@ -41,3 +41,15 @@ it('does not fall back from a missing saved profile, but honors an explicit prof
  expect(run(['whoami','--profile','beta']).code).toBe(0);
  expect(run(['config','show']).result.data.defaultProfileId).toBe('missing-id');
 });
+
+it('freezes the export destination for a job across preference changes', async () => {
+ const { SqliteStateStore } = await import('@learning/sdk/node');
+ const { setJobOutputRoot, getJobOutputRoot, savePreferences } = await import('../src/preferences.js');
+ const state = new SqliteStateStore(resolve(home,'state.db'));
+ try {
+  await setJobOutputRoot(state,'job-one',home);
+  await savePreferences(state,{ downloadDir: resolve(home,'elsewhere') });
+  expect(await getJobOutputRoot(state,'job-one')).toBe(home);
+  await expect(setJobOutputRoot(state,'job-one',resolve(home,'elsewhere'))).rejects.toMatchObject({ code: 'CONFLICT' });
+ } finally { state.close(); }
+});

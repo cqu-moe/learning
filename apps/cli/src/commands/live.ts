@@ -46,10 +46,10 @@ export function registerLiveCommand(program: Command): void {
         const preview = await client.actions.prepare({ kind: 'live.join', lesson, maxDurationSeconds: 6 * 60 * 60 });
         const execution = await client.actions.execute(preview.id);
         if (execution.type !== 'job') throw new LearningError({ code: 'INTEGRITY', message: 'live checkin did not create a job', retryAfterMs: null, operationId: null });
-        const job = await runJobForeground(client, runtime, execution.job.id, async (event) => {
+        const job = await runJobForeground(client, runtime, execution.job.id, { onEvent: async (event) => {
           if (event.type === 'question') await confirmCurrentAnswer(client, execution.job.id, event);
           else if (event.type === 'gap') process.stderr.write(`live gap: ${event.message}\n`);
-        });
+        } });
         if (job.status === 'uncertain') process.exitCode = 5;
         else if (job.status === 'partial') process.exitCode = 4;
         else if (job.status !== 'succeeded') process.exitCode = 3;

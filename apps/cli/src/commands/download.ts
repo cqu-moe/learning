@@ -1,8 +1,13 @@
+import { resolve } from 'node:path';
+import { CliError, getOutput } from '../output.js';
+import { createPrompts, askDefaults } from '../prompts.js';
+import { isWizard } from '../wizard.js';
+import { readPreferences, setJobOutputRoot } from '../preferences.js';
 import type { Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { AssessmentRef, CourseRef, ResourceRef, OutlineNode } from '@learning/sdk/public';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
-import { resourceCacheKey, resourceKindCacheKey } from './catalog.js';
+import { resourceCacheKey, resourceKindCacheKey, chooseTarget } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 
 const TYPES = new Set(['video', 'homework', 'exam']);
@@ -14,14 +19,21 @@ function flatten(nodes: OutlineNode[]): Array<{ kind: string; ref: ResourceRef }
 }
 
 export function registerDownloadCommands(program: Command): void {
-  const download = program.command('download <course-or-resource>')
+  const download = program.command('download [course-or-resource]')
     .description('export permitted videos and assessments locally')
     .option('--types <types>', 'comma-separated video,homework,exam', 'video,homework,exam')
     .option('--quality <quality>', 'best, hd or sd', 'best')
     .option('--subtitles', 'include available transcript')
+    .option('--output-dir <dir>', '导出目标根目录，每个任务使用唯一子目录')
     .option('--dry-run', 'resolve planned exports without transferring');
-  download.action(async (key: string) => {
-    const options = download.opts<{ types: string; quality: string; subtitles?: boolean; dryRun?: boolean }>();
+  download.action(async (key?: string) => {
+    if (key === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '缺少课程或资源。', 2, ['course-or-resource']);
+    await askDefaults(download, [
+      { name: 'types', message: '资源类型，逗号分隔 video,homework,exam', initialValue: 'video,homework,exam' },
+      { name: 'quality', message: '视频质量', options: ['best','hd','sd'].map(value => ({ value, label: value })) },
+      { name: 'subtitles', message: '同时导出可用字幕？', confirm: true },
+    ], isWizard(program));
+    const options = download.opts<{ types: string; quality: string; subtitles?: boolean; dryRun?: boolean; outputDir?: string }>();
     const types = options.types.split(',').map((item) => item.trim());
     if (types.length === 0 || types.some((item) => !TYPES.has(item)) || new Set(types).size !== types.length) {
       throw new LearningError({ code: 'INVALID_INPUT', message: 'download types must be unique video,homework,exam values', retryAfterMs: null, operationId: null });
@@ -32,6 +44,8 @@ export function registerDownloadCommands(program: Command): void {
       if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
+        key ??= await chooseTarget(client, runtime, createPrompts(getOutput(program).mode), ['video', 'homework', 'exam']);
+        const outputRoot = resolve(options.outputDir ?? (await readPreferences(runtime.state)).downloadDir ?? resolve(dataDir, 'exports'));
         const cachedResource = await runtime.state.get(resourceCacheKey(key));
         let resources: Array<{ kind: string; ref: ResourceRef }>;
         if (cachedResource !== null) {
@@ -61,19 +75,21 @@ export function registerDownloadCommands(program: Command): void {
         if (media.length === 0 && assessments.length === 0) throw new LearningError({ code: 'UNSUPPORTED', message: 'no matching downloadable resources', retryAfterMs: null, operationId: null });
         if (options.dryRun) {
           const plan = { media: media.map((ref) => ref.key), assessments: assessments.map((ref) => ref.assessmentId) };
-          printResult(program, plan, `${plan.media.length} videos, ${plan.assessments.length} assessments`);
+          getOutput(program).set(plan, `${plan.media.length} 个视频，${plan.assessments.length} 份作业/试卷`, 'preview');
           return;
         }
         const jobs = [];
         const files: string[] = [];
         if (media.length > 0) {
           const created = await client.jobs.createExport({ type: 'media', resources: media, quality: options.quality as 'best' | 'hd' | 'sd', subtitles: options.subtitles === true });
+          await setJobOutputRoot(runtime.state, created.id, outputRoot);
           const job = await runJobForeground(client, runtime, created.id);
           jobs.push(job);
           files.push(...await publishJobArtifacts(runtime, job, dataDir));
         }
         if (assessments.length > 0) {
           const created = await client.jobs.createExport({ type: 'assessments', refs: assessments, format: 'json' });
+          await setJobOutputRoot(runtime.state, created.id, outputRoot);
           const job = await runJobForeground(client, runtime, created.id);
           jobs.push(job);
           files.push(...await publishJobArtifacts(runtime, job, dataDir));

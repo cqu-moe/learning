@@ -15,3 +15,14 @@ export async function savePreferences(state: SqliteStateStore, patch: Partial<Pi
   if (!await state.commit({ expected: [{ key, revision: old?.revision ?? null }], changes: [{ key, value: next }] })) throw new CliError('CONFLICT', '偏好已被另一个操作修改，请重试。', 3);
   return next;
 }
+
+export async function getJobOutputRoot(state: SqliteStateStore, jobId: string): Promise<string | null> {
+  const record = await state.get(`cli:job-output:${jobId}`);
+  return record === null ? null : z.string().min(1).parse(record.value);
+}
+export async function setJobOutputRoot(state: SqliteStateStore, jobId: string, path: string): Promise<void> {
+  const key = `cli:job-output:${jobId}`;
+  const old = await state.get(key);
+  if (old !== null) { if (old.value !== path) throw new CliError('CONFLICT', '此任务已有不同的导出目录。', 3); return; }
+  if (!await state.commit({ expected: [{ key, revision: null }], changes: [{ key, value: path }] })) throw new CliError('CONFLICT', '任务导出目录已被修改。', 3);
+}

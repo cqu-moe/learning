@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { createInterface } from 'node:readline/promises';
 import { z } from 'zod';
-import { CliError, cleanText, getOutput } from './output.js';
+import { CliError, cleanText, getOutput, pauseProgress } from './output.js';
 import type { OutputMode } from './output.js';
 import type { Command } from 'commander';
 
@@ -10,12 +10,13 @@ export type PromptField = { name: string; message: string; options?: Choice[]; i
 export function createPrompts(mode: OutputMode) {
   const ask = async (field: PromptField, signal?: AbortSignal): Promise<unknown> => {
     if (!mode.interactive) throw new CliError('INVALID_INPUT', `缺少参数：${field.name}`, 2, [field.name]);
+    pauseProgress(mode);
     const message = cleanText(field.message);
     const options = field.options?.map(item => ({ ...item, label: cleanText(item.label), ...(item.hint === undefined ? {} : { hint: cleanText(item.hint) }) }));
     if (mode.format === 'pretty') {
       const base = { message, input: process.stdin, output: process.stderr, ...(signal ? { signal } : {}) };
       let value: unknown;
-      if (field.confirm) value = await clack.confirm({ ...base, initialValue: false });
+      if (field.confirm) value = await clack.confirm({ ...base, initialValue: false, active: '是', inactive: '否' });
       else if (options && field.multiple) value = await clack.multiselect({ ...base, options, required: true });
       else if (options) value = await clack.autocomplete({ ...base, options, ...(field.initialValue === undefined ? {} : { initialValue: field.initialValue }) });
       else value = await clack.text({ ...base, ...(field.initialValue === undefined ? {} : { defaultValue: field.initialValue, placeholder: field.initialValue }), validate: value => field.validate?.(value) });
@@ -75,4 +76,13 @@ export async function confirmAction(program: Command, summary: string, yes: bool
   if (!output.mode.interactive) throw new CliError('CONFIRMATION_REQUIRED', '此操作需要确认，请检查预览后添加 --yes。', 3);
   await output.message(summary);
   if (!(await createPrompts(output.mode).ask({ name: 'confirm', message: '确认执行以上操作？', confirm: true }))) throw new CliError('CANCELED', '已取消，未执行此操作。', 3);
+}
+
+export async function askDefaults(command: Command, fields: PromptField[], enabled: boolean): Promise<void> {
+  if (!enabled) return;
+  const prompts = createPrompts(getOutput(command).mode);
+  for (const field of fields) {
+    if (command.getOptionValueSource(field.name) === 'cli') continue;
+    command.setOptionValueWithSource(field.name, await prompts.ask(field), 'prompt');
+  }
 }
