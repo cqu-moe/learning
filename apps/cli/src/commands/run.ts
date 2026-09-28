@@ -4,7 +4,7 @@ import { isWizard } from '../wizard.js';
 import type { Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { CourseRef, OutlineNode, ResourceRef } from '@learning/sdk/public';
-import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
 import { resourceCacheKey, chooseTarget } from './catalog.js';
 import { runJobForeground } from '../foreground.js';
 
@@ -37,6 +37,7 @@ export function registerRunCommands(program: Command): void {
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         key ??= await chooseTarget(client, runtime, createPrompts(getOutput(program).mode), profile.scope.platform === 'ykt' ? ['video', 'document'] : ['video']);
+        run.processedArgs[0] = key;
         const cachedResource = await runtime.state.get(resourceCacheKey(key));
         let resources: ResourceRef[];
         if (cachedResource !== null) resources = [ResourceRefSchema.parse(cachedResource.value)];
@@ -66,7 +67,7 @@ export function registerRunCommands(program: Command): void {
         if (options.dryRun) { getOutput(program).set(preview, summary, 'preview'); return; }
         if (!options.yes) getOutput(program).set(preview, '', 'preview');
         await confirmAction(program, summary, options.yes);
-        const execution = await client.actions.execute(preview.id);
+        const execution = await executeAction(getOutput(program), client, preview.id);
         if (execution.type !== 'job') throw new LearningError({ code: 'INTEGRITY', message: 'study action did not create a job', retryAfterMs: null, operationId: null });
         const job = await runJobForeground(client, runtime, execution.job.id);
         if (job.status === 'uncertain') process.exitCode = 5;

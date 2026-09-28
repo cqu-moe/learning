@@ -1,3 +1,4 @@
+import type { LearningClient, Execution } from '@learning/sdk';
 import { CourseSchema, ResourceRefSchema, JobSchema, parseLearningDraft, DiscussionDraftSchema } from '@learning/sdk';
 import { SqliteStateStore } from '@learning/sdk/node';
 import { lstat, readFile } from 'node:fs/promises';
@@ -21,6 +22,7 @@ export async function withCliRuntime(
   write: boolean,
   action: (runtime: CliRuntime, dataDir: string) => Promise<void>,
 ): Promise<void> {
+  getOutput(program).assertActive();
   const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
   if (!existsSync(resolve(dataDir, 'master.key')) || !existsSync(resolve(dataDir, 'state.db'))) {
     throw new CliError('INTERACTION_REQUIRED', '本地尚未初始化，请运行 learning init。', 3);
@@ -104,4 +106,9 @@ export async function inferTargetScope(program: Command, argument: string | unde
       else if (!/^https?:\/\//i.test(value)) throw new CliError('INVALID_INPUT', `找不到课程或资源 key：${value}；可先用 courses 和 outline 查询。`, 2, [argument!]);
     }
   } finally { state.close(); }
+}
+
+export async function executeAction(output: Output, client: LearningClient, previewId: string): Promise<Execution> {
+  output.assertActive();
+  return client.actions.execute(previewId);
 }

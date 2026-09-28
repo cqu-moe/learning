@@ -67,6 +67,7 @@ describe('output streams and terminal mode', () => {
     await second.finish();
     expect(second.signal.aborted).toBe(true);
     second.close();
+    process.exitCode = 0;
   });
   it('disables prompts for CI and redirected output, without treating CI=false as enabled', async () => {
     const { resolveOutputMode, cleanText } = await import('../src/output.js');

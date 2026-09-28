@@ -21,6 +21,8 @@ for (let i = 0; i < argv.length; i++) {
 }
 const output = createOutput(resolveOutputMode(flags));
 bindOutput(program, output);
+process.on('SIGINT', output.markCanceled);
+process.on('SIGTERM', output.markCanceled);
 if (!output.mode.color) { process.env.NO_COLOR = '1'; delete process.env.FORCE_COLOR; }
 let help = '';
 program.configureOutput({ writeOut: value => { help += value; }, writeErr: () => {} });
@@ -42,4 +44,4 @@ try {
     output.set({ text: help.trim() }, help.trim());
     await output.finish();
   } else await output.finish(error instanceof CommanderError ? new CliError('INVALID_INPUT', error.message) : error);
-} finally { output.close(); }
+} finally { process.off('SIGINT', output.markCanceled); process.off('SIGTERM', output.markCanceled); output.close(); }

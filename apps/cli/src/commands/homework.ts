@@ -3,7 +3,7 @@ import { getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
-import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 
 export function registerHomeworkCommands(program: Command): void {
@@ -58,7 +58,7 @@ export function registerHomeworkCommands(program: Command): void {
           if (options.dryRun) { getOutput(program).set({ previews, receipts }, summary, 'preview'); return; }
           getOutput(program).set({ previews, receipts }, '', 'preview');
           await confirmAction(program, summary, options.yes);
-          for (const preview of previews) receipts.push(await client.actions.execute(preview.id));
+          for (const preview of previews) receipts.push(await executeAction(getOutput(program), client, preview.id));
           printResult(program, { previews, receipts }, `已处理 ${receipts.length} 道题，请以服务端结果为准。`);
         } finally { await client.close(); }
       });

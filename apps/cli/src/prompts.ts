@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { createInterface } from 'node:readline/promises';
 import { z } from 'zod';
-import { CliError, cleanText, getOutput, pauseProgress } from './output.js';
+import { CliError, cleanText, getOutput, pauseProgress, commandSignal, errorInfo } from './output.js';
 import type { OutputMode } from './output.js';
 import type { Command } from 'commander';
 
@@ -10,6 +10,9 @@ export type PromptField = { name: string; message: string; options?: Choice[]; i
 export function createPrompts(mode: OutputMode) {
   clack.updateSettings({ messages: { cancel: '已取消', error: '操作失败' } });
   const ask = async (field: PromptField, signal?: AbortSignal): Promise<unknown> => {
+    const parent = commandSignal(mode);
+    signal = parent && signal ? AbortSignal.any([parent, signal]) : parent ?? signal;
+    if (signal?.aborted) throw new CliError('CANCELED', '操作已取消。', 3);
     if (!mode.interactive) throw new CliError('INVALID_INPUT', `缺少参数：${field.name}`, 2, [field.name]);
     pauseProgress(mode);
     const message = cleanText(field.message);
@@ -28,7 +31,7 @@ export function createPrompts(mode: OutputMode) {
     const cancel = () => controller.abort();
     signal?.addEventListener('abort', cancel, { once: true });
     if (signal?.aborted) cancel();
-    const input = createInterface({ input: process.stdin, output: process.stderr });
+    const input = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
     input.on('SIGINT', cancel);
     input.on('close', cancel);
     try {
@@ -74,6 +77,7 @@ export async function fillMissing<T extends z.ZodRawShape>(schema: z.ZodObject<T
 }
 export async function confirmAction(program: Command, summary: string, yes: boolean | undefined): Promise<void> {
   const output = getOutput(program);
+  output.assertActive();
   if (yes) return;
   if (!output.mode.interactive) throw new CliError('CONFIRMATION_REQUIRED', '此操作需要确认，请检查预览后添加 --yes。', 3);
   await output.message(summary, true);
@@ -121,6 +125,13 @@ export function installInputCompletion(program: Command): void {
         fields.push({ name, message: name === 'output' ? '新输出文件路径（不会覆盖已有文件）' : '反馈来源文件路径' });
       }
       const ask: Prompts['ask'] = async (field, signal) => {
+        if (field.name === 'file' || field.name === 'draft') {
+          for (;;) {
+            const value = await prompts.ask(field, signal);
+            try { await inferTargetScope(program, field.name, value, command.parent?.name() === 'discuss'); return value; }
+            catch (error) { const info = errorInfo(error); if (info.exitCode !== 2) throw error; await output.message(`${info.error.message} 请重新输入。`, true); }
+          }
+        }
         if (field.name === 'resource') {
           const { withCliRuntime, selectProfile } = await import('./context.js');
           const { createLearningClient } = await import('@learning/sdk');

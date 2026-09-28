@@ -25,7 +25,7 @@ export const CliEventSchema = z.discriminatedUnion('type', [
 export type CliEvent = z.infer<typeof CliEventSchema>;
 export type EventInput = CliEvent extends infer E ? E extends CliEvent ? Pick<E, 'type' | 'data'> : never : never;
 export class CliError extends Error {
-  constructor(public code: string, message: string, public exitCode = 2, public fields: string[] = [], public hint: string[] = []) { super(message); }
+  constructor(public code: string, message: string, public exitCode = 2, public fields: string[] = [], public hint: string[] = [], public operationId: string | null = null) { super(message); }
 }
 export function cleanText(value: string): string { return [...stripVTControlCharacters(value)].filter(char => char === '\n' || char === '\t' || char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127).join(''); }
 export function resolveOutputMode(flags: Record<string, unknown>, terminal = { stdin: !!process.stdin.isTTY, stdout: !!process.stdout.isTTY, stderr: !!process.stderr.isTTY, term: process.env.TERM, ci: process.env.CI, noColor: process.env.NO_COLOR }): OutputMode {
@@ -44,9 +44,11 @@ export function errorInfo(error: unknown): { error: z.infer<typeof ErrorSchema>;
   const exitCode = error instanceof CliError ? error.exitCode : data === null ? 1 : ['INVALID_INPUT', 'PREVIEW_EXPIRED', 'PRECONDITION_CHANGED'].includes(data.code) ? 2 : data.code === 'UNCERTAIN' ? 5 : ['AUTH_REQUIRED', 'AUTH_EXPIRED', 'FORBIDDEN', 'INTERACTION_REQUIRED', 'UNSUPPORTED', 'MISSING_RUNTIME', 'CONFLICT', 'CANCELED'].includes(data.code) ? 3 : 1;
   const code = error instanceof CliError ? error.code : data?.code ?? 'INTERNAL';
   const hints: Record<string, string[]> = { INVALID_INPUT: ['运行对应命令 --help 查看参数。'], AUTH_REQUIRED: ['请先运行 learning login --profile <账号>。'], AUTH_EXPIRED: ['登录已过期，请重新登录。'], UNCERTAIN: [data?.operationId ? `先核对结果，勿重复提交：learning operations reconcile ${shellQuote(data.operationId)}` : '先核对不确定写入的操作记录，勿重复提交。'], CONFLICT: ['确认其他写入进程已退出后再继续；不要删除密钥或数据库。'], MISSING_RUNTIME: ['运行 learning doctor 检查本地依赖。'], CANCELED: ['操作已取消；已执行的写入不会回滚。'] };
-  return { exitCode, error: { code, message: cleanText(error instanceof CliError ? error.message : data?.message ?? '发生本地错误，请使用 --debug 查看错误类别。'), hint: error instanceof CliError && error.hint.length ? error.hint : hints[code] ?? [], fields: error instanceof CliError ? error.fields : [], operationId: data?.operationId ?? null, retryAfterMs: data?.retryAfterMs ?? null } };
+  return { exitCode, error: { code, message: cleanText(error instanceof CliError ? error.message : data?.message ?? '发生本地错误，请使用 --debug 查看错误类别。'), hint: error instanceof CliError && error.hint.length ? error.hint : hints[code] ?? [], fields: error instanceof CliError ? error.fields : [], operationId: error instanceof CliError ? error.operationId : data?.operationId ?? null, retryAfterMs: data?.retryAfterMs ?? null } };
 }
 const progressPauses = new WeakMap<OutputMode, () => void>();
+const commandSignals = new WeakMap<OutputMode, AbortSignal>();
+export function commandSignal(mode: OutputMode): AbortSignal | undefined { return commandSignals.get(mode); }
 export function pauseProgress(mode: OutputMode): void { progressPauses.get(mode)?.(); }
 export function createOutput(mode: OutputMode, streams: { stdout: Writable; stderr: Writable } = process) {
   let command = 'learning';
@@ -64,7 +66,10 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   progressPauses.set(mode, pause);
   const warnings: Array<z.infer<typeof WarningSchema>> = [];
   const abort = new AbortController();
-  const onError = () => abort.abort();
+  const work = new AbortController();
+  commandSignals.set(mode, work.signal);
+  const cancel = () => { canceled = true; work.abort(); if (Number(process.exitCode ?? 0) !== 5) process.exitCode = 3; };
+  const onError = () => { abort.abort(); cancel(); };
   streams.stdout.on('error', onError);
   streams.stderr.on('error', onError);
   const write = async (stream: Writable, text: string): Promise<void> => {
@@ -82,9 +87,10 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     await line(input);
   };
   return {
-    mode, signal: abort.signal as AbortSignal,
+    mode, signal: work.signal as AbortSignal,
     setHome(value: string) { home = value; },
-    markCanceled() { canceled = true; },
+    markCanceled: cancel,
+    assertActive() { if (work.signal.aborted) throw new CliError('CANCELED', '操作已取消。', 3); },
     setCommand(value: string) { command = value; },
     set(value: unknown, text: string, nextStatus?: CliResult['status']) { data = value; human = cleanText(text); status = nextStatus; },
     event,
@@ -116,13 +122,13 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       const info = error === undefined ? null : errorInfo(error);
       const exitCode = info?.exitCode ?? Number(process.exitCode ?? 0);
       process.exitCode = exitCode;
-      const result = CliResultSchema.parse({ schemaVersion: 1, command, ok: exitCode === 0, status: exitCode === 5 ? 'uncertain' : info?.error.code === 'CANCELED' || canceled ? 'canceled' : exitCode === 4 ? 'partial' : exitCode === 3 ? 'needs-input' : exitCode ? 'error' : status ?? 'success', exitCode, data: data ?? null, error: info?.error ?? (exitCode ? { code: exitCode === 5 ? 'UNCERTAIN' : exitCode === 4 ? 'PARTIAL' : canceled ? 'CANCELED' : 'INTERACTION_REQUIRED', message: '操作未完全完成，请查看结果和任务状态。', hint: [], fields: [], operationId: null, retryAfterMs: null } : null), warnings });
+      const result = CliResultSchema.parse({ schemaVersion: 1, command, ok: exitCode === 0, status: exitCode === 5 ? 'uncertain' : exitCode === 4 ? 'partial' : info?.error.code === 'CANCELED' || canceled && info === null ? 'canceled' : exitCode === 3 ? 'needs-input' : exitCode ? 'error' : status ?? 'success', exitCode, data: data ?? null, error: info?.error ?? (exitCode ? { code: exitCode === 5 ? 'UNCERTAIN' : exitCode === 4 ? 'PARTIAL' : canceled ? 'CANCELED' : 'INTERACTION_REQUIRED', message: '操作未完全完成，请查看结果和任务状态。', hint: [], fields: [], operationId: null, retryAfterMs: null } : null), warnings });
       if (result.error !== null) {
         const payload = data !== null && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null;
         const jobs = [data, payload?.job, ...(Array.isArray(payload?.jobs) ? payload.jobs : [])];
         for (const candidate of jobs) {
           const parsed = JobSchema.safeParse(candidate);
-          if (!parsed.success || !['paused','needs-input','uncertain'].includes(parsed.data.status)) continue;
+          if (!parsed.success || !(['paused','needs-input','uncertain'].includes(parsed.data.status) || parsed.data.kind === 'export' && parsed.data.status === 'succeeded')) continue;
           const prefix = home === undefined ? 'learning' : `learning --home ${shellQuote(home)}`;
           const hint = `${prefix} jobs ${parsed.data.status === 'uncertain' ? 'reconcile' : 'resume'} ${shellQuote(parsed.data.id)}`;
           if (!result.error.hint.includes(hint)) result.error.hint.push(hint);
@@ -133,7 +139,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       else { if (human) await write(streams.stdout, human + '\n'); if (info) await write(streams.stderr, `${mode.color ? styleText(['red','bold'], '错误', {stream: process.stderr}) : '错误'} [${info.error.code}] ${info.error.message}\n`); if (result.error?.hint.length) await write(streams.stderr, result.error.hint.join('\n') + '\n'); }
       if (mode.debug && error !== undefined) await write(streams.stderr, JSON.stringify({ diagnostic: error instanceof Error ? error.name : typeof error, code: info?.error.code }) + '\n');
     },
-    close() { pause(); progressPauses.delete(mode); streams.stdout.off('error', onError); streams.stderr.off('error', onError); },
+    close() { pause(); commandSignals.delete(mode); progressPauses.delete(mode); streams.stdout.off('error', onError); streams.stderr.off('error', onError); },
   };
 }
 export type Output = ReturnType<typeof createOutput>;

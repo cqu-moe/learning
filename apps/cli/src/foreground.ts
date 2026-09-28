@@ -27,6 +27,7 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
     if (!runtime.output && !callbacks.onEvent) return;
     const events = await client.jobs.events(id, afterSequence);
     for (const event of events) {
+      if (abort.signal.aborted) break;
       afterSequence = Math.max(afterSequence, event.sequence);
       if (event.type === 'state') await report(event.job, event);
       else if (event.type === 'progress') await report(job, event);
@@ -58,7 +59,7 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
       await client.jobs.advance(id);
     }
   } catch (error) {
-    if (error instanceof CliError && error.code === 'CANCELED' || abort.signal.aborted) return await pause();
+    if (error instanceof CliError && error.code === 'CANCELED' || error instanceof DOMException && error.name === 'AbortError' && abort.signal.aborted) return await pause();
     throw error;
   } finally {
     runtime.output?.pauseProgress();
@@ -69,6 +70,7 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
 
 /** Materialize verified, profile-owned blobs as user-readable files, without overwriting. */
 export async function publishJobArtifacts(runtime: CliRuntime, job: Job, dataDir: string, outputRoot?: string): Promise<string[]> {
+  if (runtime.output?.signal.aborted) return [];
   const outputDir = resolve(outputRoot ?? await getJobOutputRoot(runtime.state, job.id) ?? resolve(dataDir, 'exports'), job.id);
   await mkdir(outputDir, { recursive: true, mode: 0o700 });
   const paths: string[] = [];
@@ -77,6 +79,7 @@ export async function publishJobArtifacts(runtime: CliRuntime, job: Job, dataDir
       throw new Error('artifact scope differs from job scope');
     }
     if (!/^[^/\\]+$/.test(artifact.filename) || artifact.filename === '.' || artifact.filename === '..') throw new Error('unsafe artifact filename');
+    if (runtime.output?.signal.aborted) return paths;
     const path = resolve(outputDir, artifact.filename);
     let handle;
     try { handle = await open(path, 'wx', 0o600); }
@@ -93,6 +96,7 @@ export async function publishJobArtifacts(runtime: CliRuntime, job: Job, dataDir
       const reader = (await runtime.artifacts.open(artifact.id)).getReader();
       try {
         for (;;) {
+          if (runtime.output?.signal.aborted) { await reader.cancel(); throw new CliError('CANCELED', '已取消文件导出。', 3); }
           const { done, value } = await reader.read();
           if (done) break;
           let written = 0;
@@ -111,6 +115,7 @@ export async function publishJobArtifacts(runtime: CliRuntime, job: Job, dataDir
     } catch (error) {
       await handle.close();
       await unlink(path);
+      if (error instanceof CliError && error.code === 'CANCELED') return paths;
       throw error;
     }
     await handle.close();

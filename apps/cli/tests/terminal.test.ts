@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -19,6 +19,7 @@ describe('real terminal interaction', () => {
     expect(result.code).toBe(0);
     expect(result.screen).toContain('plain-user');
     expect(result.screen).not.toContain('选择平台');
+    expect(result.screen).not.toContain('\u001b');
   }, 20_000);
   it('runs one selected command then exits', () => {
     const result = terminal(['--output-format','plain'], [{ wait: '请选择操作', send: '2\n' }]);
@@ -97,4 +98,22 @@ it('accepts an existing select default with Enter in plain mode', () => {
  expect(data.code).toBe(0);
  expect(data.screen).toContain('default=pdf');
  expect(data.screen).not.toContain('请选择有效编号');
+},20_000);
+
+it('cleans up the writer lock when SIGTERM interrupts a confirmation', () => {
+ try {
+  const result=terminal(['profile','remove','plain-user','--output-format','plain'],[{wait:'确认执行以上操作',signal:'SIGTERM'}]);
+  expect(result.code).toBe(3);
+  expect(existsSync(resolve(root,'learning.lock'))).toBe(false);
+ } finally {rmSync(resolve(root,'learning.lock'),{force:true});}
+},20_000);
+
+it('prints the resolved profile name and platform in the equivalent command', async () => {
+ const result=terminal(['profile','--output-format','plain'],[{wait:'请选择操作',send:'1\n'},{wait:'账号名称',send:'gamma\n'},{wait:'选择平台',send:'1\n'}]);
+ expect(result.code).toBe(0);expect(result.screen).toContain("'--platform' 'ykt'");expect(result.screen).toContain("'gamma'");
+},20_000);
+
+it('retries an invalid interactively supplied draft path', () => {
+ const retry=terminal(['homework','apply','--output-format','plain'],[{wait:'草稿文件路径',send:resolve(root,'missing-again.yaml')+'\n'},{wait:'请重新输入',send:'\u0003'}]);
+ expect(retry.code).toBe(3);expect(retry.steps).toBe(2);
 },20_000);

@@ -16,7 +16,12 @@ spec = json.loads(sys.argv[1])
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, spec.get('columns', 80), 0, 0))
 env = dict(os.environ, CI='', TERM=spec.get('term', 'xterm-256color'))
-process = subprocess.Popen(spec['argv'], stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True)
+def attach_terminal():
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+    os.tcsetpgrp(0, os.getpgrp())
+
+process = subprocess.Popen(spec['argv'], stdin=slave, stdout=slave, stderr=slave, env=env, preexec_fn=attach_terminal)
 os.close(slave)
 data = b''
 step = 0

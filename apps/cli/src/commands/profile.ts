@@ -21,6 +21,8 @@ export function registerProfileCommands(program: Command): void {
       { name: 'name', message: '账号名称' },
       { name: 'platform', message: '选择平台', options: [{ value: 'ykt', label: '雨课堂' }, { value: 'xuetang', label: '学堂在线' }, { value: 'zhs', label: '智慧树' }] },
     ], createPrompts(getOutput(program).mode));
+    add.processedArgs[0] = name;
+    add.setOptionValueWithSource('platform', platform, add.getOptionValueSource('platform') ?? 'prompt');
     await withCliRuntime(program, true, async (runtime) => {
       const created = await addProfile(runtime.state, name, platform);
       if (created === null) {
@@ -48,6 +50,7 @@ export function registerProfileCommands(program: Command): void {
     if (inputName === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '请指定要删除的账号。', 2, ['name']);
     await withCliRuntime(program, true, async (runtime) => {
       const name = inputName ?? String(await createPrompts(getOutput(program).mode).ask({ name: 'name', message: '选择要删除的账号', options: (await listProfiles(runtime.state)).map(item => ({ value: item.name, label: `${item.name} (${item.scope.platform})` })) }));
+      remove.processedArgs[0] = name;
       const existing = await getProfile(runtime.state, name);
       if (existing === null) {
         throw new CliError('INVALID_INPUT', `unknown profile ${name}`, 2);

@@ -1,7 +1,8 @@
+import { getProfile } from '../profiles.js';
 import { confirmAction, requireConfirmation } from '../prompts.js';
 import type { Prompts } from '../prompts.js';
 import type { Job, JobStatus } from '@learning/sdk/public';
-import { CliError, formatTable } from '../output.js';
+import { CliError, formatTable, getOutput, shellQuote } from '../output.js';
 import type { Command } from 'commander';
 import { JobSchema } from '@learning/sdk/public';
 import { createLearningClient } from '@learning/sdk';
@@ -12,13 +13,11 @@ import { resolveDataDir } from '../runtime.js';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 
-function openJobStore(program: Command): SqliteStateStore | null {
+function openJobStore(program: Command): SqliteStateStore {
   const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
   const dbPath = resolve(dataDir, 'state.db');
   if (!existsSync(dbPath)) {
-    process.stderr.write('learning: local state is not initialized; run learning init first\n');
-    process.exitCode = 3;
-    return null;
+    throw new CliError('INTERACTION_REQUIRED', '本地尚未初始化。', 3, [], [`learning --home ${shellQuote(dataDir)} init`]);
   }
   return new SqliteStateStore(dbPath);
 }
@@ -30,7 +29,6 @@ export function registerJobsCommands(program: Command): void {
     .description('只读列出任务')
     .action(async () => {
       const state = openJobStore(program);
-      if (state === null) return;
       try {
         const jobs = [];
         let cursor: string | null = null;
@@ -49,11 +47,16 @@ export function registerJobsCommands(program: Command): void {
     .description('只读查看任务详情')
     .action(async (jobId: string) => {
       const state = openJobStore(program);
-      if (state === null) return;
       try {
         const stored = await state.get(`job:${jobId}`);
         if (stored === null) { throw new CliError('INVALID_INPUT', `unknown job id ${jobId}`, 2); }
         const job = JobSchema.parse(stored.value);
+        const name = program.opts<{ profile?: string }>().profile;
+        if (name !== undefined) {
+          const profile = await getProfile(state, name);
+          if (!profile) throw new CliError('INVALID_INPUT', '找不到指定账号。', 2, ['profile']);
+          if (profile.scope.profileId !== job.scope.profileId || profile.scope.platform !== job.scope.platform || profile.scope.userId !== job.scope.userId) throw new CliError('FORBIDDEN', '任务属于另一个账号。', 3, ['profile']);
+        }
         printResult(program, job, `${job.id} · ${job.kind} · ${job.status} · ${job.completed}/${job.total ?? '?'}\n${nextStep(program, job)}`);
       } finally { state.close(); }
     });
@@ -89,8 +92,15 @@ export function registerJobsCommands(program: Command): void {
             await confirmAction(program, `恢复直播任务 ${jobId} 会重新签到。`, resume.opts<{ yes?: boolean }>().yes);
             await client.jobs.resume(jobId);
           } else if (before.status === 'paused' || before.status === 'needs-input' && before.kind === 'study') await client.jobs.resume(jobId);
-          else if (!['queued', 'waiting', 'succeeded'].includes(before.status)) { process.stderr.write(`learning: ${before.status} job cannot resume without reconciliation\n`); process.exitCode = before.status === 'uncertain' || before.status === 'running' ? 5 : 3; return; }
+          else if (!['queued', 'waiting', 'succeeded'].includes(before.status)) {
+            getOutput(program).set({ job: before }, '');
+            const meta = await runtime.state.get(`job-meta:${jobId}`);
+            const pending = meta?.value && typeof meta.value === 'object' && !Array.isArray(meta.value) ? meta.value.pendingOperationId : null;
+            const uncertain = before.status === 'uncertain' || before.status === 'running';
+            throw new CliError(uncertain ? 'UNCERTAIN' : 'INTERACTION_REQUIRED', `任务状态为 ${before.status}，不能直接恢复。`, uncertain ? 5 : 3, ['jobId'], [nextStep(program, before)].filter(Boolean), typeof pending === 'string' ? pending : null);
+          }
           const job = await runJobForeground(client, runtime, jobId);
+          getOutput(program).set({ job, files: [] }, '');
           const files = job.kind === 'export' ? await publishJobArtifacts(runtime, job, dataDir) : [];
           if (job.status === 'partial') process.exitCode = 4;
           else if (job.status === 'uncertain') process.exitCode = 5;

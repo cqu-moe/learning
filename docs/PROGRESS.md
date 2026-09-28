@@ -414,3 +414,13 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 原打包测试遗漏 Clack 等依赖的软链接，已换成实际离线 tarball 安装。固定 pnpm11 不读取 package.json.pnpm.overrides，按官方文档改到消费者 pnpm-workspace.yaml；SDK/CLI 分别读取版本。离线完整消费者安装与二维码/课程/导出/Range 恢复均通过。
 - Node v24.11.1 / pnpm11.19.0 / macOS：pnpm install --frozen-lockfile、pnpm lint、pnpm typecheck、pnpm test（SDK233/233、CLI84/84）、pnpm build、pnpm test:e2e（7/7）、boundaries、source-lock、git diff --check 均 exit 0。3 份固定参考仓以只读软链接复用；未修改参考源码。
 - 未执行真实平台登录/学习/答题/发帖、任何真实考试或付费模型。既有字体、20 秒硬工作片及真实多 GiB 等证据缺口不因此完成。下一步：独立整分支评审并修复重要问题，然后交付；未推送或合并。
+
+### 2026-09-28 · CLI 0.2 独立评审修复与交付
+
+- 独立整分支评审提出 1 项 P1、5 项 P2、1 项 P3，全部修复。题目到期只取消发送前的提示，不再吞掉已进入 execute 的 UNCERTAIN；原始操作 ID 与核对信息保留。
+- 提示/前台循环共享调用级取消信号；SIGTERM 经 finally 释放锁；取消第一阶段后不启动第二个导出任务。plain 使用终端自身的行编辑，不输出 readline 的 ANSI。PTY 测试使用真正的控制终端验证 Ctrl+C。
+- jobs show 拒绝显式冲突账号；jobs list 未初始化及 jobs resume 不可恢复均走结构化错误通道，保留任务、操作 ID 和下一步。交互草稿路径的存在性/普通文件/大小/格式错误原地重填；等价命令保留最终补填值。
+- 新增评审回归先观察 8 个失败断言，再修复为通过；最后实际运行 Node24.11.1/pnpm11.19.0/macOS 的 lint、typecheck、test（SDK233/233、CLI92/92）、build、test:e2e（真实离线打包消费者 7/7）、boundaries、source-lock、git diff --check，全部 exit 0。先前 frozen-lockfile 安装已通过，评审修复未改依赖。
+- 本轮工程裁定：保留 Node 自身的 SQLite stderr 警告；输出引导只扫描已登记选项的参数个数，Commander 仍为唯一命令解析器；按 Commander 元数据复用补参 schema；SDK 只新增已有逻辑的 parseLearningDraft 纯导出；PTY 验证提前进入交互步骤；消费者 overrides 使用 pnpm11 的 YAML 配置；双模式真实计时测试使用 15s/40s 预算，协议断言不变。任务标题改为 Task N 仅适配执行工具。
+- 将等价命令缺参从评审 P3 按 P2 修复，因为复制后会丢失已选择的账号/目标，不能复现操作。本轮无遗留评审项；修复后按流程以失败回归和完整门禁验证，未再发起第二轮评审。
+- 实现位于 codex/cli-ux 隔离分支。未运行真实平台、任何真实考试或付费模型；原 SDK/平台证据缺口保持原状态。下一步由用户选择本地合并 main、推送 PR 或保留分支；尚未合并/推送。

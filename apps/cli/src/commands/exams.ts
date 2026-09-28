@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { CliError, getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
-import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
@@ -54,7 +54,7 @@ export function registerExamCommands(program: Command): void {
         const preview = await client.actions.prepare({ kind: 'exam.save', draft });
         if (options.dryRun) { printResult(program, preview, `exam ${draft.ref.assessmentId} save previewed; no final submission`); return; }
         await confirmAction(program, `账号：${profile.name}，保存试卷 ${draft.ref.assessmentId} 的答案，不交卷。`, options.yes);
-        const receipt = await client.actions.execute(preview.id);
+        const receipt = await executeAction(getOutput(program), client, preview.id);
         printResult(program, receipt, `exam answers saved: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
     });
@@ -79,7 +79,7 @@ export function registerExamCommands(program: Command): void {
         const preview = await client.actions.prepare({ kind: 'exam.start', ref: refs[0]! });
         if (options.dryRun) { printResult(program, preview, `exam ${refs[0]!.assessmentId} start previewed; timer may begin`); return; }
         await confirmAction(program, `账号：${profile.name}，打开试卷 ${refs[0]!.assessmentId}，可能开始计时。`, options.yes);
-        const receipt = await client.actions.execute(preview.id);
+        const receipt = await executeAction(getOutput(program), client, preview.id);
         printResult(program, receipt, `exam start: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
     });
@@ -137,7 +137,7 @@ export function registerExamCommands(program: Command): void {
           if (options.dryRun) { printResult(program, preview, 'final submission previewed'); return; }
           await confirmAction(program, `账号：${profile.name}，最终提交试卷 ${draft.ref.assessmentId}，提交后不能视为普通保存。`, options.yes);
           if (!options.final) await confirmAction(program, '再次确认：最终交卷，结束本次考试？此确认等价于 --final。', false);
-          const receipt = await client.actions.execute(preview.id);
+          const receipt = await executeAction(getOutput(program), client, preview.id);
           printResult(program, receipt, `final submission: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
         } finally { await client.close(); }
       });

@@ -44,7 +44,9 @@ export function registerDownloadCommands(program: Command): void {
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         key ??= await chooseTarget(client, runtime, createPrompts(getOutput(program).mode), ['video', 'homework', 'exam']);
+        download.processedArgs[0] = key;
         const outputRoot = resolve(options.outputDir ?? (await readPreferences(runtime.state)).downloadDir ?? resolve(dataDir, 'exports'));
+        if (options.outputDir === undefined) download.setOptionValueWithSource('outputDir', outputRoot, 'inferred');
         const cachedResource = await runtime.state.get(resourceCacheKey(key));
         let resources: Array<{ kind: string; ref: ResourceRef }>;
         if (cachedResource !== null) {
@@ -79,6 +81,7 @@ export function registerDownloadCommands(program: Command): void {
         }
         const jobs = [];
         const files: string[] = [];
+        getOutput(program).assertActive();
         if (media.length > 0) {
           const created = await client.jobs.createExport({ type: 'media', resources: media, quality: options.quality as 'best' | 'hd' | 'sd', subtitles: options.subtitles === true });
           await setJobOutputRoot(runtime.state, created.id, outputRoot);
@@ -86,7 +89,7 @@ export function registerDownloadCommands(program: Command): void {
           jobs.push(job);
           files.push(...await publishJobArtifacts(runtime, job, dataDir));
         }
-        if (assessments.length > 0) {
+        if (assessments.length > 0 && !getOutput(program).signal.aborted) {
           const created = await client.jobs.createExport({ type: 'assessments', refs: assessments, format: 'json' });
           await setJobOutputRoot(runtime.state, created.id, outputRoot);
           const job = await runJobForeground(client, runtime, created.id);
@@ -97,7 +100,7 @@ export function registerDownloadCommands(program: Command): void {
         else if (jobs.some((job) => job.status === 'partial')) process.exitCode = 4;
         else if (jobs.some((job) => job.status !== 'succeeded')) process.exitCode = 3;
         const result = jobs.length === 1 ? { job: jobs[0], files } : { jobs, files };
-        printResult(program, result, `${jobs.map((job) => `${job.id}: ${job.status}`).join('\n')}\n${files.join('\n')}`);
+        printResult(program, result, `${getOutput(program).signal.aborted ? '已取消，保留任务记录与已完成文件。\n' : ''}${jobs.map((job) => `${job.id}: ${job.status}`).join('\n')}\n${files.join('\n')}`);
       } finally { await client.close(); }
     });
   });

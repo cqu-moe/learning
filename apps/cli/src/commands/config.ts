@@ -17,7 +17,8 @@ export function registerConfigCommands(program: Command): void {
       printResult(program, preferences, `默认账号 ID：${preferences.defaultProfileId ?? '未设置'}\n下载目录：${preferences.downloadDir ?? '数据目录下的 exports'}`);
     });
   });
-  config.command('set [key] [value]').description('明确保存一项偏好').action(async (key?: string, value?: string) => {
+  const set = config.command('set [key] [value]').description('明确保存一项偏好');
+  set.action(async (key?: string, value?: string) => {
     const input = await fillMissing(z.object({ key: keySchema, value: z.string().min(1) }), { ...(key === undefined ? {} : { key }), ...(value === undefined ? {} : { value }) }, fields, createPrompts(getOutput(program).mode));
     await withCliRuntime(program, true, async runtime => {
       let patch;
@@ -25,14 +26,17 @@ export function registerConfigCommands(program: Command): void {
       else patch = { downloadDir: resolve(input.value) };
       if (isWizard(program)) await confirmAction(program, `保存 ${input.key} = ${input.value}`, false);
       const result = await savePreferences(runtime.state, patch);
+      set.processedArgs = [input.key, input.key === 'download-dir' ? result.downloadDir : input.value];
       printResult(program, result, `已保存 ${input.key}。`);
     });
   });
-  config.command('unset [key]').description('清除一项已保存的偏好').action(async (key?: string) => {
+  const unset = config.command('unset [key]').description('清除一项已保存的偏好');
+  unset.action(async (key?: string) => {
     const input = await fillMissing(z.object({ key: keySchema }), key === undefined ? {} : { key }, fields, createPrompts(getOutput(program).mode));
     await withCliRuntime(program, true, async runtime => {
       if (isWizard(program)) await confirmAction(program, `清除 ${input.key}`, false);
       const result = await savePreferences(runtime.state, input.key === 'default-profile' ? { defaultProfileId: null } : { downloadDir: null });
+      unset.processedArgs = [input.key];
       printResult(program, result, `已清除 ${input.key}。`);
     });
   });

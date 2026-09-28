@@ -4,7 +4,7 @@ import { isWizard } from '../wizard.js';
 import type { Command } from 'commander';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, DiscussionDraftSchema, LearningError, ResourceRefSchema } from '@learning/sdk';
-import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 
 export function registerDiscussCommands(program: Command): void {
@@ -60,7 +60,7 @@ export function registerDiscussCommands(program: Command): void {
         if (options.dryRun) { getOutput(program).set(preview, summary, 'preview'); return; }
         getOutput(program).set(preview, '', 'preview');
         await confirmAction(program, summary, options.yes);
-        const receipt = await client.actions.execute(preview.id);
+        const receipt = await executeAction(getOutput(program), client, preview.id);
         printResult(program, receipt, `discussion post: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
     });

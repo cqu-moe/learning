@@ -45,6 +45,7 @@ export function registerLoginCommands(program: Command): void {
       const method = await prompts.ask({ name: 'method', message: '选择登录方式', options: [{ value: 'qr', label: '扫描二维码' }, { value: 'import', label: '导入本地 Cookie 文件' }] });
       if (method === 'import') options.import = String(await prompts.ask({ name: 'file', message: 'Cookie 文件路径', validate: value => typeof value === 'string' && value.length > 0 ? undefined : '请输入文件路径。' }));
     }
+    if (options.import !== undefined && login.getOptionValueSource('import') !== 'cli') login.setOptionValueWithSource('import', options.import, 'prompt');
     if (!output.mode.interactive && options.import === undefined && options.qrFile === undefined) throw new CliError('INTERACTION_REQUIRED', '扫码需要人工操作；自动化请明确使用 --import 或 --qr-file。', 3);
     await withCliRuntime(program, true, async (runtime, dataDir) => {
       const profile = await selectProfile(program, runtime);

@@ -16,6 +16,7 @@ export function registerSlideCommand(program: Command): void {
   slide.action(async (value?: string) => {
     if (!['pdf', 'images'].includes(slide.opts<{ format: string }>().format)) throw new LearningError({ code: 'INVALID_INPUT', message: '课件格式必须为 pdf 或 images。', retryAfterMs: null, operationId: null });
     const { url } = await fillMissing(z.object({ url: z.url() }), value === undefined ? {} : { url: value }, [{ name: 'url', message: '课件 URL' }], createPrompts(getOutput(program).mode));
+    slide.processedArgs[0] = url;
     await askDefaults(slide, [{ name: 'format', message: '课件格式', options: [{ value: 'pdf', label: 'PDF' }, { value: 'images', label: '图片' }] }], isWizard(program));
     const format = slide.opts<{ format: string }>().format;
     if (format !== 'pdf' && format !== 'images') throw new LearningError({ code: 'INVALID_INPUT', message: 'slide format must be pdf or images', retryAfterMs: null, operationId: null });
@@ -25,7 +26,9 @@ export function registerSlideCommand(program: Command): void {
       try {
         const lesson = await client.resources.resolveLesson(url);
         const created = await client.jobs.createExport({ type: 'slides', lessons: [lesson], format, liveJobId: null });
-        await setJobOutputRoot(runtime.state, created.id, resolve(slide.opts<{ outputDir?: string }>().outputDir ?? (await readPreferences(runtime.state)).downloadDir ?? resolve(dataDir, 'exports')));
+        const outputRoot = resolve(slide.opts<{ outputDir?: string }>().outputDir ?? (await readPreferences(runtime.state)).downloadDir ?? resolve(dataDir, 'exports'));
+        if (slide.opts().outputDir === undefined) slide.setOptionValueWithSource('outputDir', outputRoot, 'inferred');
+        await setJobOutputRoot(runtime.state, created.id, outputRoot);
         const finished = await runJobForeground(client, runtime, created.id);
         const files = await publishJobArtifacts(runtime, finished, dataDir);
         if (finished.status === 'partial') process.exitCode = 4;
