@@ -458,3 +458,7 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户确认试用后授权合并。首页循环提交 1cee5e7，codex/cli-ux 从 bbb4a3d 快进合入本地 main；主目录原先未提交的访谈与交付记录逐段核对后完整保留。未推送远端。
 - 合并前完整 pnpm test 通过 SDK233/CLI99。合并后在主目录使用 Node24.11.1/pnpm11.19.0，实际运行 install --offline --frozen-lockfile、lint、typecheck、test（SDK233/CLI99）、test:e2e（7/7）、boundaries、source-lock、git diff --check，全部 exit 0。CLI test 已重建主目录 dist；现有 ~/.local/bin/learning --version 返回 0.2.0，exit 0。
 - 保留试用工作树及分支供已有 learning-ux 函数使用；不改用户试用数据，不操作其他工作树。未运行真实平台业务。下一步为用户继续使用，既有 SDK/平台验收缺口维持原状态。
+
+### 2026-09-29 · CLI UX 推送
+
+- 用户明确授权推送；核对当前分支 main、工作区干净、origin 为 cqu-moe/learning 后，执行 git push origin main，exit 0，远端由 8b8d41f 前进至 0656411。本次没有产品代码变更，沿用上一条合并验证结果，未重复运行测试或访问真实平台。
