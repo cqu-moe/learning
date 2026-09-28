@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { CommanderError } from 'commander';
-import { createProgram } from './program.js';
-import { bindOutput, CliError, createOutput, resolveOutputMode } from './output.js';
+import { captureWarnings } from './warnings.js';
 import type { Command } from 'commander';
 
+const runtimeWarnings = captureWarnings();
+const [{ CommanderError }, { createProgram }, { bindOutput, CliError, createOutput, resolveOutputMode }] = await Promise.all([import('commander'), import('./program.js'), import('./output.js')]);
 const program = createProgram();
 const argv = process.argv.slice(2);
 // Only bootstrap output flags for errors that occur before Commander reaches them.
@@ -21,6 +21,8 @@ for (let i = 0; i < argv.length; i++) {
 }
 const output = createOutput(resolveOutputMode(flags));
 bindOutput(program, output);
+runtimeWarnings.attach(output.recordWarning);
+await runtimeWarnings.drain();
 process.on('SIGINT', output.markCanceled);
 process.on('SIGTERM', output.markCanceled);
 if (!output.mode.color) { process.env.NO_COLOR = '1'; delete process.env.FORCE_COLOR; }
@@ -38,10 +40,12 @@ try {
   if (flags.json && flags.outputFormat !== undefined && flags.outputFormat !== 'json') throw new CliError('INVALID_INPUT', '--json 与 --output-format 冲突。');
   if (flags.outputFormat !== undefined && !['pretty','plain','json','jsonl'].includes(String(flags.outputFormat))) throw new CliError('INVALID_INPUT', '输出格式必须为 pretty、plain、json 或 jsonl。');
   await program.parseAsync(argv, { from: 'user' });
+  await runtimeWarnings.drain();
   await output.finish();
 } catch (error) {
+  await runtimeWarnings.drain();
   if (error instanceof CommanderError && error.exitCode === 0) {
     output.set({ text: help.trim() }, help.trim());
     await output.finish();
   } else await output.finish(error instanceof CommanderError ? new CliError('INVALID_INPUT', error.message) : error);
-} finally { process.off('SIGINT', output.markCanceled); process.off('SIGTERM', output.markCanceled); output.close(); }
+} finally { process.off('SIGINT', output.markCanceled); process.off('SIGTERM', output.markCanceled); output.close(); runtimeWarnings.close(); }

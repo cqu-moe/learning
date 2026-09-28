@@ -1,7 +1,7 @@
 import * as clack from '@clack/prompts';
 import { createInterface } from 'node:readline/promises';
 import { z } from 'zod';
-import { CliError, cleanText, getOutput, pauseProgress, commandSignal, errorInfo } from './output.js';
+import { CliError, cleanText, getOutput, pauseProgress, commandSignal, errorInfo, beginPrompt, endPrompt } from './output.js';
 import type { OutputMode } from './output.js';
 import type { Command } from 'commander';
 
@@ -9,7 +9,7 @@ export type Choice = { value: string; label: string; hint?: string };
 export type PromptField = { name: string; message: string; options?: Choice[]; initialValue?: string; multiple?: boolean; confirm?: boolean; validate?: (value: unknown) => string | undefined };
 export function createPrompts(mode: OutputMode) {
   clack.updateSettings({ messages: { cancel: '已取消', error: '操作失败' } });
-  const ask = async (field: PromptField, signal?: AbortSignal): Promise<unknown> => {
+  const askValue = async (field: PromptField, signal?: AbortSignal): Promise<unknown> => {
     const parent = commandSignal(mode);
     signal = parent && signal ? AbortSignal.any([parent, signal]) : parent ?? signal;
     if (signal?.aborted) throw new CliError('CANCELED', '操作已取消。', 3);
@@ -52,6 +52,11 @@ export function createPrompts(mode: OutputMode) {
       }
     } catch (error) { if (controller.signal.aborted) throw new CliError('CANCELED', '操作已取消。', 3); throw error; }
     finally { input.close(); signal?.removeEventListener('abort', cancel); }
+  };
+  const ask = async (field: PromptField, signal?: AbortSignal): Promise<unknown> => {
+    await beginPrompt(mode);
+    try { return await askValue(field, signal); }
+    finally { await endPrompt(mode); }
   };
   return { interactive: mode.interactive, ask };
 }

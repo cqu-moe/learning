@@ -46,6 +46,9 @@ export function errorInfo(error: unknown): { error: z.infer<typeof ErrorSchema>;
   const hints: Record<string, string[]> = { INVALID_INPUT: ['运行对应命令 --help 查看参数。'], AUTH_REQUIRED: ['请先运行 learning login --profile <账号>。'], AUTH_EXPIRED: ['登录已过期，请重新登录。'], UNCERTAIN: [data?.operationId ? `先核对结果，勿重复提交：learning operations reconcile ${shellQuote(data.operationId)}` : '先核对不确定写入的操作记录，勿重复提交。'], CONFLICT: ['确认其他写入进程已退出后再继续；不要删除密钥或数据库。'], MISSING_RUNTIME: ['运行 learning doctor 检查本地依赖。'], CANCELED: ['操作已取消；已执行的写入不会回滚。'] };
   return { exitCode, error: { code, message: cleanText(error instanceof CliError ? error.message : data?.message ?? '发生本地错误，请使用 --debug 查看错误类别。'), hint: error instanceof CliError && error.hint.length ? error.hint : hints[code] ?? [], fields: error instanceof CliError ? error.fields : [], operationId: error instanceof CliError ? error.operationId : data?.operationId ?? null, retryAfterMs: data?.retryAfterMs ?? null } };
 }
+const promptBoundaries = new WeakMap<OutputMode, { begin: () => Promise<void>; end: () => Promise<void> }>();
+export async function beginPrompt(mode: OutputMode): Promise<void> { await promptBoundaries.get(mode)?.begin(); }
+export async function endPrompt(mode: OutputMode): Promise<void> { await promptBoundaries.get(mode)?.end(); }
 const progressPauses = new WeakMap<OutputMode, () => void>();
 const commandSignals = new WeakMap<OutputMode, AbortSignal>();
 export function commandSignal(mode: OutputMode): AbortSignal | undefined { return commandSignals.get(mode); }
@@ -62,9 +65,13 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   let indicator: ReturnType<typeof spinner> | null = null;
   let lastProgressAt = 0;
   let lastPhase = '';
+  let indicatorText = '';
+  let promptDepth = 0;
   const pause = () => { indicator?.clear(); indicator = null; };
   progressPauses.set(mode, pause);
   const warnings: Array<z.infer<typeof WarningSchema>> = [];
+  const pendingWarnings: Array<z.infer<typeof WarningSchema>> = [];
+  const warningKeys = new Set<string>();
   const abort = new AbortController();
   const work = new AbortController();
   commandSignals.set(mode, work.signal);
@@ -86,21 +93,55 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     if (sequence === 0 && input.type !== 'start') await line({ type: 'start', data: null });
     await line(input);
   };
+  const recordWarning = (code: string, message: string): void => {
+    const warning = WarningSchema.parse({ code: cleanText(code), message: cleanText(message) });
+    const key = JSON.stringify(warning);
+    if (warningKeys.has(key)) return;
+    warningKeys.add(key); warnings.push(warning); pendingWarnings.push(warning);
+  };
+  let warningFlush = Promise.resolve();
+  const flushWarnings = (): Promise<void> => {
+    const next = warningFlush.then(async () => {
+      if (promptDepth > 0 || pendingWarnings.length === 0) return;
+      const restore = indicator !== null ? indicatorText : null;
+      pause();
+      while (pendingWarnings.length > 0) {
+        const warning = pendingWarnings.shift()!;
+        await event({ type: 'warning', data: warning });
+        if (!machine) await write(streams.stderr, `警告 [${warning.code}] ${warning.message}\n`);
+      }
+      if (restore !== null && !finished && !work.signal.aborted) {
+        indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(restore);
+      }
+    });
+    // Return the rejection to this caller while keeping later flushes usable.
+    warningFlush = next.catch(() => {});
+    return next;
+  };
+  const startPrompt = async () => { await flushWarnings(); pause(); promptDepth++; };
+  const stopPrompt = async () => { promptDepth--; await flushWarnings(); };
+  promptBoundaries.set(mode, { begin: startPrompt, end: stopPrompt });
   return {
     mode, signal: work.signal as AbortSignal,
+    recordWarning, flushWarnings, beginPrompt: startPrompt, endPrompt: stopPrompt,
     setHome(value: string) { home = value; },
     markCanceled: cancel,
     assertActive() { if (work.signal.aborted) throw new CliError('CANCELED', '操作已取消。', 3); },
     setCommand(value: string) { command = value; },
-    set(value: unknown, text: string, nextStatus?: CliResult['status']) { data = value; human = cleanText(text); status = nextStatus; },
+    set(value: unknown, text: string, nextStatus?: CliResult['status']) {
+      data = value; human = cleanText(text); status = nextStatus;
+      if (value !== null && typeof value === 'object' && 'warnings' in value && Array.isArray(value.warnings)) for (const item of WarningSchema.array().parse(value.warnings)) recordWarning(item.code, item.message);
+    },
     event,
     pauseProgress: pause,
     activity(message: string) {
       if (mode.format !== 'pretty' || mode.quiet) return;
+      indicatorText = cleanText(message);
       if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(cleanText(message)); }
       else indicator.message(cleanText(message));
     },
     async progress(value: Extract<CliEvent, { type: 'progress' }>['data']) {
+      await flushWarnings();
       await event({ type: 'progress', data: value });
       if (machine || mode.quiet) return;
       const phase = `${value.jobId}:${value.status}:${value.resourceKey ?? ''}`;
@@ -109,16 +150,18 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       lastPhase = phase; lastProgressAt = Date.now();
       const states: Record<string, string> = { queued: '已排队', running: '进行中', waiting: '等待下一阶段', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
       const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${value.resourceKey === null ? '' : ` · ${value.resourceKey}`}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
+      indicatorText = text;
       if (mode.format === 'pretty' && ['queued','running','waiting'].includes(value.status)) {
         if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(text); } else indicator.message(text);
       } else { pause(); await write(streams.stderr, cleanText(text) + '\n'); }
     },
-    async message(text: string, essential = false) { if (!machine && (!mode.quiet || essential)) await write(streams.stderr, cleanText(text) + '\n'); },
-    async warning(code: string, message: string) { const warning = { code, message: cleanText(message) }; warnings.push(warning); await event({ type: 'warning', data: warning }); if (!machine) await write(streams.stderr, `警告 [${code}] ${warning.message}\n`); },
+    async message(text: string, essential = false) { await flushWarnings(); if (!machine && (!mode.quiet || essential)) await write(streams.stderr, cleanText(text) + '\n'); },
+    async warning(code: string, message: string) { recordWarning(code, message); await flushWarnings(); },
     async finish(error?: unknown) {
       if (finished) return;
       finished = true;
       pause();
+      await flushWarnings();
       const info = error === undefined ? null : errorInfo(error);
       const exitCode = info?.exitCode ?? Number(process.exitCode ?? 0);
       process.exitCode = exitCode;
@@ -139,7 +182,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       else { if (human) await write(streams.stdout, human + '\n'); if (info) await write(streams.stderr, `${mode.color ? styleText(['red','bold'], '错误', {stream: process.stderr}) : '错误'} [${info.error.code}] ${info.error.message}\n`); if (result.error?.hint.length) await write(streams.stderr, result.error.hint.join('\n') + '\n'); }
       if (mode.debug && error !== undefined) await write(streams.stderr, JSON.stringify({ diagnostic: error instanceof Error ? error.name : typeof error, code: info?.error.code }) + '\n');
     },
-    close() { pause(); commandSignals.delete(mode); progressPauses.delete(mode); streams.stdout.off('error', onError); streams.stderr.off('error', onError); },
+    close() { pause(); promptBoundaries.delete(mode); commandSignals.delete(mode); progressPauses.delete(mode); streams.stdout.off('error', onError); streams.stderr.off('error', onError); },
   };
 }
 export type Output = ReturnType<typeof createOutput>;

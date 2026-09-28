@@ -4,7 +4,7 @@ import { isWizard } from '../wizard.js';
 import type { Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { CourseRef, OutlineNode, ResourceRef } from '@learning/sdk/public';
-import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction } from '../context.js';
 import { resourceCacheKey, chooseTarget } from './catalog.js';
 import { runJobForeground } from '../foreground.js';
 
@@ -50,7 +50,7 @@ export function registerRunCommands(program: Command): void {
             course = CourseSchema.parse(cachedCourse.value).ref;
           }
           if (course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'course belongs to another profile', retryAfterMs: null, operationId: null });
-          resources = studyResources((await client.catalog.outline(course)).value.roots, profile.scope.platform === 'ykt');
+          resources = studyResources(unwrapResult(program, await client.catalog.outline(course)).roots, profile.scope.platform === 'ykt');
         }
         if (resources.length === 0 || resources.some((resource) => resource.course.scope.profileId !== profile.scope.profileId)) {
           throw new LearningError({ code: 'INVALID_INPUT', message: 'no study resources in this profile were selected', retryAfterMs: null, operationId: null });

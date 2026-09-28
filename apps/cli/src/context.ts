@@ -1,4 +1,4 @@
-import type { LearningClient, Execution } from '@learning/sdk';
+import type { LearningClient, Execution, Result } from '@learning/sdk';
 import { CourseSchema, ResourceRefSchema, JobSchema, parseLearningDraft, DiscussionDraftSchema } from '@learning/sdk';
 import { SqliteStateStore } from '@learning/sdk/node';
 import { lstat, readFile } from 'node:fs/promises';
@@ -34,6 +34,7 @@ export async function withCliRuntime(
   }
   try {
     const runtime: CliRuntime = Object.assign(createCliRuntime(dataDir), { output: getOutput(program) });
+    runtime.log = event => { if (event.level === 'warn') getOutput(program).recordWarning(typeof event.fields.code === 'string' ? event.fields.code : 'SDK_WARNING', event.message); };
     try {
       await action(runtime, dataDir);
     } finally {
@@ -111,4 +112,9 @@ export async function inferTargetScope(program: Command, argument: string | unde
 export async function executeAction(output: Output, client: LearningClient, previewId: string): Promise<Execution> {
   output.assertActive();
   return client.actions.execute(previewId);
+}
+
+export function unwrapResult<T>(program: Command, result: Result<T>): T {
+  for (const warning of result.warnings) getOutput(program).recordWarning(warning.code, warning.message);
+  return result.value;
 }

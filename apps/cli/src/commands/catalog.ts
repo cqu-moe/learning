@@ -61,7 +61,7 @@ export function registerCatalogCommands(program: Command): void {
         const clients = profiles.map((profile) => createLearningClient({ scope: profile.scope, runtime }));
         try {
           const results = await aggregateCourses(clients);
-          for (const result of results) if ('page' in result) await cacheCourses(runtime, result.page.items);
+          for (const result of results) if ('page' in result) { await cacheCourses(runtime, result.page.items); for (const warning of result.page.warnings) getOutput(program).recordWarning(warning.code, warning.message); }
           if (results.some((result) => 'error' in result)) process.exitCode = 4;
           printResult(program, { results }, results.map((result, i) => 'page' in result
             ? `${profiles[i]?.name}: ${result.page.items.length} courses (${result.page.completeness})`
@@ -125,6 +125,7 @@ export async function chooseCourse(client: LearningClient, runtime: CliRuntime, 
       if (course.ref.scope.profileId !== client.scope.profileId) throw new CliError('FORBIDDEN', '课程列表包含其他账号的数据。', 3);
       if (!courses.some(item => item.ref.key === course.ref.key)) courses.push(course);
     }
+    for (const warning of page.warnings) runtime.output?.recordWarning(warning.code, warning.message);
     await cacheCourses(runtime, page.items);
     if (!courses.length && !page.nextCursor) throw new CliError('INTERACTION_REQUIRED', '没有可选择的课程，请检查账号登录状态。', 3);
     const more = page.completeness === 'more' && page.nextCursor !== null && !cursors.has(page.nextCursor);
@@ -141,6 +142,7 @@ export async function chooseCourse(client: LearningClient, runtime: CliRuntime, 
 export async function chooseResource(client: LearningClient, runtime: CliRuntime, prompts: Prompts, kinds: ResourceKind[]): Promise<ResourceRef> {
   const course = await chooseCourse(client, runtime, prompts);
   const outline = await client.catalog.outline(course);
+  for (const warning of outline.warnings) runtime.output?.recordWarning(warning.code, warning.message);
   await cacheResources(runtime, outline.value.roots);
   const flatten = (nodes: OutlineNode[]): Resource[] => nodes.flatMap(node => [...node.resources, ...flatten(node.children)]);
   const resources = flatten(outline.value.roots).filter(resource => kinds.includes(resource.kind) && resource.locked !== true);

@@ -3,7 +3,7 @@ import { getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
-import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 
 export function registerHomeworkCommands(program: Command): void {
@@ -47,7 +47,7 @@ export function registerHomeworkCommands(program: Command): void {
         const client = createLearningClient({ scope: profile.scope, runtime });
         try {
           const imported = await client.assessments.importDraft(text, 'learning');
-          const draft = imported.value;
+          const draft = unwrapResult(program, imported);
           if (draft.ref.kind !== 'homework' && draft.ref.kind !== 'embedded') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not homework or embedded exercise', retryAfterMs: null, operationId: null });
           const answered = draft.entries.filter((entry) => entry.answer.kind !== 'unset');
           if (answered.length === 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'draft contains no answers to submit', retryAfterMs: null, operationId: null });

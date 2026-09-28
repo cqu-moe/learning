@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, exportDraftYaml, LearningError } from '@learning/sdk';
-import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
 
 async function readSmallFile(path: string): Promise<string> {
   const info = await lstat(path);
@@ -23,7 +23,7 @@ export function registerAnswersCommands(program: Command): void {
       const profile = await selectProfile(program, runtime);
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
-        const draft = (await client.assessments.importDraft(await readSmallFile(path), 'learning')).value;
+        const draft = unwrapResult(program, await client.assessments.importDraft(await readSmallFile(path), 'learning'));
         const sources = [];
         for (const source of options.source) sources.push(await client.assessments.importFeedback(await readSmallFile(source), draft.ref));
         const matches = await client.assessments.match(draft, sources);

@@ -117,3 +117,19 @@ it('retries an invalid interactively supplied draft path', () => {
  const retry=terminal(['homework','apply','--output-format','plain'],[{wait:'草稿文件路径',send:resolve(root,'missing-again.yaml')+'\n'},{wait:'请重新输入',send:'\u0003'}]);
  expect(retry.code).toBe(3);expect(retry.steps).toBe(2);
 },20_000);
+
+it('routes startup and mid-menu warnings without writing inside the active frame', () => {
+ const result = spawnSync('python3', [driver, JSON.stringify({ argv: [process.execPath, '--import', resolve(import.meta.dirname,'helpers/menu-warnings.mjs'), cli, '--home', root], columns: 80, rows: 30, env: {NODE_OPTIONS:'',NODE_NO_WARNINGS:'0',NO_COLOR:'1'}, steps: [{wait:'Type:',send:'\u001b[B'},{wait:'Type:',occurrences:2,send:'\u0003'}] })], {encoding:'utf8',timeout:15_000});
+ expect(result.status,result.stderr).toBe(0);
+ const data = JSON.parse(result.stdout) as {code:number;steps:number;snapshots:string[];screen:string};
+ expect(data.code).toBe(3);expect(data.steps).toBe(2);
+ const trace = data.snapshots[1]!;
+ expect(trace).toContain('● doctor');
+ expect(trace).not.toContain('(node:');
+ expect(trace.indexOf('警告 [ExperimentalWarning]')).toBeGreaterThanOrEqual(0);
+ expect(trace.indexOf('警告 [ExperimentalWarning]')).toBeLessThan(trace.indexOf('\u001b[?25l'));
+ expect(trace).not.toContain('方向键操作期间');
+ expect(data.screen).toContain('警告 [MENU_RUNTIME]');
+ expect(data.screen).toContain('警告 [CONSOLE_WARNING]');
+ expect(data.screen).not.toContain('(node:');
+},20_000);

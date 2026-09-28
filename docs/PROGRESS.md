@@ -424,3 +424,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 本轮工程裁定：保留 Node 自身的 SQLite stderr 警告；输出引导只扫描已登记选项的参数个数，Commander 仍为唯一命令解析器；按 Commander 元数据复用补参 schema；SDK 只新增已有逻辑的 parseLearningDraft 纯导出；PTY 验证提前进入交互步骤；消费者 overrides 使用 pnpm11 的 YAML 配置；双模式真实计时测试使用 15s/40s 预算，协议断言不变。任务标题改为 Task N 仅适配执行工具。
 - 将等价命令缺参从评审 P3 按 P2 修复，因为复制后会丢失已选择的账号/目标，不能复现操作。本轮无遗留评审项；修复后按流程以失败回归和完整门禁验证，未再发起第二轮评审。
 - 实现位于 codex/cli-ux 隔离分支。未运行真实平台、任何真实考试或付费模型；原 SDK/平台证据缺口保持原状态。下一步由用户选择本地合并 main、推送 PR 或保留分支；尚未合并/推送。
+
+### 2026-09-28 · 用户试用菜单重绘故障与统一警告
+
+- 复现方向键后 Search/init 残留：Node 的 SQLite ExperimentalWarning 在 Clack 首帧之后直接写 stderr，移动了光标，使重绘清除位置偏移。原先“保留 Node 原始 stderr 警告”的裁定被用户明确要求统一处理所替代。
+- 在加载应用依赖前收集 Node warning 和 console.warn；SDK runtime.log、Result/Job 警告进入同一队列。输入期间暂存，提示结束统一展示；进度展示先清理 spinner 再打印。JSON 收入 warnings，JSONL 输出 warning 事件；机器模式不再漏原始 Node 警告。只取警告 code/message，不输出 SDK 日志私有 fields；同 code/message 在一次调用内合并。
+- 回归先观察 5 项失败及 Result 解包警告缺失，再修复。真实 PTY 注入方向键期间的 Node/console 警告；本机 pyte 还原 80×30、56×30、32×20 的可见屏幕，均仅一个 Search，doctor 高亮且输入区无插入警告。pyte 仅用于本次诊断，未增加项目依赖。
+- Node24.11.1：lint、typecheck、CLI97/97、打包 E2E7/7、boundaries、git diff --check 全部 exit 0；修复主体阶段还运行 SDK233/233。已重建 apps/cli/dist，现有 learning-ux 函数重新启动即可使用。未合并/推送，未访问真实平台。

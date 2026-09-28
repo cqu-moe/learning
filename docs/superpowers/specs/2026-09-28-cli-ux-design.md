@@ -86,7 +86,7 @@ CLI 局部 schema 放在 apps/cli，不能为了 UI DTO 扩大 SDK public API。
 
 保留退出码：0 成功/显式 dry-run；1 普通失败；2 输入错误；3 需登录、人工处理、未支持或用户取消；4 部分失败；5 不确定写入。SDK 报错优先于美化，操作 ID 必须保留。未确认写入返回 3 + CONFIRMATION_REQUIRED；缺参/参数错误返回 2 + INVALID_INPUT；用户取消返回 3 + CANCELED。partial/uncertain 即便有 data 也不算成功。
 
-JSON stdout 恰好一行最终结果，非 debug 下 CLI 不写 stderr；Node 自身的 SQLite ExperimentalWarning 等运行时诊断仍可能出现，机器消费者只解析 stdout。JSONL stdout 每行一个事件，序号从 1 开始并严格递增，结束时恰好一个 result。未知命令等解析错误也必须遵循请求的机器格式。进程被 SIGKILL 或输出管道已断开时无法保证尾事件，消费者以缺少 result 判为中断。
+JSON stdout 恰好一行最终结果，非 debug 下 CLI 不写 stderr；Node warning、console.warn、SDK 警告统一进入最终 warnings 和 JSONL warning 事件，不再保留原始警告打印例外。JSONL stdout 每行一个事件，序号从 1 开始并严格递增，结束时恰好一个 result。未知命令等解析错误也必须遵循请求的机器格式。进程被 SIGKILL 或输出管道已断开时无法保证尾事件，消费者以缺少 result 判为中断。
 
 ### JSONL 事件
 

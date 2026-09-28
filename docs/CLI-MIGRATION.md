@@ -43,7 +43,7 @@ learning run COURSE --profile school --speed 1 --target 0.2 --dry-run
 
 JSONL 包含 start/progress/warning/auth/question/gap/result。sequence 在本次调用中严格递增；sourceSequence 属于 SDK 的任务事件，不能混用。result.data 是上面的最终结果对象，实际业务 payload 因此在 result.data.data。SDK 可能合并进度事件，CLI 不补造历史。
 
-机器消费者只解析 stdout。`--debug` 诊断以及 Node 自身的 SQLite ExperimentalWarning 可能出现在 stderr。强制结束、管道断开等情况下可能没有尾 result，必须将其当作中断，不能根据最后一个进度事件判断成功。
+Node 运行时警告、console.warn、SDK 警告统一进入 warning 通道：JSON 收入最终 warnings，JSONL 另发 warning 事件。人类模式在安全的显示边界统一展示；菜单输入期间先暂存，结束提示后显示，不在动态菜单中直接插入文字。相同 code/message 在一次调用内合并。机器模式 stderr 不再直接打印 Node 警告，仅 --debug 使用脱敏诊断。强制结束、管道断开等情况下可能没有尾 result，必须将其当作中断，不能根据最后一个进度事件判断成功。
 
 ## 登录、偏好和恢复
 

@@ -6,7 +6,7 @@ import { createLearningClient, LearningError } from '@learning/sdk';
 import { lstatSync, readFileSync, unlinkSync, openSync, closeSync, fstatSync, ftruncateSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
 
 function readCookieFile(path: string): string {
   const stat = lstatSync(path);
@@ -55,7 +55,7 @@ export function registerLoginCommands(program: Command): void {
       try {
         if (options.import !== undefined) {
           const imported = await client.auth.importLegacy({ format: 'cookie-array', text: readCookieFile(options.import) });
-          printResult(program, imported.value, `已导入 ${profile.name} 的会话，身份尚未在线验证。`);
+          printResult(program, unwrapResult(program, imported), `已导入 ${profile.name} 的会话，身份尚未在线验证。`);
           return;
         }
         if (options.variant === 'native' && profile.scope.platform !== 'zhs') throw new CliError('INVALID_INPUT', 'native 二维码仅用于智慧树。');

@@ -6,7 +6,7 @@ import { readPreferences, setJobOutputRoot } from '../preferences.js';
 import type { Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { AssessmentRef, CourseRef, ResourceRef, OutlineNode } from '@learning/sdk/public';
-import { printResult, selectProfile, withCliRuntime } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
 import { resourceCacheKey, resourceKindCacheKey, chooseTarget } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 
@@ -65,7 +65,7 @@ export function registerDownloadCommands(program: Command): void {
             course = CourseSchema.parse(cachedCourse.value).ref;
           }
           if (course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'course belongs to another profile', retryAfterMs: null, operationId: null });
-          resources = flatten((await client.catalog.outline(course)).value.roots).filter((item) => types.includes(item.kind));
+          resources = flatten(unwrapResult(program, await client.catalog.outline(course)).roots).filter((item) => types.includes(item.kind));
         }
         if (resources.some((item) => item.ref.course.scope.profileId !== profile.scope.profileId)) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
         const media = resources.filter((item) => item.kind === 'video').map((item) => item.ref);

@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { CliError, getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
-import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
+import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
@@ -49,7 +49,7 @@ export function registerExamCommands(program: Command): void {
       if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
-        const draft = (await client.assessments.importDraft(await readFile(path, 'utf8'), 'learning')).value;
+        const draft = unwrapResult(program, await client.assessments.importDraft(await readFile(path, 'utf8'), 'learning'));
         if (draft.ref.kind !== 'exam') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not an exam', retryAfterMs: null, operationId: null });
         const preview = await client.actions.prepare({ kind: 'exam.save', draft });
         if (options.dryRun) { printResult(program, preview, `exam ${draft.ref.assessmentId} save previewed; no final submission`); return; }
@@ -125,7 +125,7 @@ export function registerExamCommands(program: Command): void {
         if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
         const client = createLearningClient({ scope: profile.scope, runtime });
         try {
-          const draft = (await client.assessments.importDraft(await readFile(path, 'utf8'), 'learning')).value;
+          const draft = unwrapResult(program, await client.assessments.importDraft(await readFile(path, 'utf8'), 'learning'));
           if (draft.ref.kind !== 'exam') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not an exam', retryAfterMs: null, operationId: null });
           const preview = await client.actions.prepare({ kind: 'exam.finalize', draft });
           if (preview.blockers.length > 0) {

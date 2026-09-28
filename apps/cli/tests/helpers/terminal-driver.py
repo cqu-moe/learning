@@ -14,8 +14,9 @@ import time
 
 spec = json.loads(sys.argv[1])
 master, slave = pty.openpty()
-fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, spec.get('columns', 80), 0, 0))
+fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', spec.get('rows', 30), spec.get('columns', 80), 0, 0))
 env = dict(os.environ, CI='', TERM=spec.get('term', 'xterm-256color'))
+env.update(spec.get('env', {}))
 def attach_terminal():
     os.setsid()
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
@@ -25,6 +26,7 @@ process = subprocess.Popen(spec['argv'], stdin=slave, stdout=slave, stderr=slave
 os.close(slave)
 data = b''
 step = 0
+snapshots = []
 start = time.monotonic()
 try:
     while time.monotonic() - start < 12:
@@ -41,7 +43,8 @@ try:
             data += part
         if step < len(spec.get('steps', [])):
             item = spec['steps'][step]
-            if item['wait'] in data.decode('utf8', errors='replace'):
+            if data.decode('utf8', errors='replace').count(item['wait']) >= item.get('occurrences', 1):
+                snapshots.append(data.decode('utf8', errors='replace'))
                 if 'signal' in item:
                     process.send_signal(getattr(signal, item['signal']))
                 else:
@@ -56,7 +59,7 @@ try:
             process.kill()
             process.wait()
             raise RuntimeError('PTY timeout: ' + data.decode('utf8', errors='replace'))
-    print(json.dumps({'code': process.returncode, 'screen': data.decode('utf8', errors='replace'), 'steps': step}))
+    print(json.dumps({'code': process.returncode, 'screen': data.decode('utf8', errors='replace'), 'steps': step, 'snapshots': snapshots}))
 finally:
     if process.poll() is None:
         process.kill()

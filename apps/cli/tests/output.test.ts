@@ -11,15 +11,16 @@ describe('machine output contract', () => {
     for (const command of ['init', 'doctor']) {
       const result = run([command, '--json']);
       expect(result.status).toBe(0);
-      expect(result.stderr.replace(/\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\n/g, '')).toBe('');
+      expect(result.stderr).toBe('');
       expect(result.stdout.trim().split('\n')).toHaveLength(1);
       expect(JSON.parse(result.stdout)).toMatchObject({ schemaVersion: 1, command, ok: true, exitCode: 0, error: null });
+      expect(JSON.parse(result.stdout).warnings).toEqual(expect.arrayContaining([expect.objectContaining({code:'ExperimentalWarning'})]));
     }
   });
   it('keeps parsing errors structured even when the output flag is after the error', () => {
     const result = run(['--bogus', '--json']);
     expect(result.status).toBe(2);
-    expect(result.stderr.replace(/\(node:\d+\) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\n/g, '')).toBe('');
+    expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, exitCode: 2, error: { code: 'INVALID_INPUT' } });
   });
   it('rejects conflicting formats with a structured error', () => {
@@ -38,9 +39,12 @@ describe('machine output contract', () => {
     const result = run(['doctor', '--output-format=jsonl', '--quiet']);
     expect(result.status).toBe(0);
     const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
-    expect(events.map(e => e.type)).toEqual(['start', 'result']);
-    expect(events.map(e => e.sequence)).toEqual([1, 2]);
-    expect(events[1].data.exitCode).toBe(result.status);
+    expect(events[0].type).toBe('start');
+    expect(events.some(e => e.type === 'warning' && e.data.code === 'ExperimentalWarning')).toBe(true);
+    expect(events.at(-1).type).toBe('result');
+    expect(events.map(e => e.sequence)).toEqual(events.map((_, index) => index + 1));
+    expect(events.at(-1).data.exitCode).toBe(result.status);
+    expect(result.stderr).toBe('');
     expect(result.stdout).not.toContain('\u001b');
   });
   it('does not create a home when just asking for help', () => {
@@ -90,4 +94,21 @@ it('returns job lists in a stable named field', () => {
  const result = run(['jobs','list','--json']);
  expect(result.status).toBe(0);
  expect(JSON.parse(result.stdout).data).toEqual({ jobs: [] });
+});
+
+it('queues warnings while a prompt is active and includes them in the final result', async () => {
+ const {Writable}=await import('node:stream');
+ const {createOutput,resolveOutputMode}=await import('../src/output.js');
+ let stderr='';let stdout='';
+ const output=createOutput(resolveOutputMode({outputFormat:'plain'}),{stdout:new Writable({write(chunk,_encoding,cb){stdout+=String(chunk);cb();}}),stderr:new Writable({write(chunk,_encoding,cb){stderr+=String(chunk);cb();}})});
+ try {
+  await output.beginPrompt();
+  await output.warning('DURING_PROMPT','输入期间的警告');
+  expect(stderr).toBe('');
+  await output.endPrompt();
+  expect(stderr).toContain('警告 [DURING_PROMPT]');
+  await output.finish();
+  expect(stderr.match(/DURING_PROMPT/g)).toHaveLength(1);
+  expect(stdout).toBe('');
+ } finally {output.close();}
 });
