@@ -84,3 +84,9 @@ it('reports all missing draft inputs before opening a platform client', () => {
  expect(result.status).toBe(2);
  expect(JSON.parse(result.stdout).error.fields).toEqual(['resource', 'output']);
 });
+
+it('returns job lists in a stable named field', () => {
+ const result = run(['jobs','list','--json']);
+ expect(result.status).toBe(0);
+ expect(JSON.parse(result.stdout).data).toEqual({ jobs: [] });
+});

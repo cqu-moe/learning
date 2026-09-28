@@ -121,7 +121,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(result.files).toHaveLength(1);
     expect(JSON.parse(readFileSync(result.files[0]!, 'utf8')).questions).toHaveLength(2);
     const shown = run(dir, ['jobs', 'list', '--json']);
-    expect(JSON.parse(shown.stdout).data[0].id).toBe(result.job.id);
+    expect(JSON.parse(shown.stdout).data.jobs[0].id).toBe(result.job.id);
   });
 
   it('writes a reimportable homework draft once without overwriting it', async () => {
@@ -286,7 +286,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const interrupted = run(dir, ['download', 'fixture-video', '--types', 'video', '--profile', 'alpha', '--json'], first);
     expect(interrupted.code).not.toBe(0);
     expect(JSON.parse(interrupted.stdout)).toMatchObject({ ok: false, exitCode: interrupted.code });
-    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data as Array<{ id: string; status: string }>;
+    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs as Array<{ id: string; status: string }>;
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.status).toBe('paused');
     const second = resolve(dir, 'second-mp4.json');
@@ -338,7 +338,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
       { request: { method: 'GET', host: 'www.yuketang.cn', path: '/b.ts' }, response: { status: 200, chunks: [Buffer.from('discard').toString('base64')], failAfterChunks: true } }] }));
     const interrupted = run(dir, ['download', 'fixture-hls-resume', '--types', 'video', '--profile', 'alpha', '--json'], first);
     expect(interrupted.code).not.toBe(0);
-    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data as Array<{ id: string; status: string }>;
+    const jobs = JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs as Array<{ id: string; status: string }>;
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.status).toBe('paused');
     const second = resolve(dir, 'hls-second.json');
@@ -623,7 +623,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     await runner.pause(job.id);
     state.close();
     const withoutYes = run(dir, ['jobs', 'resume', job.id, '--profile', 'alpha', '--json']);
-    expect(withoutYes.code).toBe(2);
+    expect(withoutYes.code).toBe(3);
     expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
     const fixture = resolve(dir, 'live-resume.json');
     writeFileSync(fixture, JSON.stringify({ interactions: [

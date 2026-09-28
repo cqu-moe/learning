@@ -67,7 +67,7 @@ describe('cli commands (T26, A261/A262)', () => {
     expect(init.exitCode).toBe(0);
     const list = runCli(['jobs', 'list', '--json'], init.home);
     expect(list.exitCode).toBe(0);
-    expect(JSON.parse(list.stdout).data).toEqual([]);
+    expect(JSON.parse(list.stdout).data.jobs).toEqual([]);
     const rec = runCli(['jobs', 'reconcile', 'missing-job'], init.home);
     expect(rec.exitCode).not.toBe(0);
     expect(rec.stdout).toBe('');
@@ -90,7 +90,7 @@ describe('cli commands (T26, A261/A262)', () => {
     }
     const list = runCli(['jobs', 'list', '--json'], init.home);
     expect(list.exitCode).toBe(0);
-    expect(JSON.parse(list.stdout).data).toEqual([job]);
+    expect(JSON.parse(list.stdout).data.jobs).toEqual([job]);
     const show = runCli(['jobs', 'show', job.id, '--json'], init.home);
     expect(show.exitCode).toBe(0);
     expect(JSON.parse(show.stdout).data).toEqual(job);
@@ -105,7 +105,7 @@ describe('cli commands (T26, A261/A262)', () => {
     const job = { id: 'job-cancel-me', scope: profile.scope, kind: 'export', status: 'paused', createdAtMs: 1, updatedAtMs: 2, nextRunAtMs: null, completed: 0, total: 1, items: [], warnings: [] };
     expect(await state.commit({ expected: [{ key: `job:${job.id}`, revision: null }], changes: [{ key: `job:${job.id}`, value: job }] })).toBe(true);
     state.close();
-    const canceled = runCli(['jobs', 'cancel', job.id, '--profile', 'alpha', '--json'], init.home);
+    const canceled = runCli(['jobs', 'cancel', job.id, '--yes', '--profile', 'alpha', '--json'], init.home);
     expect(canceled.exitCode, canceled.stderr).toBe(0);
     expect(JSON.parse(canceled.stdout).data.status).toBe('canceled');
     expect(JSON.parse(runCli(['jobs', 'show', job.id, '--json'], init.home).stdout).data.status).toBe('canceled');

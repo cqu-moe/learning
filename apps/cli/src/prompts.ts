@@ -129,6 +129,20 @@ export function installInputCompletion(program: Command): void {
           });
           return selected;
         }
+        if (field.name === 'jobId') {
+          const { withCliRuntime } = await import('./context.js');
+          const { getProfile } = await import('./profiles.js');
+          const { selectJob } = await import('./commands/tasks.js');
+          let id: string | undefined;
+          await withCliRuntime(program, false, async runtime => {
+            const name = program.opts<{ profile?: string }>().profile;
+            const profile = name === undefined ? null : await getProfile(runtime.state, name);
+            if (name !== undefined && !profile) throw new CliError('INVALID_INPUT', '找不到指定账号。');
+            const statuses = command.name() === 'resume' ? ['paused','needs-input','queued','waiting'] as const : command.name() === 'reconcile' ? ['uncertain','paused','needs-input','failed'] as const : undefined;
+            id = (await selectJob(runtime.state, prompts, statuses ? [...statuses] : undefined, profile?.scope.profileId)).id;
+          });
+          return id;
+        }
         if (field.name === 'source') {
           const files: string[] = [];
           do { files.push(String(await prompts.ask({ name: 'source', message: '反馈来源文件路径', validate: value => typeof value === 'string' && value.length ? undefined : '请输入路径。' }, signal))); }

@@ -49,6 +49,7 @@ export async function selectProfile(program: Command, runtime: CliRuntime, scope
   scope ??= targetScopes.get(program);
   const attach = (profile: LocalProfile): LocalProfile => {
     if (scope && (profile.scope.profileId !== scope.profileId || profile.scope.platform !== scope.platform || profile.scope.userId !== scope.userId)) throw new CliError('FORBIDDEN', '目标属于另一个账号。', 3);
+    if (program.opts<{ profile?: string }>().profile === undefined) program.setOptionValueWithSource('profile', profile.name, 'inferred');
     runtime.heavy = new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope: profile.scope });
     return profile;
   };

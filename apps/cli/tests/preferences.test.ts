@@ -53,3 +53,18 @@ it('freezes the export destination for a job across preference changes', async (
   await expect(setJobOutputRoot(state,'job-one',resolve(home,'elsewhere'))).rejects.toMatchObject({ code: 'CONFLICT' });
  } finally { state.close(); }
 });
+
+it('uses a saved job owner rather than an unrelated default profile', async () => {
+ const { SqliteStateStore } = await import('@learning/sdk/node');
+ const state = new SqliteStateStore(resolve(home,'state.db'));
+ try {
+  const profile = await state.get('cli:profile:beta');
+  const scope = (profile!.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+  const job = { id:'owned-job', scope, kind:'export', status:'paused', createdAtMs:1, updatedAtMs:1, nextRunAtMs:null, completed:0, total:0, items:[], warnings:[] };
+  await state.commit({expected:[{key:'job:owned-job',revision:null},{key:'job-meta:owned-job',revision:null}],changes:[{key:'job:owned-job',value:job},{key:'job-meta:owned-job',value:{inputDigest:'x',generation:1,cursor:null,pendingOperationId:null,running:false}}]});
+ } finally {state.close();}
+ const canceled = run(['jobs','cancel','owned-job','--yes']);
+ expect(canceled.code).toBe(0);
+ expect(canceled.result.data.status).toBe('canceled');
+ expect(run(['config','show']).result.data.defaultProfileId).toBe('missing-id');
+});

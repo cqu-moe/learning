@@ -1,4 +1,7 @@
-import { CliError } from '../output.js';
+import { confirmAction, requireConfirmation } from '../prompts.js';
+import type { Prompts } from '../prompts.js';
+import type { Job, JobStatus } from '@learning/sdk/public';
+import { CliError, getOutput, formatTable } from '../output.js';
 import type { Command } from 'commander';
 import { JobSchema } from '@learning/sdk/public';
 import { createLearningClient } from '@learning/sdk';
@@ -36,7 +39,7 @@ export function registerJobsCommands(program: Command): void {
           for (const item of page.items) jobs.push(JobSchema.parse(item.record.value));
           cursor = page.nextCursor;
         } while (cursor !== null);
-        printResult(program, jobs, jobs.map(job => `${job.id}\t${job.kind}\t${job.status}`).join('\n') || '暂无任务');
+        printResult(program, { jobs }, formatTable(['任务', '类型', '状态', '进度'], jobs.map(job => [job.id, job.kind, job.status, `${job.completed}/${job.total ?? '?'}`])));
       } finally {
         state.close();
       }
@@ -51,18 +54,21 @@ export function registerJobsCommands(program: Command): void {
         const stored = await state.get(`job:${jobId}`);
         if (stored === null) { throw new CliError('INVALID_INPUT', String(`learning: unknown job id ${jobId}\n`).replace(/^learning: /, '').trim(), 2); }
         const job = JobSchema.parse(stored.value);
-        printResult(program, job, `${job.id}\t${job.kind}\t${job.status}\t${job.completed}/${job.total ?? '?'}`);
+        printResult(program, job, `${job.id} · ${job.kind} · ${job.status} · ${job.completed}/${job.total ?? '?'}\n${nextStep(program, job)}`);
       } finally { state.close(); }
     });
   jobs
     .command('cancel <jobId>')
     .description('cancel a saved job under its profile')
-    .action(async (jobId: string) => {
+    .option('--yes', '确认取消任务')
+    .action(async (jobId: string, options: { yes?: boolean }) => {
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
         if (profile === null) return;
         const client = createLearningClient({ scope: profile.scope, runtime });
         try {
+          const current = await client.jobs.get(jobId);
+          await confirmAction(program, `取消任务 ${jobId}（${current.status}）；已完成部分不会回滚。`, options.yes);
           const job = await client.jobs.cancel(jobId);
           printResult(program, job, `${job.id}: ${job.status}`);
         } finally { await client.close(); }
@@ -81,7 +87,8 @@ export function registerJobsCommands(program: Command): void {
           const before = await client.jobs.get(jobId);
           if (before.kind !== 'export' && before.kind !== 'study' && before.kind !== 'live') { throw new CliError('INTERACTION_REQUIRED', String('learning: this job type has no CLI resume handler\n').replace(/^learning: /, '').trim(), 3); }
           if (before.kind === 'live') {
-            if (!resume.opts<{ yes?: boolean }>().yes) { throw new CliError('INVALID_INPUT', String('learning: live resume requires --yes for a new checkin\n').replace(/^learning: /, '').trim(), 2); }
+            requireConfirmation(program, resume.opts<{ yes?: boolean }>().yes, false);
+            await confirmAction(program, `恢复直播任务 ${jobId} 会重新签到。`, resume.opts<{ yes?: boolean }>().yes);
             await client.jobs.resume(jobId);
           } else if (before.status === 'paused' || before.status === 'needs-input' && before.kind === 'study') await client.jobs.resume(jobId);
           else if (!['queued', 'waiting', 'succeeded'].includes(before.status)) { process.stderr.write(`learning: ${before.status} job cannot resume without reconciliation\n`); process.exitCode = before.status === 'uncertain' || before.status === 'running' ? 5 : 3; return; }
@@ -90,7 +97,7 @@ export function registerJobsCommands(program: Command): void {
           if (job.status === 'partial') process.exitCode = 4;
           else if (job.status === 'uncertain') process.exitCode = 5;
           else if (job.status !== 'succeeded') process.exitCode = 3;
-          printResult(program, { job, files }, `${job.id}: ${job.status}; ${files.join(', ')}`);
+          printResult(program, { job, files }, `${job.id}: ${job.status}\n${files.join('\n')}\n${nextStep(program, job)}`);
         } finally { await client.close(); }
       });
     });
@@ -116,4 +123,29 @@ export function registerJobsCommands(program: Command): void {
         } finally { await client.close(); }
       });
     });
+}
+
+export async function selectJob(state: SqliteStateStore, prompts: Prompts, allowedStatuses?: JobStatus[], profileId?: string): Promise<Job> {
+  const jobs: Job[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await state.list('job:', cursor, 100);
+    for (const item of page.items) {
+      const job = JobSchema.parse(item.record.value);
+      if ((!allowedStatuses || allowedStatuses.includes(job.status)) && (!profileId || job.scope.profileId === profileId)) jobs.push(job);
+    }
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  if (!jobs.length) throw new CliError('INTERACTION_REQUIRED', '没有符合此操作条件的任务。请用 jobs list 查看所有状态。', 3);
+  const id = await prompts.ask({ name: 'jobId', message: '选择任务', options: jobs.map(job => ({ value: job.id, label: `${job.kind} · ${job.status} · ${job.id}` })) });
+  const job = jobs.find(job => job.id === id);
+  if (!job) throw new CliError('INVALID_INPUT', '未选择有效任务。');
+  return job;
+}
+function nextStep(program: Command, job: Job): string {
+  const home = program.opts<{ home?: string }>().home ?? process.env.LEARNING_HOME;
+  const prefix = home === undefined ? 'learning' : `learning --home '${home.replaceAll("'", "'\\''")}'`;
+  if (job.status === 'uncertain') return `先核对写入结果：${prefix} jobs reconcile '${job.id}'`;
+  if (job.status === 'paused' || job.status === 'needs-input') return `处理提示后恢复：${prefix} jobs resume '${job.id}'`;
+  return '';
 }

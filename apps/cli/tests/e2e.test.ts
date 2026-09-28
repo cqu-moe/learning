@@ -47,7 +47,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     expect(doctor.stdout).toContain('node:');
     const jobs = runPackedCli(['jobs', 'list', '--json'], init.home);
     expect(jobs.exitCode).toBe(0);
-    expect(JSON.parse(jobs.stdout).data).toEqual([]);
+    expect(JSON.parse(jobs.stdout).data.jobs).toEqual([]);
   });
 
   it('no unapproved live platform writes happen in offline e2e', () => {
@@ -188,7 +188,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     const first = resolve(directory, 'first.json');
     writeFileSync(first, JSON.stringify({ interactions: [...base.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4' }, response: { status: 200, headers: { etag: '"v1"', 'content-type': 'video/mp4' }, chunks: [Buffer.from('abc').toString('base64')], failAfterChunks: true } }] }));
     expect(run(['download', 'fixture-video', '--types', 'video', '--profile', 'beta', '--json'], first, 1)).toBe('');
-    const paused = (JSON.parse(run(['jobs', 'list', '--json'])).data as Array<{ id: string; status: string; scope: { profileId: string } }>).find((job) => job.status === 'paused' && job.scope.profileId === beta.scope.profileId);
+    const paused = (JSON.parse(run(['jobs', 'list', '--json'])).data.jobs as Array<{ id: string; status: string; scope: { profileId: string } }>).find((job) => job.status === 'paused' && job.scope.profileId === beta.scope.profileId);
     expect(paused).toBeDefined();
     const second = resolve(directory, 'second.json');
     writeFileSync(second, JSON.stringify({ interactions: [...base.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4', headers: { range: 'bytes=3-', 'if-range': '"v1"' } }, response: { status: 206, headers: { etag: '"v1"', 'content-range': 'bytes 3-5/6', 'content-type': 'video/mp4' }, base64: Buffer.from('def').toString('base64') } }] }));
