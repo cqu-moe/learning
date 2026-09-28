@@ -1,3 +1,6 @@
+import { z } from 'zod';
+import { createPrompts, fillMissing } from '../prompts.js';
+import { getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -9,18 +12,16 @@ import { addProfile, getProfile, listProfiles, removeProfile, validName } from '
 export function registerProfileCommands(program: Command): void {
   const profile = program.command('profile').description('manage local profiles and the data lock');
   const add = profile
-    .command('add <name>')
+    .command('add [name]')
     .description('add a local platform profile')
-    .requiredOption('--platform <platform>', 'ykt, xuetang, or zhs');
-  add.action(async (name: string) => {
-    const parsed = PlatformSchema.safeParse(add.opts<{ platform: string }>().platform);
-    if (!validName(name) || !parsed.success) {
-      process.stderr.write('learning: profile name or platform is invalid\n');
-      process.exitCode = 2;
-      return;
-    }
+    .option('--platform <platform>', 'ykt, xuetang, or zhs');
+  add.action(async (inputName?: string) => {
+    const { name, platform } = await fillMissing(z.object({ name: z.string().refine(validName), platform: PlatformSchema }), { ...(inputName === undefined ? {} : { name: inputName }), ...add.opts() }, [
+      { name: 'name', message: '账号名称' },
+      { name: 'platform', message: '选择平台', options: [{ value: 'ykt', label: '雨课堂' }, { value: 'xuetang', label: '学堂在线' }, { value: 'zhs', label: '智慧树' }] },
+    ], createPrompts(getOutput(program).mode));
     await withCliRuntime(program, true, async (runtime) => {
-      const created = await addProfile(runtime.state, name, parsed.data);
+      const created = await addProfile(runtime.state, name, platform);
       if (created === null) {
         process.stderr.write(`learning: profile ${name} already exists\n`);
         process.exitCode = 2;

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+import { installWizard } from './wizard.js';
 import { Command } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { registerInitCommand } from './commands/init.js';
@@ -44,5 +44,6 @@ registerAnswersCommands(program);
 registerDiscussCommands(program);
 registerLiveCommand(program);
 registerOperationsCommands(program);
+installWizard(program);
 return program;
 }

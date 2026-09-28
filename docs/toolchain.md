@@ -34,3 +34,8 @@
 - 当前 SDK exports 仅 "." 与 "./public"；"./node" 在 T03 有真实 Node 实现后加入，"./render-node" 在 T24 加入。
 - 未安装 React/Vite/Hono/Wrangler/Cloudflare 插件、Docker 工具链或云数据库客户端；无 test:worker/dev:web/deploy:web 脚本。
 - 包内 test 脚本暂带 --passWithNoTests（T01 尚无测试文件）；T02 起 SDK 测试为真实 vitest 用例，该开关不再影响结果。
+
+## CLI 体验改造新增依赖
+
+- CLI 直接依赖 zod 4.6.5，与 SDK 同版。
+- @clack/prompts 1.8.1（engines >=20.12.0）；Node24.11.1 下 text/autocomplete/confirm 与 stderr 输出已通过真实 PTY 验证。
