@@ -1,3 +1,7 @@
+import { CliError, getOutput, formatTable } from '../output.js';
+import { createPrompts } from '../prompts.js';
+import type { Prompts } from '../prompts.js';
+import type { LearningClient, ResourceRef, ResourceKind, Resource } from '@learning/sdk';
 import type { Command } from 'commander';
 import { aggregateCourses, CourseSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { Course, CourseRef, Json, OutlineNode } from '@learning/sdk/public';
@@ -9,7 +13,7 @@ function cacheKey(key: string): string { return `cli:course:${key}`; }
 export function resourceCacheKey(key: string): string { return `cli:resource:${key}`; }
 export function resourceKindCacheKey(key: string): string { return `cli:resource-kind:${key}`; }
 
-async function cacheCourses(runtime: CliRuntime, courses: Course[]): Promise<void> {
+export async function cacheCourses(runtime: CliRuntime, courses: Course[]): Promise<void> {
   for (const course of courses) {
     const key = cacheKey(course.ref.key);
     const existing = await runtime.state.get(key);
@@ -31,7 +35,7 @@ function formatOutline(nodes: OutlineNode[], indent = ''): string[] {
   return lines;
 }
 
-async function cacheResources(runtime: CliRuntime, nodes: OutlineNode[]): Promise<void> {
+export async function cacheResources(runtime: CliRuntime, nodes: OutlineNode[]): Promise<void> {
   for (const node of nodes) {
     for (const resource of node.resources) {
       const key = resourceCacheKey(resource.ref.key);
@@ -75,21 +79,23 @@ export function registerCatalogCommands(program: Command): void {
       try {
         const page = await client.catalog.courses();
         await cacheCourses(runtime, page.items);
-        printResult(program, page, page.items.map((course) => `${course.title}\t${course.ref.key}`).join('\n'));
+        printResult(program, page, formatTable(['课程', '平台', '课程 key'], page.items.map(course => [course.title, course.ref.scope.platform, course.ref.key])) + `\n列表完整性：${page.completeness}`);
       } finally {
         await client.close();
       }
     });
   });
 
-  program.command('outline <course-url-or-key>').description('show the course outline and resource keys').action(async (input: string) => {
+  program.command('outline [course-url-or-key]').description('show the course outline and resource keys').action(async (input?: string) => {
+    if (input === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '缺少课程 URL 或 key。', 2, ['course-url-or-key']);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
       if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         let ref: CourseRef;
-        if (/^https?:\/\//i.test(input)) {
+        if (input === undefined) ref = await chooseCourse(client, runtime, createPrompts(getOutput(program).mode));
+        else if (/^https?:\/\//i.test(input)) {
           ref = await client.catalog.resolveCourse(input);
         } else {
           const stored = await runtime.state.get(cacheKey(input));
@@ -114,4 +120,41 @@ export function registerCatalogCommands(program: Command): void {
       }
     });
   });
+}
+
+export async function chooseCourse(client: LearningClient, runtime: CliRuntime, prompts: Prompts): Promise<CourseRef> {
+  if (!prompts.interactive) throw new CliError('INVALID_INPUT', '请提供课程 URL 或 key。', 2, ['course']);
+  const courses: Course[] = [];
+  let cursor: string | undefined;
+  const cursors = new Set<string>();
+  for (;;) {
+    const page = await client.catalog.courses(cursor === undefined ? undefined : { cursor });
+    for (const course of page.items) {
+      if (course.ref.scope.profileId !== client.scope.profileId) throw new CliError('FORBIDDEN', '课程列表包含其他账号的数据。', 3);
+      if (!courses.some(item => item.ref.key === course.ref.key)) courses.push(course);
+    }
+    await cacheCourses(runtime, page.items);
+    if (!courses.length && !page.nextCursor) throw new CliError('INTERACTION_REQUIRED', '没有可选择的课程，请检查账号登录状态。', 3);
+    const more = page.completeness === 'more' && page.nextCursor !== null && !cursors.has(page.nextCursor);
+    const selected = await prompts.ask({ name: 'course', message: page.completeness === 'unknown' ? '选择课程（列表完整性未知）' : '搜索并选择课程', options: [
+      ...courses.map(course => ({ value: course.ref.key, label: `${course.title} · ${course.ref.scope.platform} · ${course.ref.key}` })),
+      ...(more ? [{ value: '__more__', label: '加载下一页课程' }] : []),
+    ] });
+    if (selected === '__more__' && more) { cursor = page.nextCursor!; cursors.add(cursor); continue; }
+    const course = courses.find(course => course.ref.key === selected);
+    if (!course) throw new CliError('INVALID_INPUT', '没有选中有效课程。');
+    return course.ref;
+  }
+}
+export async function chooseResource(client: LearningClient, runtime: CliRuntime, prompts: Prompts, kinds: ResourceKind[]): Promise<ResourceRef> {
+  const course = await chooseCourse(client, runtime, prompts);
+  const outline = await client.catalog.outline(course);
+  await cacheResources(runtime, outline.value.roots);
+  const flatten = (nodes: OutlineNode[]): Resource[] => nodes.flatMap(node => [...node.resources, ...flatten(node.children)]);
+  const resources = flatten(outline.value.roots).filter(resource => kinds.includes(resource.kind) && resource.locked !== true);
+  if (!resources.length) throw new CliError('UNSUPPORTED', '此课程没有符合操作要求的可用资源。', 3);
+  const key = await prompts.ask({ name: 'resource', message: '选择资源', options: resources.map(resource => ({ value: resource.ref.key, label: `${resource.path.join(' / ')} / ${resource.title} · ${resource.ref.key}` })) });
+  const resource = resources.find(resource => resource.ref.key === key);
+  if (!resource || resource.ref.course.scope.profileId !== client.scope.profileId) throw new CliError('INVALID_INPUT', '没有选中当前账号的有效资源。');
+  return resource.ref;
 }

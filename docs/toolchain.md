@@ -39,3 +39,4 @@
 
 - CLI 直接依赖 zod 4.6.5，与 SDK 同版。
 - @clack/prompts 1.8.1（engines >=20.12.0）；Node24.11.1 下 text/autocomplete/confirm 与 stderr 输出已通过真实 PTY 验证。
+- cli-table3 0.6.5，Node24.11.1 下 ESM 导入及 32/80/120 列中文布局测试通过。

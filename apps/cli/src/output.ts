@@ -1,3 +1,4 @@
+import Table from 'cli-table3';
 import { z } from 'zod';
 import { JsonSchema, QuestionSchema, LearningError } from '@learning/sdk/public';
 import type { Command } from 'commander';
@@ -93,3 +94,12 @@ export type Output = ReturnType<typeof createOutput>;
 const outputs = new WeakMap<Command, Output>();
 export function bindOutput(program: Command, output: Output) { outputs.set(program, output); }
 export function getOutput(program: Command): Output { while (program.parent) program = program.parent; const output = outputs.get(program); if (!output) throw new Error('CLI output is not initialized'); return output; }
+
+export function formatTable(headers: string[], rows: unknown[][], width = process.stdout.isTTY ? process.stdout.columns : 0): string {
+  if (rows.length === 0) return '暂无记录。';
+  const cells = rows.map(row => row.map(value => cleanText(String(value ?? '未知'))));
+  if (width < 80) return cells.map(row => row.map((value, i) => `${headers[i]}：${value}`).join('\n')).join('\n\n');
+  const table = new Table({ head: headers, colWidths: headers.map(() => Math.floor((width - headers.length - 1) / headers.length)), wordWrap: true, wrapOnWordBoundary: false, style: { head: [], border: [] } });
+  table.push(...cells);
+  return table.toString();
+}

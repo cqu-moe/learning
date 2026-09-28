@@ -24,3 +24,41 @@ describe('missing input resolution', () => {
     expect(await fillMissing(z.object({ enabled: z.boolean(), count: z.number() }), { enabled: false, count: 0 }, [], prompts)).toEqual({ enabled: false, count: 0 });
   });
 });
+
+describe('course selection', () => {
+ it('loads another page explicitly and keeps a duplicate title unambiguous', async () => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { vi } = await import('vitest');
+  const { createCliRuntime } = await import('../src/runtime.js');
+  const { createLearningClient } = await import('@learning/sdk');
+  const { chooseCourse } = await import('../src/commands/catalog.js');
+  const dir = mkdtempSync(join(tmpdir(), 'learning-select-'));
+  const runtime = createCliRuntime(dir);
+  const scope = { userId: 'local', profileId: 'one', platform: 'ykt' as const };
+  const course = (key: string) => ({ ref: { scope, key, native: { kind: 'ykt' as const, classroomId: key } }, title: '同名课程', system: null, term: null, teachers: [], locked: null });
+  const client = createLearningClient({ scope, runtime });
+  const courses = vi.spyOn(client.catalog, 'courses').mockResolvedValueOnce({ items: [course('1')], nextCursor: 'next', completeness: 'more', warnings: [] }).mockResolvedValueOnce({ items: [course('2')], nextCursor: null, completeness: 'complete', warnings: [] });
+  const labels: string[] = [];
+  let step = 0;
+  try {
+   const ref = await chooseCourse(client, runtime, { interactive: true, ask: async field => { labels.push(...(field.options ?? []).map(option => option.label)); return step++ === 0 ? '__more__' : '2'; } });
+   expect(ref.key).toBe('2');
+   expect(courses).toHaveBeenNthCalledWith(2, { cursor: 'next' });
+   expect(labels.join(' ')).toContain('1');
+   expect(labels.join(' ')).toContain('2');
+   expect(await runtime.state.get('cli:course:2')).not.toBe(null);
+  } finally { await client.close(); runtime.state.close(); rmSync(dir, { recursive: true, force: true }); }
+ });
+});
+
+it('keeps full identifiers on narrow terminals and strips terminal controls', async () => {
+ const { formatTable } = await import('../src/output.js');
+ for (const width of [32, 80, 120]) {
+  const text = formatTable(['课程','key'], [['\u001b]0;injected\u0007中文标题','course-123']], width);
+  expect(text).toContain('中文标题');
+  expect(text).toContain('course-123');
+  expect(text).not.toContain('\u001b');
+ }
+});
