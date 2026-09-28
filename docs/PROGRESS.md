@@ -397,3 +397,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 新增 docs/superpowers/specs/2026-09-28-cli-ux-design.md 与 docs/superpowers/plans/2026-09-28-cli-ux.md，定义 33 条现有/新增命令覆盖、输出协议、补参/确认/偏好/恢复规则和 UX01–UX09 测试先行步骤。全局采用 --output-format，避免与文件 --output、slide --format 冲突；实际现有 30 条命令，原 28 条帮助检查漏 exam draft/operations reconcile。
 - 读取源码时两个假设路径 types/jobs.ts、src/jobs/handlers.ts 不存在，检索命令分别 exit 1/2；已改读真实 types/models.ts、services/jobs.ts 与 foreground.ts 确认事件类型，没有据猜测路径写实现。
 - 已实际运行 Python 标准库文档检查 → exit 0：33 行命令/30 条现有命令集合/9 个任务归属/相对链接/代码围栏/未勾选清单均通过；`git diff --check` → exit 0。人工复核补充统一 envelope 的旧测试迁移及删除账号时清理新增 job 输出路径记录。未执行产品安装、构建、测试或真实平台操作。下一步等待用户审阅计划与选择执行方式；已确认产品方向不等于开始实现或通过验收。
+
+### 2026-09-28 · CLI UX01–UX03 实施检查点
+
+- 在 codex/cli-ux 隔离分支完成统一 JSON/JSONL envelope、输出模式、Clack/简洁模式一次性向导及显式偏好；未迁移完全部业务命令。
+- Node24.11.1 离线基线 install/build/test/e2e exit 0（SDK233、CLI49、E2E7）；UX01 输出测试先 5 项失败，修复后 output/basic 18 项通过，旧 catalog 26 项回归通过；UX02 缺模块红灯后 interaction/profile/真实 PTY 11 项通过；UX03 config 未注册红灯后 preferences/profile/basic 15 项通过。产品最终完整门禁待后续步骤完成。
+- 新增精确依赖 zod4.6.5、Clack1.8.1；PTY helper 只用于测试。Node 自身 SQLite ExperimentalWarning 保留在 stderr，CLI 机器结果仅在 stdout；没有覆盖全局 warning handler。
+- 下一步 UX04 课程/资源选择，然后登录、进度、确认和全命令验收。未进行真实账号/考试/付费调用，未推送或合并。

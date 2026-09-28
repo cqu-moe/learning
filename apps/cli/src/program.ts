@@ -1,3 +1,4 @@
+import { registerConfigCommands } from './commands/config.js';
 import { installWizard } from './wizard.js';
 import { Command } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
@@ -44,6 +45,7 @@ registerAnswersCommands(program);
 registerDiscussCommands(program);
 registerLiveCommand(program);
 registerOperationsCommands(program);
+registerConfigCommands(program);
 installWizard(program);
 return program;
 }

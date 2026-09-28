@@ -1,3 +1,4 @@
+import { readPreferences, savePreferences } from '../preferences.js';
 import { z } from 'zod';
 import { createPrompts, fillMissing } from '../prompts.js';
 import { getOutput } from '../output.js';
@@ -111,6 +112,7 @@ export function registerProfileCommands(program: Command): void {
         if (!ok) throw new Error('profile records changed while removing them');
       }
       for (const id of artifactIds) await runtime.artifacts.remove(id);
+      if ((await readPreferences(runtime.state)).defaultProfileId === existing.scope.profileId) await savePreferences(runtime.state, { defaultProfileId: null });
       await removeProfile(runtime.state, name);
       printResult(program, { removed: name }, `removed ${name}`);
     });
