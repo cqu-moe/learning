@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -12,8 +12,10 @@ const tempRoots: string[] = [];
 
 function runCli(args: string[], home = mkdtempSync(resolve(tmpdir(), 'learning-cmds-'))) {
   if (!tempRoots.includes(home)) tempRoots.push(home);
+  const fixture = resolve(home, 'empty-fixture.json');
+  writeFileSync(fixture, '{"interactions":[]}');
   try {
-    const stdout = execFileSync(process.execPath, [cliEntry, ...args, '--home', home], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LEARNING_HOME: home } });
+    const stdout = execFileSync(process.execPath, ['--import', resolve(import.meta.dirname, 'fixture-fetch.mjs'), cliEntry, ...args, '--home', home], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LEARNING_HOME: home, LEARNING_FIXTURE_FILE: fixture } });
     return { stdout, stderr: '', exitCode: 0, home };
   } catch (error) {
     const failure = error as { stdout?: string; stderr?: string; status?: number };
@@ -34,10 +36,10 @@ describe('cli commands (T26, A261/A262)', () => {
     }
   });
 
-  it('exam submit without --yes --final refuses with exit 2', () => {
+  it('rejects a nonexistent exam draft before confirmation', () => {
     const run = runCli(['exam', 'submit', 'draft.yaml']);
     expect(run.exitCode).toBe(2);
-    expect(run.stderr).toContain('--yes --final');
+    expect(run.stderr).toContain('草稿文件不存在');
   });
 
   it('run and download do not report success without an initialized course', () => {
@@ -112,9 +114,15 @@ describe('cli commands (T26, A261/A262)', () => {
   });
 
   it('final exam submit cannot claim success without a verified session', () => {
-    const run = runCli(['exam', 'submit', 'missing.yaml', '--yes', '--final']);
+    const init = runCli(['init']);
+    const added = runCli(['profile', 'add', 'alpha', '--platform', 'xuetang', '--json'], init.home);
+    const scope = JSON.parse(added.stdout).data.scope;
+    const path = resolve(init.home, 'draft.json');
+    writeFileSync(path, JSON.stringify({ schemaVersion: 1, id: 'draft', ref: { kind: 'exam', assessmentId: '3', resource: { course: { scope, key: 'course', native: { kind: 'xuetang', classroomId: '100', courseSign: 'SIGN', skuId: '9' } }, key: 'resource', native: { kind: 'xuetang', leafId: '7', leafInfoId: null } } }, fingerprint: 'fp', entries: [] }));
+    const run = runCli(['exam', 'submit', path, '--yes', '--final', '--json'], init.home);
     expect(run.exitCode).toBe(3);
-    expect(run.stdout).toBe('');
+    expect(JSON.parse(run.stdout).error.code).toBe('AUTH_REQUIRED');
+    expect(run.stderr).not.toContain('undeclared request');
   });
 
   it('reconciles a standalone uncertain action by saved operation id without a new write', async () => {

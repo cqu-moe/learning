@@ -16,7 +16,7 @@
 
 ## A02. CLI 命令
 
-通用 `--profile <name>`、`--json`、`--debug`。缺少 profile 而存在多个时，TTY 下选择，非TTY报错；无命令显示帮助/简单菜单。JSON stdout 只输出一个结果对象，进度/诊断用 stderr；不要把二维码ASCII混进JSON。
+通用 `--profile <name>`、`--output-format pretty|plain|json|jsonl`、`--json`、`--no-interactive`、`--quiet`、`--no-color`、`--debug`。CLI 0.2 的输出协议和交互规则见 [体验设计](superpowers/specs/2026-09-28-cli-ux-design.md) 与 [迁移说明](CLI-MIGRATION.md)。裸跑为一次性向导；指定命令只补必填项。JSON stdout 只输出一个 envelope；JSONL 输出实际事件并以 result 结束。机器模式不询问，缺参报错。下表的必填字段可在交互模式补齐。
 
 | 命令 | 行为 |
 |---|---|
@@ -43,6 +43,11 @@
 | `learning answers match <draft> --source <file...>` | 生成匹配建议，不提交；只精确无歧义项可写入新草稿 |
 | `learning live <lesson-url> [--yes]` | 确认checkin，监听并显示问题；答题需当前题确认 |
 | `learning jobs list\|show\|resume\|cancel\|reconcile` | 读取或恢复已保存任务；uncertain不直接resume |
+| `learning exam draft <resource> -o <file>` | 为可读取试卷生成草稿，不自动开卷 |
+| `learning operations reconcile <operationId>` | 只读核对保存的不确定写入 |
+| `learning config show` | 查看明确保存的偏好 |
+| `learning config set <key> <value>` | 保存 default-profile 或 download-dir |
+| `learning config unset <key>` | 清除指定偏好 |
 | `learning doctor` | 检查依赖/配置/浏览器能力，不自动安装系统浏览器 |
 
 CLI 默认前台运行一个长任务；Ctrl+C保存暂停状态。不开daemon、不提供后台服务安装、不自动使用nohup。用户可用终端复用器运行；电脑关机不会继续执行。本期没有云端后台任务；进程退出后需明确 resume。

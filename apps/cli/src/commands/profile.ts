@@ -11,11 +11,11 @@ import { withCliRuntime, printResult } from '../context.js';
 import { addProfile, getProfile, listProfiles, removeProfile, validName } from '../profiles.js';
 
 export function registerProfileCommands(program: Command): void {
-  const profile = program.command('profile').description('manage local profiles and the data lock');
+  const profile = program.command('profile').description('管理本地账号和写入锁');
   const add = profile
     .command('add [name]')
-    .description('add a local platform profile')
-    .option('--platform <platform>', 'ykt, xuetang, or zhs');
+    .description('添加本地平台账号')
+    .option('--platform <platform>', '平台：ykt、xuetang 或 zhs');
   add.action(async (inputName?: string) => {
     const { name, platform } = await fillMissing(z.object({ name: z.string().refine(validName), platform: PlatformSchema }), { ...(inputName === undefined ? {} : { name: inputName }), ...add.opts() }, [
       { name: 'name', message: '账号名称' },
@@ -24,7 +24,7 @@ export function registerProfileCommands(program: Command): void {
     await withCliRuntime(program, true, async (runtime) => {
       const created = await addProfile(runtime.state, name, platform);
       if (created === null) {
-        throw new CliError('INVALID_INPUT', String(`learning: profile ${name} already exists\n`).replace(/^learning: /, '').trim(), 2);
+        throw new CliError('INVALID_INPUT', `profile ${name} already exists`, 2);
       }
       printResult(program, created, `added ${created.name} (${created.scope.platform})`);
     });
@@ -32,7 +32,7 @@ export function registerProfileCommands(program: Command): void {
 
   profile
     .command('list')
-    .description('list safe local profile metadata')
+    .description('列出本地账号')
     .action(async () => {
       await withCliRuntime(program, false, async (runtime) => {
         const profiles = await listProfiles(runtime.state);
@@ -42,15 +42,15 @@ export function registerProfileCommands(program: Command): void {
 
   const remove = profile
     .command('remove [name]')
-    .description('remove a local profile and revoke its session')
-    .option('--yes', 'confirm local removal');
+    .description('删除本地账号及其会话、任务和缓存')
+    .option('--yes', '确认删除本地账号');
   remove.action(async (inputName?: string) => {
     if (inputName === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '请指定要删除的账号。', 2, ['name']);
     await withCliRuntime(program, true, async (runtime) => {
       const name = inputName ?? String(await createPrompts(getOutput(program).mode).ask({ name: 'name', message: '选择要删除的账号', options: (await listProfiles(runtime.state)).map(item => ({ value: item.name, label: `${item.name} (${item.scope.platform})` })) }));
       const existing = await getProfile(runtime.state, name);
       if (existing === null) {
-        throw new CliError('INVALID_INPUT', String(`learning: unknown profile ${name}\n`).replace(/^learning: /, '').trim(), 2);
+        throw new CliError('INVALID_INPUT', `unknown profile ${name}`, 2);
       }
       await confirmAction(program, `删除账号 ${name}，清除其会话、任务和缓存；已发生的平台操作不会回滚。`, remove.opts<{ yes?: boolean }>().yes);
       const client = createLearningClient({ scope: existing.scope, runtime });
@@ -115,7 +115,7 @@ export function registerProfileCommands(program: Command): void {
 
   profile
     .command('unlock')
-    .description('remove a stale local writer lock after checking its PID')
+    .description('核实 PID 后移除失效锁')
     .action(() => {
       const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
       const lockPath = resolve(dataDir, 'learning.lock');
@@ -127,18 +127,18 @@ export function registerProfileCommands(program: Command): void {
       const pidText = original.trim().split('\n')[0];
       const pid = Number(pidText);
       if (!Number.isSafeInteger(pid) || pid <= 0) {
-        throw new CliError('INTERACTION_REQUIRED', String('learning: invalid writer lock; inspect it manually\n').replace(/^learning: /, '').trim(), 3);
+        throw new CliError('INTERACTION_REQUIRED', 'invalid writer lock; inspect it manually', 3);
       }
       try {
         process.kill(pid, 0);
-        throw new CliError('INTERACTION_REQUIRED', String(`learning: writer process ${pid} is still running\n`).replace(/^learning: /, '').trim(), 3);
+        throw new CliError('INTERACTION_REQUIRED', `writer process ${pid} is still running`, 3);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-          throw new CliError('INTERACTION_REQUIRED', String(`learning: cannot prove writer process ${pid} has exited\n`).replace(/^learning: /, '').trim(), 3);
+          throw new CliError('INTERACTION_REQUIRED', `cannot prove writer process ${pid} has exited`, 3);
         }
       }
       if (readFileSync(lockPath, 'utf8') !== original) {
-        throw new CliError('INTERACTION_REQUIRED', String('learning: writer lock changed; retry inspection\n').replace(/^learning: /, '').trim(), 3);
+        throw new CliError('INTERACTION_REQUIRED', 'writer lock changed; retry inspection', 3);
       }
       unlinkSync(lockPath);
       printResult(program, { unlocked: true }, '已移除确认失效的写入锁。');

@@ -404,3 +404,13 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - Node24.11.1 离线基线 install/build/test/e2e exit 0（SDK233、CLI49、E2E7）；UX01 输出测试先 5 项失败，修复后 output/basic 18 项通过，旧 catalog 26 项回归通过；UX02 缺模块红灯后 interaction/profile/真实 PTY 11 项通过；UX03 config 未注册红灯后 preferences/profile/basic 15 项通过。产品最终完整门禁待后续步骤完成。
 - 新增精确依赖 zod4.6.5、Clack1.8.1；PTY helper 只用于测试。Node 自身 SQLite ExperimentalWarning 保留在 stderr，CLI 机器结果仅在 stdout；没有覆盖全局 warning handler。
 - 下一步 UX04 课程/资源选择，然后登录、进度、确认和全命令验收。未进行真实账号/考试/付费调用，未推送或合并。
+
+### 2026-09-28 · CLI UX04–UX09 全量离线门禁（待独立评审）
+
+- 已接通全部 33 条叶子命令的统一入口/帮助：现有 30 条及 config 三项。CLI 升至 0.2.0，SDK 保持 0.1.0；仅从现有草稿解析器提取 parseLearningDraft 纯导出，以确定文件所属账号。
+- 实现中文帮助、Clack 搜索选择、简洁编号输入、显式偏好、准确预览确认、任务事件进度、JSON/JSONL、quiet/no-color、二维码文件、SIGINT/SIGTERM/管道中断处理、固定导出目录与恢复建议。以实际 Commander 元数据复用补参入口，没有第二套业务执行器。
+- 实際 RED→GREEN 包含 JSON 契约、缺参聚合、课程翻页、默认账号、二维码文件、前台取消、错误草稿不先弹账号选择、plain 回车接受默认值、quiet 保留确认摘要、SIGINT 后 job=paused/调用=canceled。真实 PTY 与模式对照使用临时合成状态，未访问真实账号。
+- 人类 plain 与机器格式对现有业务 fixture 分别重放，比较退出结果并保留原断言；两个真实计时测试因运行次数翻倍超出原墙钟预算，分别改为 15s/40s，协议/状态断言未放宽。原仅传 missing.yaml 的会话保护测试改为有效合成草稿，并在空网络 fixture 下断言 AUTH_REQUIRED。
+- 原打包测试遗漏 Clack 等依赖的软链接，已换成实际离线 tarball 安装。固定 pnpm11 不读取 package.json.pnpm.overrides，按官方文档改到消费者 pnpm-workspace.yaml；SDK/CLI 分别读取版本。离线完整消费者安装与二维码/课程/导出/Range 恢复均通过。
+- Node v24.11.1 / pnpm11.19.0 / macOS：pnpm install --frozen-lockfile、pnpm lint、pnpm typecheck、pnpm test（SDK233/233、CLI84/84）、pnpm build、pnpm test:e2e（7/7）、boundaries、source-lock、git diff --check 均 exit 0。3 份固定参考仓以只读软链接复用；未修改参考源码。
+- 未执行真实平台登录/学习/答题/发帖、任何真实考试或付费模型。既有字体、20 秒硬工作片及真实多 GiB 等证据缺口不因此完成。下一步：独立整分支评审并修复重要问题，然后交付；未推送或合并。

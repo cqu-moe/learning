@@ -37,7 +37,10 @@ try:
         if step < len(spec.get('steps', [])):
             item = spec['steps'][step]
             if item['wait'] in data.decode('utf8', errors='replace'):
-                os.write(master, item['send'].encode())
+                if 'signal' in item:
+                    process.send_signal(getattr(signal, item['signal']))
+                else:
+                    os.write(master, item['send'].encode())
                 step += 1
         if process.poll() is not None and not ready:
             break

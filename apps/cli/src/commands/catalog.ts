@@ -50,13 +50,13 @@ export async function cacheResources(runtime: CliRuntime, nodes: OutlineNode[]):
 }
 
 export function registerCatalogCommands(program: Command): void {
-  const courses = program.command('courses').description('list courses for local profiles').option('--all-profiles', 'query every configured profile');
+  const courses = program.command('courses').description('列出课程').option('--all-profiles', '查询所有已配置账号');
   courses.action(async () => {
     await withCliRuntime(program, true, async (runtime) => {
       if (courses.opts<{ allProfiles?: boolean }>().allProfiles) {
         const profiles = await listProfiles(runtime.state);
         if (profiles.length === 0) {
-          throw new CliError('INTERACTION_REQUIRED', String('learning: no profiles configured\n').replace(/^learning: /, '').trim(), 3);
+          throw new CliError('INTERACTION_REQUIRED', 'no profiles configured', 3);
         }
         const clients = profiles.map((profile) => createLearningClient({ scope: profile.scope, runtime }));
         try {
@@ -72,7 +72,6 @@ export function registerCatalogCommands(program: Command): void {
         return;
       }
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         const page = await client.catalog.courses();
@@ -84,11 +83,10 @@ export function registerCatalogCommands(program: Command): void {
     });
   });
 
-  program.command('outline [course-url-or-key]').description('show the course outline and resource keys').action(async (input?: string) => {
+  program.command('outline [course-url-or-key]').description('查看课程目录与资源 key').action(async (input?: string) => {
     if (input === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '缺少课程 URL 或 key。', 2, ['course-url-or-key']);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         let ref: CourseRef;
@@ -98,11 +96,11 @@ export function registerCatalogCommands(program: Command): void {
         } else {
           const stored = await runtime.state.get(cacheKey(input));
           if (stored === null) {
-            throw new CliError('INVALID_INPUT', String('learning: unknown course key; run learning courses first\n').replace(/^learning: /, '').trim(), 2);
+            throw new CliError('INVALID_INPUT', 'unknown course key; run learning courses first', 2);
           }
           const course = CourseSchema.parse(stored.value);
           if (course.ref.scope.profileId !== profile.scope.profileId) {
-            throw new CliError('INVALID_INPUT', String('learning: course belongs to a different profile\n').replace(/^learning: /, '').trim(), 2);
+            throw new CliError('INVALID_INPUT', 'course belongs to a different profile', 2);
           }
           ref = course.ref;
         }

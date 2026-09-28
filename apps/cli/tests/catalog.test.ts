@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -23,6 +23,8 @@ function home() {
 function run(dir: string, args: string[], fixture?: string, expectedCookie?: string, extraEnv: Record<string, string> = {}) {
   const nodeArgs = fixture ? ['--import', preload, cli] : [cli];
   if (args[0] === 'login' && !args.includes('--import') && !args.includes('--qr-file')) args = [...args, '--qr-file', resolve(dir, 'fixture-login-qr.png')];
+  const parity = fixture && (args.includes('--json') || args.includes('jsonl')) ? mkdtempSync(resolve(tmpdir(), 'learning-human-')) : null;
+  if (parity) cpSync(dir, parity, { recursive: true });
   const result = spawnSync(process.execPath, [...nodeArgs, '--home', dir, ...args], {
     cwd: dir,
     env: {
@@ -34,6 +36,15 @@ function run(dir: string, args: string[], fixture?: string, expectedCookie?: str
     },
     encoding: 'utf8',
   });
+  if (parity) {
+    try {
+      const humanArgs = args.flatMap((argument, index) => argument === '--json' ? ['--output-format','plain'] : argument === 'jsonl' && args[index-1] === '--output-format' ? ['plain'] : [argument.startsWith(dir) ? parity + argument.slice(dir.length) : argument]);
+      const human = spawnSync(process.execPath, [...nodeArgs,'--home',parity,...humanArgs,'--no-interactive'], { cwd: parity, encoding: 'utf8', env: { ...process.env, LEARNING_HOME: parity, LEARNING_FIXTURE_FILE: fixture!.startsWith('/') ? fixture! : resolve(fixtureRoot, `${fixture}.json`), ...(expectedCookie ? { LEARNING_ASSERT_COOKIE: expectedCookie } : {}), ...extraEnv } });
+      expect(human.status, `${args.join(' ')} plain: ${human.stderr}`).toBe(result.status);
+      expect(human.stdout + human.stderr).not.toContain('\u001b');
+      if (result.status === 0) expect(human.stdout.trim().length).toBeGreaterThan(0);
+    } finally { rmSync(parity, { recursive: true, force: true }); }
+  }
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -92,7 +103,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout).data.identityVerified).toBe(false);
     expect(result.stdout + result.stderr).not.toContain('CASLOGC');
-  });
+  }, 15_000);
 
   it('requires explicit selection with multiple profiles and never calls the network', () => {
     const dir = home();
@@ -538,6 +549,9 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     ] };
     const file = resolve(dir, 'exam-draft.json');
     writeFileSync(file, JSON.stringify(draft));
+    const withoutFinal = run(dir, ['exam', 'submit', file, '--yes', '--profile', 'alpha', '--json']);
+    expect(withoutFinal.code).toBe(2);
+    expect(JSON.parse(withoutFinal.stdout).error.message).toContain('--final');
     const withoutYes = run(dir, ['exam', 'save', file, '--profile', 'alpha', '--json']);
     expect(withoutYes.code).toBe(3);
     expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
@@ -663,5 +677,5 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const actual = run(dir, ['run', 'xtx-video', '--target', '0.5', '--speed', '2', '--yes', '--profile', 'alpha', '--json'], fixture);
     expect(actual.code, actual.stderr).toBe(0);
     expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
-  }, 20_000);
+  }, 40_000);
 });

@@ -10,17 +10,17 @@ import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 
 export function registerSlideCommand(program: Command): void {
-  const slide = program.command('slide [lesson-url]').description('export historical lesson slides locally')
+  const slide = program.command('slide [lesson-url]').description('导出已有课件')
     .option('--output-dir <dir>', '导出目标根目录')
-    .option('--format <format>', 'pdf or images', 'pdf');
+    .option('--format <format>', '课件格式：pdf 或 images', 'pdf');
   slide.action(async (value?: string) => {
+    if (!['pdf', 'images'].includes(slide.opts<{ format: string }>().format)) throw new LearningError({ code: 'INVALID_INPUT', message: '课件格式必须为 pdf 或 images。', retryAfterMs: null, operationId: null });
     const { url } = await fillMissing(z.object({ url: z.url() }), value === undefined ? {} : { url: value }, [{ name: 'url', message: '课件 URL' }], createPrompts(getOutput(program).mode));
     await askDefaults(slide, [{ name: 'format', message: '课件格式', options: [{ value: 'pdf', label: 'PDF' }, { value: 'images', label: '图片' }] }], isWizard(program));
     const format = slide.opts<{ format: string }>().format;
     if (format !== 'pdf' && format !== 'images') throw new LearningError({ code: 'INVALID_INPUT', message: 'slide format must be pdf or images', retryAfterMs: null, operationId: null });
     await withCliRuntime(program, true, async (runtime, dataDir) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         const lesson = await client.resources.resolveLesson(url);

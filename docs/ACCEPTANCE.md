@@ -74,3 +74,11 @@
 Cloudflare/workerd/R2/DO/Containers/Web登录/页面/E2E/部署全部为deferred，不创建skip测试或假通过脚本，不属于本期失败项。未来进入Web需另建真实验收，当前Node通过不代表它通过。
 
 T31最终离线命令：`pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e`。只含当前两包与本地CLI集成，不需要云密钥或Docker。
+
+## CLI 0.2 体验补充验收
+
+- UX01–UX08 对应的输出、提示、偏好、课程选择、登录、进度、确认及恢复测试位于 apps/cli/tests；真实 PTY 覆盖补参、Clack、取消、quiet 预览和进程 SIGINT 后的独立状态读回。
+- 33 条叶子命令以实际 Commander 注册树核对；包括原帮助矩阵漏掉的 exam draft、operations reconcile，以及三个 config 命令。
+- 严格业务 fixture 在独立的合成状态副本中分别运行机器格式与 plain，比较退出结果，保留原业务断言和未登记请求拒绝。
+- packed E2E 使用 pnpm 11 的真实离线 tarball 安装，并核对 SDK/CLI 各自版本。
+- 实际门禁结果记在 PROGRESS；此节为验收项，不提升旧任务中真实平台、字体或硬工作片的证据等级。

@@ -1,4 +1,4 @@
-import { CliError, getOutput } from '../output.js';
+import { getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { createLearningClient, LearningError } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
@@ -8,7 +8,7 @@ import type { Output } from '../output.js';
 import type { Answer, JobEvent } from '@learning/sdk/public';
 
 export async function confirmCurrentAnswer(client: ReturnType<typeof createLearningClient>, jobId: string, event: Extract<JobEvent, { type: 'question' }>, output: Output): Promise<void> {
-  await output.message(`当前题目 ${event.question.id}：${event.question.body.plainText}`);
+  await output.message(`当前题目 ${event.question.id}：${event.question.body.plainText}`, true);
   if (!output.mode.interactive || event.closesAtMs === null || event.closesAtMs <= Date.now()) return;
   if (['unknown', 'fill-blank', 'short-answer'].includes(event.question.kind) || ['partial', 'unavailable'].includes(event.question.body.decodeState) || event.question.options.some(option => ['partial','unavailable'].includes(option.body.decodeState))) {
     await output.warning('UNSUPPORTED', '此题未完整解码或题型未验证，跳过作答。'); return;
@@ -37,13 +37,12 @@ export async function confirmCurrentAnswer(client: ReturnType<typeof createLearn
 
 export function registerLiveCommand(program: Command): void {
   const live = program.command('live <lesson-url>')
-    .description('check in and watch a Yuketang live lesson in the current terminal')
-    .option('--yes', 'explicitly confirm checkin');
+    .description('签到并监听雨课堂直播，逐题独立确认')
+    .option('--yes', '明确确认签到');
   live.action(async (url: string) => {
     requireConfirmation(program, live.opts<{ yes?: boolean }>().yes, false);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       if (profile.scope.platform !== 'ykt') throw new LearningError({ code: 'UNSUPPORTED', message: 'live watch is currently limited to Yuketang', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {

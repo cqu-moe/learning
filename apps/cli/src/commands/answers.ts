@@ -12,16 +12,15 @@ async function readSmallFile(path: string): Promise<string> {
 }
 
 export function registerAnswersCommands(program: Command): void {
-  const answers = program.command('answers').description('compare editable drafts with feedback sources');
+  const answers = program.command('answers').description('将草稿与反馈来源匹配');
   const match = answers.command('match <draft>')
-    .description('report matches and optionally write only exact answers to a new draft')
-    .requiredOption('--source <files...>', 'one or more local feedback JSON/YAML files')
-    .option('-o, --output <file>', 'new output draft; never overwrites');
+    .description('查看匹配结果，可将精确答案写入新草稿')
+    .requiredOption('--source <files...>', '一个或多个本地反馈 JSON/YAML 文件')
+    .option('-o, --output <file>', '新草稿路径，不覆盖已有文件');
   match.action(async (path: string) => {
     const options = match.opts<{ source: string[]; output?: string }>();
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         const draft = (await client.assessments.importDraft(await readSmallFile(path), 'learning')).value;

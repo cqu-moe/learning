@@ -16,12 +16,12 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
   let lastState = '';
   const warnings = new Set<string>();
   const report = async (job: Job, event?: Extract<JobEvent, { type: 'progress' | 'state' }>) => {
+    for (const warning of job.warnings) { const key = JSON.stringify(warning); if (!warnings.has(key)) { warnings.add(key); await runtime.output?.warning(warning.code, warning.message); } }
     const signature = JSON.stringify([job.id, job.status, job.completed, job.total]);
     if (event?.type !== 'progress' && signature === lastState) return;
     lastState = signature;
     await callbacks.onState?.(job);
     await runtime.output?.progress({ jobId: id, resourceKey: event?.type === 'progress' ? event.resourceKey : null, status: job.status, completed: job.completed, total: job.total, serverFraction: event?.type === 'progress' ? event.serverFraction : null, estimatedSeconds: event?.type === 'progress' ? event.estimatedSeconds : null, sourceSequence: event?.sequence ?? null });
-    for (const warning of job.warnings) { const key = JSON.stringify(warning); if (!warnings.has(key)) { warnings.add(key); await runtime.output?.warning(warning.code, warning.message); } }
   };
   const flushEvents = async (job: Job) => {
     if (!runtime.output && !callbacks.onEvent) return;
@@ -36,6 +36,7 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
     }
   };
   const pause = async () => {
+    runtime.output?.markCanceled();
     const job = await client.jobs.get(id);
     if (['queued', 'running', 'waiting'].includes(job.status)) await client.jobs.pause(id);
     process.exitCode = job.status === 'uncertain' ? 5 : 3;

@@ -1,10 +1,10 @@
 import { spinner } from '@clack/prompts';
 import Table from 'cli-table3';
 import { z } from 'zod';
-import { JsonSchema, QuestionSchema, LearningError } from '@learning/sdk/public';
+import { JsonSchema, QuestionSchema, JobSchema, LearningError } from '@learning/sdk/public';
 import type { Command } from 'commander';
 import type { Writable } from 'node:stream';
-import { stripVTControlCharacters } from 'node:util';
+import { stripVTControlCharacters, styleText } from 'node:util';
 
 export const OutputModeSchema = z.object({ format: z.enum(['pretty', 'plain', 'json', 'jsonl']), interactive: z.boolean(), quiet: z.boolean(), color: z.boolean(), debug: z.boolean() });
 export type OutputMode = z.infer<typeof OutputModeSchema>;
@@ -27,7 +27,7 @@ export type EventInput = CliEvent extends infer E ? E extends CliEvent ? Pick<E,
 export class CliError extends Error {
   constructor(public code: string, message: string, public exitCode = 2, public fields: string[] = [], public hint: string[] = []) { super(message); }
 }
-export function cleanText(value: string): string { return stripVTControlCharacters(value).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ''); }
+export function cleanText(value: string): string { return [...stripVTControlCharacters(value)].filter(char => char === '\n' || char === '\t' || char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127).join(''); }
 export function resolveOutputMode(flags: Record<string, unknown>, terminal = { stdin: !!process.stdin.isTTY, stdout: !!process.stdout.isTTY, stderr: !!process.stderr.isTTY, term: process.env.TERM, ci: process.env.CI, noColor: process.env.NO_COLOR }): OutputMode {
   const tty = terminal.stdin && terminal.stdout && terminal.stderr;
   const ci = !!terminal.ci && !['0', 'false'].includes(terminal.ci.toLowerCase());
@@ -37,10 +37,13 @@ export function resolveOutputMode(flags: Record<string, unknown>, terminal = { s
   return { format: format === 'pretty' && !dynamic ? 'plain' : format, interactive: tty && !ci && flags.interactive !== false && !['json', 'jsonl'].includes(format), quiet: flags.quiet === true, color: flags.color !== false && terminal.noColor === undefined && dynamic, debug: flags.debug === true };
 }
 export function errorInfo(error: unknown): { error: z.infer<typeof ErrorSchema>; exitCode: number } {
+  if (error instanceof z.ZodError) return errorInfo(new CliError('INVALID_INPUT', '输入数据结构不符合要求。', 2, error.issues.filter(issue => issue.path.length > 0).map(issue => issue.path.map(String).join('.'))));
+  if (error instanceof SyntaxError) return errorInfo(new CliError('INVALID_INPUT', '输入内容不是有效的 JSON。'));
+  if (!(error instanceof CliError) && error instanceof Error && 'code' in error && ['ENOENT','ENOTDIR','EISDIR'].includes(String(error.code))) return errorInfo(new CliError('INVALID_INPUT', '本地文件路径不存在或类型不正确。'));
   const data = error instanceof LearningError ? error.data : null;
   const exitCode = error instanceof CliError ? error.exitCode : data === null ? 1 : ['INVALID_INPUT', 'PREVIEW_EXPIRED', 'PRECONDITION_CHANGED'].includes(data.code) ? 2 : data.code === 'UNCERTAIN' ? 5 : ['AUTH_REQUIRED', 'AUTH_EXPIRED', 'FORBIDDEN', 'INTERACTION_REQUIRED', 'UNSUPPORTED', 'MISSING_RUNTIME', 'CONFLICT', 'CANCELED'].includes(data.code) ? 3 : 1;
   const code = error instanceof CliError ? error.code : data?.code ?? 'INTERNAL';
-  const hints: Record<string, string[]> = { INVALID_INPUT: ['运行对应命令 --help 查看参数。'], AUTH_REQUIRED: ['请先运行 learning login --profile <账号>。'], AUTH_EXPIRED: ['登录已过期，请重新登录。'], UNCERTAIN: ['先运行 learning operations reconcile <operationId> 核对结果，勿重复提交。'], CONFLICT: ['确认其他写入进程已退出后再继续；不要删除密钥或数据库。'], MISSING_RUNTIME: ['运行 learning doctor 检查本地依赖。'], CANCELED: ['操作已取消；已执行的写入不会回滚。'] };
+  const hints: Record<string, string[]> = { INVALID_INPUT: ['运行对应命令 --help 查看参数。'], AUTH_REQUIRED: ['请先运行 learning login --profile <账号>。'], AUTH_EXPIRED: ['登录已过期，请重新登录。'], UNCERTAIN: [data?.operationId ? `先核对结果，勿重复提交：learning operations reconcile ${shellQuote(data.operationId)}` : '先核对不确定写入的操作记录，勿重复提交。'], CONFLICT: ['确认其他写入进程已退出后再继续；不要删除密钥或数据库。'], MISSING_RUNTIME: ['运行 learning doctor 检查本地依赖。'], CANCELED: ['操作已取消；已执行的写入不会回滚。'] };
   return { exitCode, error: { code, message: cleanText(error instanceof CliError ? error.message : data?.message ?? '发生本地错误，请使用 --debug 查看错误类别。'), hint: error instanceof CliError && error.hint.length ? error.hint : hints[code] ?? [], fields: error instanceof CliError ? error.fields : [], operationId: data?.operationId ?? null, retryAfterMs: data?.retryAfterMs ?? null } };
 }
 const progressPauses = new WeakMap<OutputMode, () => void>();
@@ -52,6 +55,8 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   let human = '';
   let status: CliResult['status'] | undefined;
   let finished = false;
+  let canceled = false;
+  let home: string | undefined;
   let indicator: ReturnType<typeof spinner> | null = null;
   let lastProgressAt = 0;
   let lastPhase = '';
@@ -78,6 +83,8 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   };
   return {
     mode, signal: abort.signal as AbortSignal,
+    setHome(value: string) { home = value; },
+    markCanceled() { canceled = true; },
     setCommand(value: string) { command = value; },
     set(value: unknown, text: string, nextStatus?: CliResult['status']) { data = value; human = cleanText(text); status = nextStatus; },
     event,
@@ -95,12 +102,12 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       if (phase === lastPhase && Date.now() - lastProgressAt < interval) return;
       lastPhase = phase; lastProgressAt = Date.now();
       const states: Record<string, string> = { queued: '已排队', running: '进行中', waiting: '等待下一阶段', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
-      const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
+      const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${value.resourceKey === null ? '' : ` · ${value.resourceKey}`}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
       if (mode.format === 'pretty' && ['queued','running','waiting'].includes(value.status)) {
         if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(text); } else indicator.message(text);
       } else { pause(); await write(streams.stderr, cleanText(text) + '\n'); }
     },
-    async message(text: string) { if (!machine && !mode.quiet) await write(streams.stderr, cleanText(text) + '\n'); },
+    async message(text: string, essential = false) { if (!machine && (!mode.quiet || essential)) await write(streams.stderr, cleanText(text) + '\n'); },
     async warning(code: string, message: string) { const warning = { code, message: cleanText(message) }; warnings.push(warning); await event({ type: 'warning', data: warning }); if (!machine) await write(streams.stderr, `警告 [${code}] ${warning.message}\n`); },
     async finish(error?: unknown) {
       if (finished) return;
@@ -109,10 +116,21 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       const info = error === undefined ? null : errorInfo(error);
       const exitCode = info?.exitCode ?? Number(process.exitCode ?? 0);
       process.exitCode = exitCode;
-      const result = CliResultSchema.parse({ schemaVersion: 1, command, ok: exitCode === 0, status: info?.error.code === 'CANCELED' ? 'canceled' : exitCode === 5 ? 'uncertain' : exitCode === 4 ? 'partial' : exitCode === 3 ? 'needs-input' : exitCode ? 'error' : status ?? 'success', exitCode, data: data ?? null, error: info?.error ?? (exitCode ? { code: exitCode === 5 ? 'UNCERTAIN' : exitCode === 4 ? 'PARTIAL' : 'INTERACTION_REQUIRED', message: '操作未完全完成，请查看结果和任务状态。', hint: [], fields: [], operationId: null, retryAfterMs: null } : null), warnings });
+      const result = CliResultSchema.parse({ schemaVersion: 1, command, ok: exitCode === 0, status: exitCode === 5 ? 'uncertain' : info?.error.code === 'CANCELED' || canceled ? 'canceled' : exitCode === 4 ? 'partial' : exitCode === 3 ? 'needs-input' : exitCode ? 'error' : status ?? 'success', exitCode, data: data ?? null, error: info?.error ?? (exitCode ? { code: exitCode === 5 ? 'UNCERTAIN' : exitCode === 4 ? 'PARTIAL' : canceled ? 'CANCELED' : 'INTERACTION_REQUIRED', message: '操作未完全完成，请查看结果和任务状态。', hint: [], fields: [], operationId: null, retryAfterMs: null } : null), warnings });
+      if (result.error !== null) {
+        const payload = data !== null && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null;
+        const jobs = [data, payload?.job, ...(Array.isArray(payload?.jobs) ? payload.jobs : [])];
+        for (const candidate of jobs) {
+          const parsed = JobSchema.safeParse(candidate);
+          if (!parsed.success || !['paused','needs-input','uncertain'].includes(parsed.data.status)) continue;
+          const prefix = home === undefined ? 'learning' : `learning --home ${shellQuote(home)}`;
+          const hint = `${prefix} jobs ${parsed.data.status === 'uncertain' ? 'reconcile' : 'resume'} ${shellQuote(parsed.data.id)}`;
+          if (!result.error.hint.includes(hint)) result.error.hint.push(hint);
+        }
+      }
       if (mode.format === 'json') await write(streams.stdout, JSON.stringify(result) + '\n');
       else if (mode.format === 'jsonl') await event({ type: 'result', data: result });
-      else { if (human) await write(streams.stdout, human + '\n'); if (info) await write(streams.stderr, `错误 [${info.error.code}] ${info.error.message}\n${info.error.hint.join('\n')}${info.error.hint.length ? '\n' : ''}`); }
+      else { if (human) await write(streams.stdout, human + '\n'); if (info) await write(streams.stderr, `${mode.color ? styleText(['red','bold'], '错误', {stream: process.stderr}) : '错误'} [${info.error.code}] ${info.error.message}\n`); if (result.error?.hint.length) await write(streams.stderr, result.error.hint.join('\n') + '\n'); }
       if (mode.debug && error !== undefined) await write(streams.stderr, JSON.stringify({ diagnostic: error instanceof Error ? error.name : typeof error, code: info?.error.code }) + '\n');
     },
     close() { pause(); progressPauses.delete(mode); streams.stdout.off('error', onError); streams.stderr.off('error', onError); },
@@ -131,3 +149,5 @@ export function formatTable(headers: string[], rows: unknown[][], width = proces
   table.push(...cells);
   return table.toString();
 }
+
+export function shellQuote(value: string): string { return "'" + value.replaceAll("'", "'\\''") + "'"; }

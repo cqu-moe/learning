@@ -62,7 +62,7 @@ describe('cli basics (T25, A251/A252)', () => {
       tempRoots.push(envHome);
       const run = runCli(['init'], { env: { LEARNING_HOME: envHome }, homeBeforeCommand: before });
       expect(run.exitCode).toBe(0);
-      expect(run.stdout).toContain(`initialized ${run.home}`);
+      expect(run.stdout).toContain(`已初始化：${run.home}`);
       expect(existsSync(resolve(run.home, 'master.key'))).toBe(true);
       expect(existsSync(resolve(envHome, 'master.key'))).toBe(false);
     }
@@ -74,14 +74,14 @@ describe('cli basics (T25, A251/A252)', () => {
     const stdout = execFileSync(process.execPath, [cliEntry, 'init'], {
       env: { ...process.env, LEARNING_HOME: home }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
-    expect(stdout).toContain(`initialized ${home}`);
+    expect(stdout).toContain(`已初始化：${home}`);
     expect(existsSync(resolve(home, 'master.key'))).toBe(true);
   });
 
   it('doctor reports missing browser without installing anything', () => {
     const run = runCli(['doctor']);
     expect(run.exitCode).toBe(0);
-    expect(run.stdout).toContain('browser: not configured');
+    expect(run.stdout).toContain('浏览器：未配置');
   });
 
   it('doctor JSON reports actual local state and renderer limits in one result', () => {

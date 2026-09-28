@@ -29,6 +29,10 @@ node apps/cli/dist/index.js init --home ~/.learning
 
 手工草稿不需要模型。需要 `discuss draft <resource> --ai` 时，在本机进程环境中设置 `LEARNING_MODEL_BASE_URL`（HTTPS 兼容 API 的 `/v1` 根路径）、`LEARNING_MODEL_NAME` 和 `LEARNING_MODEL_API_KEY`；仅明确使用 `--ai` 时发送选定题目或讨论主题，建议仍需编辑并另行确认发布。密钥不写入仓库、CLI 输出或 profile 状态。本地适配器使用 [OpenAI Docs 的 Chat Completions 请求格式](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions/methods/create)；具体服务端是否兼容仍须用用户自己的配置验证。本轮没有调用付费模型。
 
+## CLI 0.2 升级
+
+使用固定 Node/pnpm 安装并重新构建即可；SDK 仍为 0.1.0。脚本需按 [迁移说明](CLI-MIGRATION.md) 更新 JSON 的 data envelope、任务列表和非交互扫码参数。生产运行不需要 Python；执行真实 PTY 测试的开发环境需有 python3（仅标准库）。
+
 ## 备份/升级/回滚
 
 - 备份：复制 LEARNING_HOME 目录（含 master.key 与 state.db）。

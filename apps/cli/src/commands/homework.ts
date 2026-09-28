@@ -7,15 +7,14 @@ import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 
 export function registerHomeworkCommands(program: Command): void {
-  const homework = program.command('homework').description('read or apply homework drafts');
+  const homework = program.command('homework').description('生成或提交作业草稿');
   homework.command('draft <resource>')
-    .description('create an editable YAML draft for a cached homework resource')
-    .requiredOption('-o, --output <file>', 'new local YAML file')
+    .description('为作业或内嵌题生成 YAML 草稿')
+    .requiredOption('-o, --output <file>', '新 YAML 草稿路径')
     .action(async (key: string, options: { output: string }) => {
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
-        if (profile === null) return;
-        const stored = await runtime.state.get(resourceCacheKey(key));
+          const stored = await runtime.state.get(resourceCacheKey(key));
         if (stored === null) throw new LearningError({ code: 'INVALID_INPUT', message: 'unknown resource key; run outline first', retryAfterMs: null, operationId: null });
         const resource = ResourceRefSchema.parse(stored.value);
         if (resource.course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
@@ -35,15 +34,14 @@ export function registerHomeworkCommands(program: Command): void {
     });
 
   homework.command('apply <file>')
-    .description('preview and explicitly submit selected homework answers one at a time')
-    .option('--dry-run', 'preview only; never send an answer')
-    .option('--yes', 'confirm sending every selected answer')
+    .description('预览并确认提交选中的作业答案')
+    .option('--dry-run', '只预览，不发送答案')
+    .option('--yes', '确认提交全部选中答案')
     .action(async (file: string, options: { dryRun?: boolean; yes?: boolean }) => {
       requireConfirmation(program, options.yes, options.dryRun);
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
-        if (profile === null) return;
-        const stat = await lstat(file);
+          const stat = await lstat(file);
         if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
         const text = await readFile(file, 'utf8');
         const client = createLearningClient({ scope: profile.scope, runtime });

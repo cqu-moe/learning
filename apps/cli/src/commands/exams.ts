@@ -10,15 +10,14 @@ import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 
 export function registerExamCommands(program: Command): void {
-  const exam = program.command('exam').description('exam draft operations');
+  const exam = program.command('exam').description('试卷分步操作');
   const draftCommand = exam.command('draft <resource>')
-    .description('create an editable YAML draft from a permitted exam paper')
-    .requiredOption('-o, --output <file>', 'new output file');
+    .description('为可读取的试卷生成 YAML 草稿')
+    .requiredOption('-o, --output <file>', '新输出文件路径');
   draftCommand.action(async (key: string) => {
     const output = draftCommand.opts<{ output: string }>().output;
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const stored = await runtime.state.get(resourceCacheKey(key));
       if (stored === null) throw new LearningError({ code: 'INVALID_INPUT', message: 'unknown exam resource; run outline first', retryAfterMs: null, operationId: null });
       const resource = ResourceRefSchema.parse(stored.value);
@@ -38,15 +37,14 @@ export function registerExamCommands(program: Command): void {
     });
   });
   const save = exam.command('save <draft>')
-    .description('cache verified choice/judgement answers without final submission')
-    .option('--yes', 'confirm saving answers')
-    .option('--dry-run', 'preview without saving');
+    .description('保存已验证题型的答案，不交卷')
+    .option('--yes', '确认保存答案')
+    .option('--dry-run', '只预览，不保存');
   save.action(async (path: string) => {
     const options = save.opts<{ yes?: boolean; dryRun?: boolean }>();
     requireConfirmation(program, options.yes, options.dryRun);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
@@ -62,15 +60,14 @@ export function registerExamCommands(program: Command): void {
     });
   });
   const start = exam.command('start <resource>')
-    .description('explicitly start an unstarted exam; this may begin a timer')
-    .option('--yes', 'confirm beginning a possible countdown')
-    .option('--dry-run', 'show the preview without starting');
+    .description('确认后开卷，可能开始计时')
+    .option('--yes', '确认可能开始计时')
+    .option('--dry-run', '只预览，不开卷');
   start.action(async (key: string) => {
     const options = start.opts<{ yes?: boolean; dryRun?: boolean }>();
     requireConfirmation(program, options.yes, options.dryRun);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const stored = await runtime.state.get(resourceCacheKey(key));
       if (stored === null) throw new LearningError({ code: 'INVALID_INPUT', message: 'unknown exam resource; run outline first', retryAfterMs: null, operationId: null });
       const resource = ResourceRefSchema.parse(stored.value);
@@ -88,13 +85,12 @@ export function registerExamCommands(program: Command): void {
     });
   });
   exam.command('export <resource>')
-    .description('export a permitted exam or result to the local data directory')
+    .description('导出可读取的试卷或结果')
     .option('--output-dir <dir>', '导出目标根目录')
     .action(async (key: string, options: { outputDir?: string }) => {
       await withCliRuntime(program, true, async (runtime, dataDir) => {
         const profile = await selectProfile(program, runtime);
-        if (profile === null) return;
-        const stored = await runtime.state.get(resourceCacheKey(key));
+          const stored = await runtime.state.get(resourceCacheKey(key));
         if (stored === null) throw new LearningError({ code: 'INVALID_INPUT', message: 'unknown resource key; run outline first', retryAfterMs: null, operationId: null });
         const resource = ResourceRefSchema.parse(stored.value);
         if (resource.course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
@@ -114,19 +110,18 @@ export function registerExamCommands(program: Command): void {
       });
     });
   const submit = exam.command('submit <draft>')
-    .description('finalize an exam draft (requires --yes --final)')
-    .option('--yes', 'explicit confirmation')
-    .option('--final', 'final submission (not just a save)')
-    .option('--dry-run', 'show the final-submission blockers without sending');
+    .description('最终交卷，非交互需要 --yes --final')
+    .option('--yes', '确认当前操作')
+    .option('--final', '明确执行最终交卷')
+    .option('--dry-run', '查看交卷预览及阻塞原因，不发送');
   submit.action(async (path: string) => {
       const options = submit.opts<{ yes?: boolean; final?: boolean; dryRun?: boolean }>();
       if ((!options.yes || !options.final) && !options.dryRun && !getOutput(program).mode.interactive) {
-        throw new CliError('INVALID_INPUT', String('learning: exam submit requires --yes --final\n').replace(/^learning: /, '').trim(), 2);
+        throw new CliError('INVALID_INPUT', 'exam submit requires --yes --final', 2);
       }
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
-        if (profile === null) return;
-        const info = await lstat(path);
+          const info = await lstat(path);
         if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'exam draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
         const client = createLearningClient({ scope: profile.scope, runtime });
         try {

@@ -17,26 +17,21 @@ function studyResources(nodes: OutlineNode[], includeDocuments: boolean): Resour
 
 export function registerRunCommands(program: Command): void {
   const run = program.command('run [course-or-resource]')
-    .description('drive a study job in the foreground; Ctrl+C pauses persistently')
-    .option('--speed <number>', 'playback speed 1..5', '1')
-    .option('--target <fraction>', 'target progress fraction 0..1', '1')
-    .option('--dry-run', 'read current progress and show a preview without heartbeat writes')
-    .option('--yes', 'confirm this study job');
+    .description('前台运行学习任务，Ctrl+C 保存暂停状态')
+    .option('--speed <number>', '倍速，仍受平台上限约束', '1')
+    .option('--target <fraction>', '目标进度，大于 0、不超过 1', '1')
+    .option('--dry-run', '只读进度并展示预览，不发送学习心跳')
+    .option('--yes', '确认启动此学习任务');
   run.action(async (key?: string) => {
     if (key === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '缺少课程或资源。', 2, ['course-or-resource']);
-    await askDefaults(run, [
-      { name: 'speed', message: '倍速（仍受平台上限约束）', initialValue: '1', validate: value => Number(value) >= 1 && Number(value) <= 5 ? undefined : '请输入 1–5 之间的倍速。' },
-      { name: 'target', message: '目标进度（0–1）', initialValue: '1', validate: value => Number(value) > 0 && Number(value) <= 1 ? undefined : '请输入大于 0、不超过 1 的进度。' },
-    ], isWizard(program));
     const options = run.opts<{ speed: string; target: string; dryRun?: boolean; yes?: boolean }>();
-    const speed = Number(options.speed);
-    const targetFraction = Number(options.target);
+    let speed = Number(options.speed);
+    let targetFraction = Number(options.target);
     if (!Number.isFinite(speed) || speed < 1 || speed > 5 || !Number.isFinite(targetFraction) || targetFraction <= 0 || targetFraction > 1) {
       throw new LearningError({ code: 'INVALID_INPUT', message: 'speed must be 1..5 and target must be within (0,1]', retryAfterMs: null, operationId: null });
     }
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       if (profile.scope.platform !== 'zhs' && !Number.isSafeInteger(speed)) throw new LearningError({ code: 'INVALID_INPUT', message: 'Yuketang and Xuetang speed must be an integer', retryAfterMs: null, operationId: null });
       if (profile.scope.platform === 'zhs' && speed > 1.5) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS speed cannot exceed 1.5', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
@@ -60,6 +55,12 @@ export function registerRunCommands(program: Command): void {
           throw new LearningError({ code: 'INVALID_INPUT', message: 'no study resources in this profile were selected', retryAfterMs: null, operationId: null });
         }
         if (profile.scope.platform === 'zhs' && resources.some((resource) => resource.native.kind === 'zhs-hike') && speed > 1.25) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS hike speed cannot exceed 1.25', retryAfterMs: null, operationId: null });
+        const maxSpeed = profile.scope.platform === 'zhs' ? resources.some(resource => resource.native.kind === 'zhs-hike') ? 1.25 : 1.5 : 5;
+        await askDefaults(run, [
+          { name: 'speed', message: `倍速（1–${maxSpeed}）`, initialValue: '1', validate: value => Number(value) >= 1 && Number(value) <= maxSpeed && (profile.scope.platform === 'zhs' || Number.isInteger(Number(value))) ? undefined : '请输入当前平台允许的倍速。' },
+          { name: 'target', message: '目标进度（大于 0、不超过 1）', initialValue: '1', validate: value => Number(value) > 0 && Number(value) <= 1 ? undefined : '请输入有效的目标进度。' },
+        ], isWizard(program));
+        speed = Number(run.opts<{ speed: string }>().speed); targetFraction = Number(run.opts<{ target: string }>().target);
         const preview = await client.actions.prepare({ kind: 'study', resources, settings: { speed, targetFraction, questionMode: 'pause', maxDurationSeconds: 24 * 60 * 60 } });
         const summary = `账号：${profile.name}\n学习 ${resources.length} 个资源，倍速 ${speed}，目标 ${targetFraction * 100}%\n${resources.map(resource => resource.key).join('\n')}`;
         if (options.dryRun) { getOutput(program).set(preview, summary, 'preview'); return; }

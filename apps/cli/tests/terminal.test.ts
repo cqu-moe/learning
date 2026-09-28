@@ -7,7 +7,7 @@ const root = mkdtempSync(resolve(tmpdir(), 'learning-terminal-'));
 const cli = resolve(import.meta.dirname, '../dist/index.js');
 const driver = resolve(import.meta.dirname, 'helpers/terminal-driver.py');
 afterAll(() => rmSync(root, { recursive: true, force: true }));
-function terminal(args: string[], steps: Array<{ wait: string; send: string }>, columns = 80, term = 'xterm-256color') {
+function terminal(args: string[], steps: Array<{ wait: string; send?: string; signal?: string }>, columns = 80, term = 'xterm-256color') {
   const result = spawnSync('python3', [driver, JSON.stringify({ argv: [process.execPath, cli, '--home', root, ...args], steps, columns, term })], { encoding: 'utf8', timeout: 15_000 });
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
@@ -23,8 +23,9 @@ describe('real terminal interaction', () => {
   it('runs one selected command then exits', () => {
     const result = terminal(['--output-format','plain'], [{ wait: '请选择操作', send: '2\n' }]);
     expect(result.code).toBe(0);
-    expect(result.screen).toContain('node:');
+    expect(result.screen).toContain('Node：');
     expect(result.screen.match(/请选择操作/g)).toHaveLength(1);
+    expect(result.screen).toContain('等价命令');
   }, 20_000);
   it('uses Clack in a real terminal', () => {
     const result = terminal(['profile','add','--platform','ykt'], [{ wait: '账号名称', send: 'pretty-user\r' }]);
@@ -37,3 +38,63 @@ describe('real terminal interaction', () => {
     expect(result.screen).toContain('CANCELED');
   }, 20_000);
 });
+
+it('retries invalid plain input and preserves a profile when confirmation is declined', () => {
+ const result = terminal(['profile','remove','plain-user','--output-format','plain','--quiet'], [{ wait: '确认执行以上操作', send: 'n\n' }], 32, 'dumb');
+ expect(result.code).toBe(3);
+ const list = spawnSync(process.execPath,[cli,'--home',root,'profile','list','--json'],{encoding:'utf8'});
+ expect(JSON.parse(list.stdout).data.profiles.some((profile:{name:string})=>profile.name==='plain-user')).toBe(true);
+ expect(result.screen).not.toContain('\u001b');
+ expect(result.screen).toContain('删除账号 plain-user');
+},20_000);
+
+it('presents Chinese help for every registered leaf command', async () => {
+ const { createProgram } = await import('../src/program.js');
+ const program = createProgram();
+ const paths: string[][] = [];
+ const visit = (command: typeof program, path: string[]) => {
+  if (!command.commands.length) paths.push(path);
+  for (const child of command.commands) visit(child,[...path,child.name()]);
+ };
+ for (const command of program.commands) visit(command,[command.name()]);
+ expect(paths).toHaveLength(33);
+ expect(paths.map(path=>path.join(' '))).toContain('exam draft');
+ expect(paths.map(path=>path.join(' '))).toContain('operations reconcile');
+ for (const path of paths) {
+  const result = spawnSync(process.execPath,[cli,...path,'--help'],{encoding:'utf8'});
+  expect(result.status,path.join(' ')).toBe(0);
+  expect(result.stdout).toContain('用法');
+ }
+},20_000);
+
+it('persists a real foreground pause on SIGINT and reports a canceled invocation', async () => {
+ const { SqliteStateStore } = await import('@learning/sdk/node');
+ const state = new SqliteStateStore(resolve(root,'state.db'));
+ try {
+  const profile = await state.get('cli:profile:plain-user');
+  const scope = (profile!.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+  await state.commit({expected:[{key:'job:terminal-job',revision:null},{key:'job-meta:terminal-job',revision:null}],changes:[{key:'job:terminal-job',value:{id:'terminal-job',scope,kind:'export',status:'waiting',createdAtMs:1,updatedAtMs:1,nextRunAtMs:Date.now()+30_000,completed:0,total:1,items:[],warnings:[]}},{key:'job-meta:terminal-job',value:{inputDigest:'x',generation:1,cursor:null,pendingOperationId:null,running:false}}]});
+ } finally {state.close();}
+ const result = terminal(['jobs','resume','terminal-job','--output-format','jsonl'],[{wait:'"status":"waiting"',signal:'SIGINT'}]);
+ expect(result.code).toBe(3);
+ const events = result.screen.split('\n').map(line=>line.trim()).filter(line=>line.startsWith('{')).map(line=>JSON.parse(line));
+ expect(events.at(-1).data.status).toBe('canceled');
+ const saved = spawnSync(process.execPath,[cli,'--home',root,'jobs','show','terminal-job','--json'],{encoding:'utf8'});
+ expect(JSON.parse(saved.stdout).data.status).toBe('paused');
+},20_000);
+
+it('rejects an explicit nonexistent draft before asking which profile to use', () => {
+ const result = terminal(['homework','apply',resolve(root,'missing.yaml'),'--yes','--output-format','plain'],[]);
+ expect(result.code).toBe(2);
+ expect(result.screen).not.toContain('选择账号');
+},20_000);
+
+it('accepts an existing select default with Enter in plain mode', () => {
+ const script = `import {createPrompts} from ${JSON.stringify(resolve(import.meta.dirname,'../dist/prompts.js'))}; const value=await createPrompts({format:'plain',interactive:true,quiet:false,color:false,debug:false}).ask({name:'format',message:'输出格式',initialValue:'pdf',options:[{value:'pdf',label:'PDF'},{value:'images',label:'图片'}]}); console.log('default='+value);`;
+ const result = spawnSync('python3',[driver,JSON.stringify({argv:[process.execPath,'--input-type=module','-e',script],steps:[{wait:'输出格式',send:'\n'},{wait:'请选择有效编号',send:'1\n'}]})],{encoding:'utf8',timeout:15_000});
+ expect(result.status,result.stderr).toBe(0);
+ const data=JSON.parse(result.stdout);
+ expect(data.code).toBe(0);
+ expect(data.screen).toContain('default=pdf');
+ expect(data.screen).not.toContain('请选择有效编号');
+},20_000);

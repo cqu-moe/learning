@@ -20,16 +20,16 @@ function flatten(nodes: OutlineNode[]): Array<{ kind: string; ref: ResourceRef }
 
 export function registerDownloadCommands(program: Command): void {
   const download = program.command('download [course-or-resource]')
-    .description('export permitted videos and assessments locally')
-    .option('--types <types>', 'comma-separated video,homework,exam', 'video,homework,exam')
-    .option('--quality <quality>', 'best, hd or sd', 'best')
-    .option('--subtitles', 'include available transcript')
+    .description('导出可读取的视频、作业和试卷')
+    .option('--types <types>', '资源类型：video,homework,exam，逗号分隔', 'video,homework,exam')
+    .option('--quality <quality>', '视频质量：best、hd 或 sd', 'best')
+    .option('--subtitles', '同时导出可用字幕')
     .option('--output-dir <dir>', '导出目标根目录，每个任务使用唯一子目录')
-    .option('--dry-run', 'resolve planned exports without transferring');
+    .option('--dry-run', '只查看导出计划，不下载');
   download.action(async (key?: string) => {
     if (key === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '缺少课程或资源。', 2, ['course-or-resource']);
     await askDefaults(download, [
-      { name: 'types', message: '资源类型，逗号分隔 video,homework,exam', initialValue: 'video,homework,exam' },
+      { name: 'types', message: '资源类型，逗号分隔 video,homework,exam', initialValue: 'video,homework,exam', validate: value => { const kinds = String(value).split(',').map(kind => kind.trim()); return kinds.every(kind => TYPES.has(kind)) && new Set(kinds).size === kinds.length ? undefined : '请输入不重复的 video、homework 或 exam。'; } },
       { name: 'quality', message: '视频质量', options: ['best','hd','sd'].map(value => ({ value, label: value })) },
       { name: 'subtitles', message: '同时导出可用字幕？', confirm: true },
     ], isWizard(program));
@@ -41,7 +41,6 @@ export function registerDownloadCommands(program: Command): void {
     if (!['best', 'hd', 'sd'].includes(options.quality)) throw new LearningError({ code: 'INVALID_INPUT', message: 'quality must be best, hd or sd', retryAfterMs: null, operationId: null });
     await withCliRuntime(program, true, async (runtime, dataDir) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         key ??= await chooseTarget(client, runtime, createPrompts(getOutput(program).mode), ['video', 'homework', 'exam']);

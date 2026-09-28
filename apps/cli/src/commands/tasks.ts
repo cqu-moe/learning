@@ -1,7 +1,7 @@
 import { confirmAction, requireConfirmation } from '../prompts.js';
 import type { Prompts } from '../prompts.js';
 import type { Job, JobStatus } from '@learning/sdk/public';
-import { CliError, getOutput, formatTable } from '../output.js';
+import { CliError, formatTable } from '../output.js';
 import type { Command } from 'commander';
 import { JobSchema } from '@learning/sdk/public';
 import { createLearningClient } from '@learning/sdk';
@@ -24,10 +24,10 @@ function openJobStore(program: Command): SqliteStateStore | null {
 }
 
 export function registerJobsCommands(program: Command): void {
-  const jobs = program.command('jobs').description('inspect local jobs');
+  const jobs = program.command('jobs').description('查看和控制本地任务');
   jobs
     .command('list')
-    .description('list job records (read-only)')
+    .description('只读列出任务')
     .action(async () => {
       const state = openJobStore(program);
       if (state === null) return;
@@ -46,26 +46,25 @@ export function registerJobsCommands(program: Command): void {
     });
   jobs
     .command('show <jobId>')
-    .description('show a saved job (read-only)')
+    .description('只读查看任务详情')
     .action(async (jobId: string) => {
       const state = openJobStore(program);
       if (state === null) return;
       try {
         const stored = await state.get(`job:${jobId}`);
-        if (stored === null) { throw new CliError('INVALID_INPUT', String(`learning: unknown job id ${jobId}\n`).replace(/^learning: /, '').trim(), 2); }
+        if (stored === null) { throw new CliError('INVALID_INPUT', `unknown job id ${jobId}`, 2); }
         const job = JobSchema.parse(stored.value);
         printResult(program, job, `${job.id} · ${job.kind} · ${job.status} · ${job.completed}/${job.total ?? '?'}\n${nextStep(program, job)}`);
       } finally { state.close(); }
     });
   jobs
     .command('cancel <jobId>')
-    .description('cancel a saved job under its profile')
+    .description('取消任务，不回滚已完成部分')
     .option('--yes', '确认取消任务')
     .action(async (jobId: string, options: { yes?: boolean }) => {
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
-        if (profile === null) return;
-        const client = createLearningClient({ scope: profile.scope, runtime });
+          const client = createLearningClient({ scope: profile.scope, runtime });
         try {
           const current = await client.jobs.get(jobId);
           await confirmAction(program, `取消任务 ${jobId}（${current.status}）；已完成部分不会回滚。`, options.yes);
@@ -75,17 +74,16 @@ export function registerJobsCommands(program: Command): void {
       });
     });
   const resume = jobs.command('resume <jobId>')
-    .description('resume an interrupted export, study or live job under its profile')
-    .option('--yes', 'confirm a new live checkin when resuming a live job');
+    .description('恢复导出、学习或直播任务')
+    .option('--yes', '确认恢复直播时重新签到');
   resume
     .action(async (jobId: string) => {
       await withCliRuntime(program, true, async (runtime, dataDir) => {
         const profile = await selectProfile(program, runtime);
-        if (profile === null) return;
-        const client = createLearningClient({ scope: profile.scope, runtime });
+          const client = createLearningClient({ scope: profile.scope, runtime });
         try {
           const before = await client.jobs.get(jobId);
-          if (before.kind !== 'export' && before.kind !== 'study' && before.kind !== 'live') { throw new CliError('INTERACTION_REQUIRED', String('learning: this job type has no CLI resume handler\n').replace(/^learning: /, '').trim(), 3); }
+          if (before.kind !== 'export' && before.kind !== 'study' && before.kind !== 'live') { throw new CliError('INTERACTION_REQUIRED', 'this job type has no CLI resume handler', 3); }
           if (before.kind === 'live') {
             requireConfirmation(program, resume.opts<{ yes?: boolean }>().yes, false);
             await confirmAction(program, `恢复直播任务 ${jobId} 会重新签到。`, resume.opts<{ yes?: boolean }>().yes);
@@ -103,18 +101,17 @@ export function registerJobsCommands(program: Command): void {
     });
   jobs
     .command('reconcile <jobId>')
-    .description('read-only check of a job pending operation; refuses resume while uncertain')
+    .description('只读核对待确认写入，不重复发送')
     .action(async (jobId: string) => {
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
-        if (profile === null) return;
-        const client = createLearningClient({ scope: profile.scope, runtime });
+          const client = createLearningClient({ scope: profile.scope, runtime });
         try {
           await client.jobs.get(jobId);
           const meta = await runtime.state.get(`job-meta:${jobId}`);
           const pending = meta?.value && typeof meta.value === 'object' && !Array.isArray(meta.value) ? meta.value.pendingOperationId : null;
           if (typeof pending !== 'string' || pending.length === 0) {
-            throw new CliError('INTERACTION_REQUIRED', String('learning: job has no pending operation to reconcile\n').replace(/^learning: /, '').trim(), 3);
+            throw new CliError('INTERACTION_REQUIRED', 'job has no pending operation to reconcile', 3);
           }
           const receipt = await client.actions.reconcile(pending);
           const job = await client.jobs.get(jobId);

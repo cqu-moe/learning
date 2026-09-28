@@ -24,11 +24,14 @@ bindOutput(program, output);
 if (!output.mode.color) { process.env.NO_COLOR = '1'; delete process.env.FORCE_COLOR; }
 let help = '';
 program.configureOutput({ writeOut: value => { help += value; }, writeErr: () => {} });
-program.hook('preAction', (_root, command) => {
+const trackCommand = (_root: Command, command: Command) => {
   const names: string[] = [];
   for (let p: Command | null = command; p?.parent; p = p.parent) names.unshift(p.name());
-  output.setCommand(names.join(' '));
-});
+  output.setCommand(names.join(' ') || 'learning');
+};
+program.hook('preAction', trackCommand);
+const trackSubcommands = (command: Command) => { command.hook('preSubcommand', trackCommand); command.commands.forEach(trackSubcommands); };
+trackSubcommands(program);
 try {
   if (flags.json && flags.outputFormat !== undefined && flags.outputFormat !== 'json') throw new CliError('INVALID_INPUT', '--json 与 --output-format 冲突。');
   if (flags.outputFormat !== undefined && !['pretty','plain','json','jsonl'].includes(String(flags.outputFormat))) throw new CliError('INVALID_INPUT', '输出格式必须为 pretty、plain、json 或 jsonl。');

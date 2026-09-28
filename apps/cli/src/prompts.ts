@@ -8,6 +8,7 @@ import type { Command } from 'commander';
 export type Choice = { value: string; label: string; hint?: string };
 export type PromptField = { name: string; message: string; options?: Choice[]; initialValue?: string; multiple?: boolean; confirm?: boolean; validate?: (value: unknown) => string | undefined };
 export function createPrompts(mode: OutputMode) {
+  clack.updateSettings({ messages: { cancel: '已取消', error: '操作失败' } });
   const ask = async (field: PromptField, signal?: AbortSignal): Promise<unknown> => {
     if (!mode.interactive) throw new CliError('INVALID_INPUT', `缺少参数：${field.name}`, 2, [field.name]);
     pauseProgress(mode);
@@ -36,6 +37,7 @@ export function createPrompts(mode: OutputMode) {
         const reply = (await input.question(`${message}${field.confirm ? ' [y/N]' : field.initialValue ? ` [${cleanText(field.initialValue)}]` : ''}: `, { signal: controller.signal })).trim();
         let value: unknown = reply || field.initialValue || '';
         if (field.confirm) { if (!/^(y|yes|n|no|是|否)?$/i.test(reply)) { process.stderr.write('请输入 y 或 n。\n'); continue; } value = /^(y|yes|是)$/i.test(reply); }
+        else if (options && reply === '' && field.initialValue !== undefined && options.some(option => option.value === field.initialValue)) value = field.multiple ? [field.initialValue] : field.initialValue;
         else if (options) {
           const indices = reply.split(',').map(value => Number(value) - 1);
           if (indices.some(index => !Number.isInteger(index) || index < 0 || index >= options.length) || (!field.multiple && indices.length !== 1)) { process.stderr.write('请选择有效编号。\n'); continue; }
@@ -74,7 +76,7 @@ export async function confirmAction(program: Command, summary: string, yes: bool
   const output = getOutput(program);
   if (yes) return;
   if (!output.mode.interactive) throw new CliError('CONFIRMATION_REQUIRED', '此操作需要确认，请检查预览后添加 --yes。', 3);
-  await output.message(summary);
+  await output.message(summary, true);
   if (!(await createPrompts(output.mode).ask({ name: 'confirm', message: '确认执行以上操作？', confirm: true }))) throw new CliError('CANCELED', '已取消，未执行此操作。', 3);
 }
 
@@ -83,7 +85,9 @@ export async function askDefaults(command: Command, fields: PromptField[], enabl
   const prompts = createPrompts(getOutput(command).mode);
   for (const field of fields) {
     if (command.getOptionValueSource(field.name) === 'cli') continue;
-    command.setOptionValueWithSource(field.name, await prompts.ask(field), 'prompt');
+    const current: unknown = command.opts()[field.name];
+    const prompt = field.initialValue === undefined && typeof current === 'string' ? { ...field, initialValue: current } : field;
+    command.setOptionValueWithSource(field.name, await prompts.ask(prompt), 'prompt');
   }
 }
 
@@ -96,6 +100,8 @@ export function installInputCompletion(program: Command): void {
     for (const argument of requiredArguments) argument.required = false;
     for (const option of requiredOptions) option.makeOptionMandatory(false);
     command.hook('preAction', async () => {
+      const { inferTargetScope } = await import('./context.js');
+      await inferTargetScope(program, command.registeredArguments[0]?.name(), command.processedArgs[0], command.parent?.name() === 'discuss');
       const output = getOutput(program);
       const prompts = createPrompts(output.mode);
       const shape: Record<string, z.ZodType> = {};
@@ -154,7 +160,6 @@ export function installInputCompletion(program: Command): void {
       const values = await fillMissing(z.object(shape), supplied, fields, { interactive: prompts.interactive, ask });
       for (const argument of requiredArguments) command.processedArgs[command.registeredArguments.indexOf(argument)] = values[argument.name()];
       for (const option of requiredOptions) if (command.getOptionValueSource(option.attributeName()) !== 'cli') command.setOptionValueWithSource(option.attributeName(), values[option.attributeName()], 'prompt');
-      const { inferTargetScope } = await import('./context.js');
       await inferTargetScope(program, command.registeredArguments[0]?.name(), command.processedArgs[0], command.parent?.name() === 'discuss');
     });
   };

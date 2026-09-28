@@ -1,9 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import pkg from '../package.json' with { type: 'json' };
+import sdkPkg from '../../../packages/sdk/package.json' with { type: 'json' };
 
 const tempRoots: string[] = [];
 
@@ -44,7 +45,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     expect(init.exitCode).toBe(0);
     const doctor = runPackedCli(['doctor'], init.home);
     expect(doctor.exitCode).toBe(0);
-    expect(doctor.stdout).toContain('node:');
+    expect(doctor.stdout).toContain('Node：');
     const jobs = runPackedCli(['jobs', 'list', '--json'], init.home);
     expect(jobs.exitCode).toBe(0);
     expect(JSON.parse(jobs.stdout).data.jobs).toEqual([]);
@@ -54,7 +55,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     const run = runPackedCli(['run', 'fixture-course', '--dry-run']);
     expect(run.exitCode).toBe(3);
     expect(run.stdout).toBe('');
-    expect(run.stderr).toContain('not initialized');
+    expect(run.stderr).toContain('尚未初始化');
     expect(run.stdout).not.toContain('yuketang.cn');
     expect(run.stdout).not.toContain('xuetangx.com');
     expect(run.stdout).not.toContain('zhihuishu.com');
@@ -67,12 +68,13 @@ describe('packed cli e2e (T31, A311/A312)', () => {
       'homework draft', 'homework apply', 'exam export', 'exam start', 'exam save', 'exam submit',
       'discuss draft', 'discuss post', 'answers match', 'live',
       'jobs list', 'jobs show', 'jobs resume', 'jobs cancel', 'jobs reconcile', 'doctor',
+      'exam draft', 'operations reconcile', 'config show', 'config set', 'config unset',
     ];
-    expect(paths).toHaveLength(28);
+    expect(paths).toHaveLength(33);
     for (const path of paths) {
       const result = runPackedCli([...path.split(' '), '--help']);
       expect(result.exitCode, path).toBe(0);
-      expect(result.stdout, path).toContain('Usage:');
+      expect(result.stdout, path).toContain('用法：');
     }
   }, 20_000);
 
@@ -132,27 +134,19 @@ describe('packed cli e2e (T31, A311/A312)', () => {
       expect(result.status, result.stderr).toBe(0);
     };
     pack(sdkRoot); pack(cliRoot);
-    const sdkTar = resolve(directory, `learning-sdk-${pkg.version}.tgz`);
+    const sdkTar = resolve(directory, `learning-sdk-${sdkPkg.version}.tgz`);
     const cliTar = resolve(directory, `learning-cli-${pkg.version}.tgz`);
     const listing = spawnSync('tar', ['-tf', cliTar], { encoding: 'utf8' });
     expect(listing.status).toBe(0);
     expect(listing.stdout).toContain('package/dist/index.js');
     expect(listing.stdout).not.toContain('package/src/');
     expect(listing.stdout).not.toContain('package/tests/');
-    mkdirSync(resolve(directory, 'node_modules/@learning'), { recursive: true });
-    mkdirSync(resolve(directory, 'node_modules/.bin'), { recursive: true });
-    for (const [name, tarball] of [['sdk', sdkTar], ['cli', cliTar]] as const) {
-      const unpack = resolve(directory, `unpack-${name}`);
-      mkdirSync(unpack);
-      const extracted = spawnSync('tar', ['-xf', tarball, '-C', unpack], { encoding: 'utf8' });
-      expect(extracted.status, extracted.stderr).toBe(0);
-      renameSync(resolve(unpack, 'package'), resolve(directory, `node_modules/@learning/${name}`));
-    }
-    for (const name of ['pdf-lib', 'parse5', 'tough-cookie', 'yaml', 'zod']) symlinkSync(resolve(sdkRoot, 'node_modules', name), resolve(directory, 'node_modules', name));
-    for (const name of ['commander', 'qrcode']) symlinkSync(resolve(cliRoot, 'node_modules', name), resolve(directory, 'node_modules', name));
+    writeFileSync(resolve(directory, 'package.json'), JSON.stringify({ private: true, dependencies: { '@learning/sdk': `file:${sdkTar}`, '@learning/cli': `file:${cliTar}` } }));
+    writeFileSync(resolve(directory, 'pnpm-workspace.yaml'), `packages: []\noverrides:\n  '@learning/sdk': ${JSON.stringify(`file:${sdkTar}`)}\n`);
+    const installed = spawnSync('pnpm', ['install', '--offline', '--ignore-scripts'], { cwd: directory, env: { ...process.env, PATH: nodePath }, encoding: 'utf8' });
+    expect(installed.status, installed.stdout + installed.stderr).toBe(0);
     const entry = resolve(directory, 'node_modules/@learning/cli/dist/index.js');
     const bin = resolve(directory, 'node_modules/.bin/learning');
-    symlinkSync('../@learning/cli/dist/index.js', bin);
     expect(statSync(entry).mode & 0o111).not.toBe(0);
     const help = spawnSync(bin, ['--help'], { cwd: directory, env: { ...process.env, PATH: nodePath }, encoding: 'utf8' });
     expect(help.status, help.stderr).toBe(0);
@@ -164,6 +158,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     const home = resolve(directory, 'data');
     const fixtureRoot = resolve(import.meta.dirname, '../../../packages/sdk/tests/fixtures');
     const run = (args: string[], fixture: string | null = null, expected = 0, cookie: string | null = null) => {
+      if (args[0] === 'login' && !args.includes('--import')) args = [...args, '--qr-file', resolve(directory, 'fixture-qr.png')];
       const result = spawnSync(process.execPath, [...(fixture ? ['--import', preload] : []), entry, '--home', home, ...args], {
         cwd: directory, encoding: 'utf8', env: { ...process.env, ...(fixture ? { LEARNING_FIXTURE_FILE: fixture } : {}), ...(cookie ? { LEARNING_ASSERT_COOKIE: cookie } : {}) },
       });
@@ -187,7 +182,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     const base = JSON.parse(readFileSync(resolve(fixtureRoot, 'xuetang/media.json'), 'utf8')) as { interactions: unknown[] };
     const first = resolve(directory, 'first.json');
     writeFileSync(first, JSON.stringify({ interactions: [...base.interactions, { request: { method: 'GET', host: 'www.xuetangx.com', path: '/hd.mp4' }, response: { status: 200, headers: { etag: '"v1"', 'content-type': 'video/mp4' }, chunks: [Buffer.from('abc').toString('base64')], failAfterChunks: true } }] }));
-    expect(run(['download', 'fixture-video', '--types', 'video', '--profile', 'beta', '--json'], first, 1)).toBe('');
+    expect(JSON.parse(run(['download', 'fixture-video', '--types', 'video', '--profile', 'beta', '--json'], first, 1))).toMatchObject({ ok: false, exitCode: 1 });
     const paused = (JSON.parse(run(['jobs', 'list', '--json'])).data.jobs as Array<{ id: string; status: string; scope: { profileId: string } }>).find((job) => job.status === 'paused' && job.scope.profileId === beta.scope.profileId);
     expect(paused).toBeDefined();
     const second = resolve(directory, 'second.json');
@@ -196,5 +191,5 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     expect(resumed.job).toMatchObject({ id: paused!.id, status: 'succeeded' });
     expect(readFileSync(resumed.files[0]!, 'utf8')).toBe('abcdef');
     expect(alpha.scope.profileId).not.toBe(beta.scope.profileId);
-  }, 30_000);
+  }, 60_000);
 });

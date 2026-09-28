@@ -102,7 +102,7 @@ export function registerLoginCommands(program: Command): void {
           closeSync(descriptor);
           if (qrPath !== null) {
             try { const current = lstatSync(qrPath); if (current.ino === owned.ino && current.dev === owned.dev) unlinkSync(qrPath); }
-            catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+            catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') await output.warning('QR_CLEANUP', `二维码文件无法清理，请手动检查：${qrPath}`); }
           }
         }
         await client.close();
@@ -110,10 +110,9 @@ export function registerLoginCommands(program: Command): void {
     });
   });
 
-  program.command('whoami').description('probe the selected platform session').action(async () => {
+  program.command('whoami').description('核验当前账号登录状态').action(async () => {
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         const probe = await client.auth.probe();

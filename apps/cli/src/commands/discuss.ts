@@ -8,17 +8,16 @@ import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
 
 export function registerDiscussCommands(program: Command): void {
-  const discuss = program.command('discuss').description('prepare or post discussion replies');
+  const discuss = program.command('discuss').description('生成讨论草稿或确认发帖');
   const draft = discuss.command('draft <resource>')
-    .description('create a new editable JSON discussion draft')
-    .requiredOption('-o, --output <file>', 'new output file')
-    .option('--ai', 'request a model suggestion when configured');
+    .description('生成可编辑的 JSON 讨论草稿')
+    .requiredOption('-o, --output <file>', '新输出文件路径')
+    .option('--ai', '明确请求已配置的模型生成建议，可能产生费用');
   draft.action(async (key: string) => {
     await askDefaults(draft, [{ name: 'ai', message: '使用已配置的模型生成建议？可能产生费用。', confirm: true }], isWizard(program));
     const options = draft.opts<{ output: string; ai?: boolean }>();
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const stored = await runtime.state.get(resourceCacheKey(key));
       if (stored === null) throw new LearningError({ code: 'INVALID_INPUT', message: 'unknown discussion resource; run outline first', retryAfterMs: null, operationId: null });
       const resource = ResourceRefSchema.parse(stored.value);
@@ -38,15 +37,14 @@ export function registerDiscussCommands(program: Command): void {
   });
 
   const post = discuss.command('post <file>')
-    .description('preview and explicitly post one discussion reply')
-    .option('--dry-run', 'preview only; do not post')
-    .option('--yes', 'confirm posting');
+    .description('预览并确认发布一条讨论回复')
+    .option('--dry-run', '只预览，不发帖')
+    .option('--yes', '确认发布讨论');
   post.action(async (path: string) => {
     const options = post.opts<{ dryRun?: boolean; yes?: boolean }>();
     requireConfirmation(program, options.yes, options.dryRun);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
-      if (profile === null) return;
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'discussion draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
       let parsed: unknown;
