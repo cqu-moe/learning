@@ -452,3 +452,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户要求继续后，已在 `/Users/uu/.codex/worktrees/cli-ux-plan/learning` 的 `codex/cli-ux` 完成 UX01–UX09，最终实现提交 `cf0a0f0`。独立评审 7 项均已修复；详细实现、裁定及迁移说明在该工作树的 PROGRESS 和 CLI-MIGRATION 中。
 - Node24.11.1/pnpm11.19.0 的最终 lint、typecheck、test（SDK233/CLI92）、build、实际离线打包消费者 E2E（7/7）、boundaries、source-lock、diff 检查均 exit 0。未进行真实平台、真实考试或付费模型操作。
 - 当前主工作区尚未合并这些代码，等待用户选择本地合并 main、推送 PR 或保留分支；原有任务和业务证据缺口不重置。
+
+### 2026-09-29 · CLI UX 合并到本地 main
+
+- 用户确认试用后授权合并。首页循环提交 1cee5e7，codex/cli-ux 从 bbb4a3d 快进合入本地 main；主目录原先未提交的访谈与交付记录逐段核对后完整保留。未推送远端。
+- 合并前完整 pnpm test 通过 SDK233/CLI99。合并后在主目录使用 Node24.11.1/pnpm11.19.0，实际运行 install --offline --frozen-lockfile、lint、typecheck、test（SDK233/CLI99）、test:e2e（7/7）、boundaries、source-lock、git diff --check，全部 exit 0。CLI test 已重建主目录 dist；现有 ~/.local/bin/learning --version 返回 0.2.0，exit 0。
+- 保留试用工作树及分支供已有 learning-ux 函数使用；不改用户试用数据，不操作其他工作树。未运行真实平台业务。下一步为用户继续使用，既有 SDK/平台验收缺口维持原状态。
