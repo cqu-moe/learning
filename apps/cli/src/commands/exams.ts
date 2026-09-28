@@ -1,4 +1,7 @@
-import { CliError } from '../output.js';
+import { confirmAction, requireConfirmation } from '../prompts.js';
+import { readPreferences, setJobOutputRoot } from '../preferences.js';
+import { resolve } from 'node:path';
+import { CliError, getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
@@ -40,7 +43,7 @@ export function registerExamCommands(program: Command): void {
     .option('--dry-run', 'preview without saving');
   save.action(async (path: string) => {
     const options = save.opts<{ yes?: boolean; dryRun?: boolean }>();
-    if (!options.yes && !options.dryRun) { throw new CliError('INVALID_INPUT', String('learning: exam save requires --yes or --dry-run\n').replace(/^learning: /, '').trim(), 2); }
+    requireConfirmation(program, options.yes, options.dryRun);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
       if (profile === null) return;
@@ -52,6 +55,7 @@ export function registerExamCommands(program: Command): void {
         if (draft.ref.kind !== 'exam') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not an exam', retryAfterMs: null, operationId: null });
         const preview = await client.actions.prepare({ kind: 'exam.save', draft });
         if (options.dryRun) { printResult(program, preview, `exam ${draft.ref.assessmentId} save previewed; no final submission`); return; }
+        await confirmAction(program, `账号：${profile.name}，保存试卷 ${draft.ref.assessmentId} 的答案，不交卷。`, options.yes);
         const receipt = await client.actions.execute(preview.id);
         printResult(program, receipt, `exam answers saved: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
@@ -63,7 +67,7 @@ export function registerExamCommands(program: Command): void {
     .option('--dry-run', 'show the preview without starting');
   start.action(async (key: string) => {
     const options = start.opts<{ yes?: boolean; dryRun?: boolean }>();
-    if (!options.yes && !options.dryRun) { throw new CliError('INVALID_INPUT', String('learning: exam start requires --yes (may begin a timer)\n').replace(/^learning: /, '').trim(), 2); }
+    requireConfirmation(program, options.yes, options.dryRun);
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
       if (profile === null) return;
@@ -77,6 +81,7 @@ export function registerExamCommands(program: Command): void {
         if (refs.length !== 1) throw new LearningError({ code: 'UNSUPPORTED', message: 'expected one exam for this resource', retryAfterMs: null, operationId: null });
         const preview = await client.actions.prepare({ kind: 'exam.start', ref: refs[0]! });
         if (options.dryRun) { printResult(program, preview, `exam ${refs[0]!.assessmentId} start previewed; timer may begin`); return; }
+        await confirmAction(program, `账号：${profile.name}，打开试卷 ${refs[0]!.assessmentId}，可能开始计时。`, options.yes);
         const receipt = await client.actions.execute(preview.id);
         printResult(program, receipt, `exam start: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
@@ -84,7 +89,8 @@ export function registerExamCommands(program: Command): void {
   });
   exam.command('export <resource>')
     .description('export a permitted exam or result to the local data directory')
-    .action(async (key: string) => {
+    .option('--output-dir <dir>', '导出目标根目录')
+    .action(async (key: string, options: { outputDir?: string }) => {
       await withCliRuntime(program, true, async (runtime, dataDir) => {
         const profile = await selectProfile(program, runtime);
         if (profile === null) return;
@@ -97,6 +103,7 @@ export function registerExamCommands(program: Command): void {
           const refs = (await client.assessments.resolve(resource)).filter((ref) => ref.kind === 'exam');
           if (refs.length === 0) throw new LearningError({ code: 'UNSUPPORTED', message: 'resource has no exam to export', retryAfterMs: null, operationId: null });
           const created = await client.jobs.createExport({ type: 'assessments', refs, format: 'json' });
+          await setJobOutputRoot(runtime.state, created.id, resolve(options.outputDir ?? (await readPreferences(runtime.state)).downloadDir ?? resolve(dataDir, 'exports')));
           const finished = await runJobForeground(client, runtime, created.id);
           const files = await publishJobArtifacts(runtime, finished, dataDir);
           if (finished.status === 'partial') process.exitCode = 4;
@@ -113,7 +120,7 @@ export function registerExamCommands(program: Command): void {
     .option('--dry-run', 'show the final-submission blockers without sending');
   submit.action(async (path: string) => {
       const options = submit.opts<{ yes?: boolean; final?: boolean; dryRun?: boolean }>();
-      if ((!options.yes || !options.final) && !options.dryRun) {
+      if ((!options.yes || !options.final) && !options.dryRun && !getOutput(program).mode.interactive) {
         throw new CliError('INVALID_INPUT', String('learning: exam submit requires --yes --final\n').replace(/^learning: /, '').trim(), 2);
       }
       await withCliRuntime(program, true, async (runtime) => {
@@ -128,11 +135,13 @@ export function registerExamCommands(program: Command): void {
           const preview = await client.actions.prepare({ kind: 'exam.finalize', draft });
           if (preview.blockers.length > 0) {
             process.exitCode = 3;
-            process.stderr.write(`learning: ${preview.blockers.join('; ')}\n`);
+            await getOutput(program).warning('BLOCKED', preview.blockers.join('; '));
             printResult(program, preview, `final submission blocked: ${preview.blockers.join('; ')}`);
             return;
           }
           if (options.dryRun) { printResult(program, preview, 'final submission previewed'); return; }
+          await confirmAction(program, `账号：${profile.name}，最终提交试卷 ${draft.ref.assessmentId}，提交后不能视为普通保存。`, options.yes);
+          if (!options.final) await confirmAction(program, '再次确认：最终交卷，结束本次考试？此确认等价于 --final。', false);
           const receipt = await client.actions.execute(preview.id);
           printResult(program, receipt, `final submission: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
         } finally { await client.close(); }

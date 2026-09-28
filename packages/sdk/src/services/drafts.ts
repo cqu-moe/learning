@@ -51,17 +51,22 @@ function legacyAnswer(raw: unknown): Answer {
   throw new LearningError({ code: 'INVALID_INPUT', message: 'unrecognized answer value', retryAfterMs: null, operationId: null });
 }
 
+export function parseLearningDraft(text: string): AnswerDraft {
+  const result = AnswerDraftSchema.safeParse(parseYamlOrJson(text));
+  if (!result.success) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid learning draft schema', retryAfterMs: null, operationId: null });
+  return result.data;
+}
+
 export async function importLegacyDraft(text: string, format: 'learning' | 'ykt' | 'xuetang', scope: Scope): Promise<{ value: AnswerDraft; warnings: [] }> {
-  const parsed = parseYamlOrJson(text) as Record<string, unknown>;
   if (format === 'learning') {
-    const result = AnswerDraftSchema.safeParse(parsed);
-    if (!result.success) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid learning draft schema', retryAfterMs: null, operationId: null });
-    const owner = result.data.ref.resource.course.scope;
+    const draft = parseLearningDraft(text);
+    const owner = draft.ref.resource.course.scope;
     if (owner.userId !== scope.userId || owner.profileId !== scope.profileId || owner.platform !== scope.platform) {
       throw new LearningError({ code: 'FORBIDDEN', message: 'draft belongs to another profile', retryAfterMs: null, operationId: null });
     }
-    return { value: result.data, warnings: [] };
+    return { value: draft, warnings: [] };
   }
+  const parsed = parseYamlOrJson(text) as Record<string, unknown>;
   if (typeof parsed.classroom_id !== 'number' && typeof parsed.classroom_id !== 'string') {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'legacy draft missing classroom_id', retryAfterMs: null, operationId: null });
   }

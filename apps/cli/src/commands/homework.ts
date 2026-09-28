@@ -1,3 +1,5 @@
+import { confirmAction, requireConfirmation } from '../prompts.js';
+import { getOutput } from '../output.js';
 import type { Command } from 'commander';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
@@ -37,6 +39,7 @@ export function registerHomeworkCommands(program: Command): void {
     .option('--dry-run', 'preview only; never send an answer')
     .option('--yes', 'confirm sending every selected answer')
     .action(async (file: string, options: { dryRun?: boolean; yes?: boolean }) => {
+      requireConfirmation(program, options.yes, options.dryRun);
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
         if (profile === null) return;
@@ -51,19 +54,14 @@ export function registerHomeworkCommands(program: Command): void {
           const answered = draft.entries.filter((entry) => entry.answer.kind !== 'unset');
           if (answered.length === 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'draft contains no answers to submit', retryAfterMs: null, operationId: null });
           const previews = [];
-          const receipts = [];
-          for (const entry of answered) {
-            const preview = await client.actions.prepare({ kind: 'homework.apply', draft, questionIds: [entry.questionId] });
-            previews.push(preview);
-            if (!options.dryRun && options.yes) receipts.push(await client.actions.execute(preview.id));
-          }
-          if (!options.dryRun && !options.yes) {
-            process.exitCode = 3;
-            process.stderr.write('learning: preview only; rerun with --yes to submit\n');
-          }
-          printResult(program, { previews, receipts }, options.dryRun || !options.yes
-            ? `${previews.length} homework answers previewed`
-            : `${receipts.length} homework answers acknowledged`);
+          const receipts: Awaited<ReturnType<typeof client.actions.execute>>[] = [];
+          for (const entry of answered) previews.push(await client.actions.prepare({ kind: 'homework.apply', draft, questionIds: [entry.questionId] }));
+          const summary = `账号：${profile.name}\n将提交 ${answered.length} 道题：\n${answered.map(entry => `${entry.questionId}: ${JSON.stringify(entry.answer)}`).join('\n')}`;
+          if (options.dryRun) { getOutput(program).set({ previews, receipts }, summary, 'preview'); return; }
+          getOutput(program).set({ previews, receipts }, '', 'preview');
+          await confirmAction(program, summary, options.yes);
+          for (const preview of previews) receipts.push(await client.actions.execute(preview.id));
+          printResult(program, { previews, receipts }, `已处理 ${receipts.length} 道题，请以服务端结果为准。`);
         } finally { await client.close(); }
       });
     });

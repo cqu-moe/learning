@@ -1,3 +1,6 @@
+import { CourseSchema, ResourceRefSchema, JobSchema, parseLearningDraft, DiscussionDraftSchema } from '@learning/sdk';
+import { SqliteStateStore } from '@learning/sdk/node';
+import { lstat, readFile } from 'node:fs/promises';
 import { getOutput, CliError } from './output.js';
 import type { Command } from 'commander';
 import { existsSync } from 'node:fs';
@@ -43,6 +46,7 @@ export function printResult(program: Command, value: unknown, human: string): vo
 }
 
 export async function selectProfile(program: Command, runtime: CliRuntime, scope?: Scope): Promise<LocalProfile> {
+  scope ??= targetScopes.get(program);
   const attach = (profile: LocalProfile): LocalProfile => {
     if (scope && (profile.scope.profileId !== scope.profileId || profile.scope.platform !== scope.platform || profile.scope.userId !== scope.userId)) throw new CliError('FORBIDDEN', '目标属于另一个账号。', 3);
     runtime.heavy = new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope: profile.scope });
@@ -67,4 +71,33 @@ export async function selectProfile(program: Command, runtime: CliRuntime, scope
   if (!output.mode.interactive) throw new CliError('INVALID_INPUT', '存在多个账号，请传入 --profile <名称>。', 2, ['profile']);
   const name = await createPrompts(output.mode).ask({ name: 'profile', message: '选择账号', options: profiles.map(profile => ({ value: profile.name, label: `${profile.name} (${profile.scope.platform})` })) });
   return attach(profiles.find(profile => profile.name === name)!);
+}
+
+const targetScopes = new WeakMap<Command, Scope>();
+export async function inferTargetScope(program: Command, argument: string | undefined, value: unknown, discussion = false): Promise<void> {
+  if (typeof value !== 'string') return;
+  if (argument === 'file' || argument === 'draft') {
+    if (!existsSync(value)) return;
+    const info = await lstat(value);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new CliError('INVALID_INPUT', '草稿必须是不超过 4 MiB 的普通文件。');
+    const text = await readFile(value, 'utf8');
+    const scope = discussion ? DiscussionDraftSchema.parse(JSON.parse(text)).ref.resource.course.scope : parseLearningDraft(text).ref.resource.course.scope;
+    targetScopes.set(program, scope);
+    return;
+  }
+  if (!['resource','course-or-resource','course-url-or-key','jobId'].includes(argument ?? '')) return;
+  const dataDir = resolve(program.opts<{ home?: string }>().home ?? process.env.LEARNING_HOME ?? resolve(process.env.HOME ?? '.', '.learning'));
+  if (!existsSync(resolve(dataDir, 'state.db'))) return;
+  const state = new SqliteStateStore(resolve(dataDir, 'state.db'));
+  try {
+    if (argument === 'jobId') {
+      const record = await state.get(`job:${value}`);
+      if (record) targetScopes.set(program, JobSchema.parse(record.value).scope);
+    } else if (['resource','course-or-resource','course-url-or-key'].includes(argument ?? '')) {
+      const resource = await state.get(`cli:resource:${value}`);
+      const course = resource ? null : await state.get(`cli:course:${value}`);
+      if (resource) targetScopes.set(program, ResourceRefSchema.parse(resource.value).course.scope);
+      else if (course) targetScopes.set(program, CourseSchema.parse(course.value).ref.scope);
+    }
+  } finally { state.close(); }
 }

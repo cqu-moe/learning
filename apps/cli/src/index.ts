@@ -21,6 +21,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 const output = createOutput(resolveOutputMode(flags));
 bindOutput(program, output);
+if (!output.mode.color) { process.env.NO_COLOR = '1'; delete process.env.FORCE_COLOR; }
 let help = '';
 program.configureOutput({ writeOut: value => { help += value; }, writeErr: () => {} });
 program.hook('preAction', (_root, command) => {

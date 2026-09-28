@@ -1,3 +1,4 @@
+import { installInputCompletion } from './prompts.js';
 import { registerConfigCommands } from './commands/config.js';
 import { installWizard } from './wizard.js';
 import { Command } from 'commander';
@@ -46,6 +47,7 @@ registerDiscussCommands(program);
 registerLiveCommand(program);
 registerOperationsCommands(program);
 registerConfigCommands(program);
+installInputCompletion(program);
 installWizard(program);
 return program;
 }

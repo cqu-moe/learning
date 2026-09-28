@@ -74,7 +74,7 @@ export function registerLoginCommands(program: Command): void {
           for await (const event of flow.events) {
             if (event.type === 'qr') {
               const qr = await import('qrcode');
-              if (descriptor === null && event.qr.type === 'png') openQr(resolve(dataDir, `login-qr-${randomUUID()}.png`));
+              if (descriptor === null && (event.qr.type === 'png' || output.mode.format !== 'pretty' || !output.mode.color)) openQr(resolve(dataDir, `login-qr-${randomUUID()}.png`));
               if (descriptor !== null) {
                 const bytes = event.qr.type === 'png' ? Buffer.from(event.qr.base64, 'base64') : await qr.default.toBuffer(event.qr.value, { type: 'png' });
                 let offset = 0;

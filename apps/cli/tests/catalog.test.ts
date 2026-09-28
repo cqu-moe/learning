@@ -506,7 +506,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     await writeSession(state, new Uint8Array(readFileSync(resolve(dir, 'master.key'))), { schemaVersion: 1, scope, generation: 1, platformUserId: '88', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: Date.now() });
     state.close();
     const refused = run(dir, ['exam', 'start', 'exam-resource', '--profile', 'alpha', '--json']);
-    expect(refused.code).toBe(2);
+    expect(refused.code).toBe(3);
     expect(JSON.parse(refused.stdout)).toMatchObject({ ok: false, exitCode: refused.code });
     const leaf = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/leaf_info/100/7/', query: { sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 5, content_info: { leaf_type_id: 777001 } } } } };
     const cover = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/exam/cover', query: { exam_id: '777001' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { data: { data: { result: { status: 0 }, user: { user_id: 88 } } } } } };
@@ -539,7 +539,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const file = resolve(dir, 'exam-draft.json');
     writeFileSync(file, JSON.stringify(draft));
     const withoutYes = run(dir, ['exam', 'save', file, '--profile', 'alpha', '--json']);
-    expect(withoutYes.code).toBe(2);
+    expect(withoutYes.code).toBe(3);
     expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
     const original = JSON.parse(readFileSync(resolve(fixtureRoot, 'xuetang/exam-read.json'), 'utf8')) as { interactions: Array<{ request: { path: string }; response: { body: { data?: { data?: { result?: { status: number } } } } } }> };
     const reads = original.interactions.slice(1);
@@ -586,7 +586,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const result = run(dir, ['exam', 'submit', file, '--yes', '--final', '--profile', 'alpha', '--json']);
     expect(result.code).toBe(3);
     expect(JSON.parse(result.stdout).data.blockers.join(' ')).toContain('E05');
-    expect(result.stderr).toContain('E05');
+    expect(JSON.parse(result.stdout).warnings.some((warning: { message: string }) => warning.message.includes('E05'))).toBe(true);
   });
 
   it('checks in to a fixture live lesson, records a question and closes the socket', () => {
@@ -595,7 +595,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
     expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
     const withoutYes = run(dir, ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--profile', 'alpha', '--json']);
-    expect(withoutYes.code).toBe(2);
+    expect(withoutYes.code).toBe(3);
     expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
     const fixture = resolve(dir, 'live-fixture.json');
     writeFileSync(fixture, JSON.stringify({ interactions: [
@@ -603,10 +603,11 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     ], websocket: { url: 'wss://www.yuketang.cn/wsapp/', hello: { op: 'hello', userid: '424242', role: 'student', auth: 'fixture-live-token', lessonid: '9000' }, frames: [
       { op: 'hello' }, { op: 'unlockproblem', problem: { prob: 11, problemType: 1, limit: 30 }, msgid: 2 }, { op: 'lessonfinished' },
     ] } }));
-    const result = run(dir, ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--yes', '--profile', 'alpha', '--json'], fixture);
+    const result = run(dir, ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--yes', '--profile', 'alpha', '--output-format', 'jsonl'], fixture);
     expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout).data.status).toBe('succeeded');
-    expect(result.stderr).toContain('live question 11');
+    const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+    expect(events.at(-1).data.data.status).toBe('succeeded');
+    expect(events.some(event => event.type === 'question' && event.data.question.id === '11')).toBe(true);
   });
 
   it('resumes the same paused live job only after a fresh --yes checkin', async () => {

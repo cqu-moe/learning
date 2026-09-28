@@ -62,3 +62,34 @@ it('keeps full identifiers on narrow terminals and strips terminal controls', as
   expect(text).not.toContain('\u001b');
  }
 });
+
+it('parses a learning draft through the SDK before selecting its owner', async () => {
+ const sdk = await import('@learning/sdk');
+ expect(typeof sdk.parseLearningDraft).toBe('function');
+ expect(() => sdk.parseLearningDraft('{"schemaVersion":1}')).toThrow();
+});
+
+it('does not prepare or send an answer after a live question deadline', async () => {
+ const { confirmCurrentAnswer } = await import('../src/commands/live.js');
+ expect(typeof confirmCurrentAnswer).toBe('function');
+ const { mkdtempSync, rmSync } = await import('node:fs');
+ const { tmpdir } = await import('node:os');
+ const { join } = await import('node:path');
+ const { vi } = await import('vitest');
+ const { createCliRuntime } = await import('../src/runtime.js');
+ const { createLearningClient } = await import('@learning/sdk');
+ const { createOutput, resolveOutputMode } = await import('../src/output.js');
+ const { Writable } = await import('node:stream');
+ const directory = mkdtempSync(join(tmpdir(),'learning-deadline-'));
+ const runtime = createCliRuntime(directory);
+ runtime.transport.fetch = async () => { throw new Error('network not registered'); };
+ const client = createLearningClient({scope:{userId:'local',profileId:'one',platform:'ykt'},runtime});
+ const prepare = vi.spyOn(client.actions,'prepare');
+ const execute = vi.spyOn(client.actions,'execute');
+ const sink = new Writable({write(_chunk,_encoding,callback){callback();}});
+ const output = createOutput(resolveOutputMode({}, {stdin:true,stdout:true,stderr:true,term:'dumb',ci:undefined,noColor:undefined}),{stdout:sink,stderr:sink});
+ try {
+  await confirmCurrentAnswer(client,'job',{type:'question',sequence:1,jobId:'job',phaseId:'phase',closesAtMs:Date.now()-1,question:{id:'question',kind:'judgement',rawType:'judge',body:{plainText:'题干',markdown:'题干',decodeState:'not-needed',sourceHash:'hash'},options:[],fingerprint:'hash',attemptsUsed:null,maxAttempts:null,myAnswer:null,feedback:null}},output);
+  expect(prepare).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
+ } finally {output.close();await client.close();runtime.state.close();rmSync(directory,{recursive:true,force:true});}
+});

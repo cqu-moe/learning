@@ -86,3 +86,67 @@ export async function askDefaults(command: Command, fields: PromptField[], enabl
     command.setOptionValueWithSource(field.name, await prompts.ask(field), 'prompt');
   }
 }
+
+export function installInputCompletion(program: Command): void {
+  const visit = (command: Command) => {
+    command.commands.forEach(visit);
+    if (command.commands.length) return;
+    const requiredArguments = command.registeredArguments.filter(argument => argument.required);
+    const requiredOptions = command.options.filter(option => option.mandatory);
+    for (const argument of requiredArguments) argument.required = false;
+    for (const option of requiredOptions) option.makeOptionMandatory(false);
+    command.hook('preAction', async () => {
+      const output = getOutput(program);
+      const prompts = createPrompts(output.mode);
+      const shape: Record<string, z.ZodType> = {};
+      const supplied: Record<string, unknown> = {};
+      const fields: PromptField[] = [];
+      for (const argument of requiredArguments) {
+        const name = argument.name();
+        shape[name] = name === 'lesson-url' ? z.url() : z.string().min(1);
+        const value = command.processedArgs[command.registeredArguments.indexOf(argument)];
+        if (value !== undefined) supplied[name] = value;
+        fields.push({ name, message: ({ resource: '选择资源', file: '草稿文件路径', draft: '草稿文件路径', jobId: '任务 ID', operationId: '待核对的操作 ID', 'lesson-url': '课次 URL' } as Record<string, string>)[name] ?? name });
+      }
+      for (const option of requiredOptions) {
+        const name = option.attributeName();
+        shape[name] = option.variadic ? z.array(z.string().min(1)).min(1) : z.string().min(1);
+        if (command.opts()[name] !== undefined) supplied[name] = command.opts()[name];
+        fields.push({ name, message: name === 'output' ? '新输出文件路径（不会覆盖已有文件）' : '反馈来源文件路径' });
+      }
+      const ask: Prompts['ask'] = async (field, signal) => {
+        if (field.name === 'resource') {
+          const { withCliRuntime, selectProfile } = await import('./context.js');
+          const { createLearningClient } = await import('@learning/sdk');
+          const { chooseResource } = await import('./commands/catalog.js');
+          let selected: string | undefined;
+          await withCliRuntime(program, true, async runtime => {
+            const profile = await selectProfile(program, runtime);
+            program.setOptionValueWithSource('profile', profile.name, 'prompt');
+            const client = createLearningClient({ scope: profile.scope, runtime });
+            try { selected = (await chooseResource(client, runtime, prompts, command.parent?.name() === 'exam' ? ['exam'] : command.parent?.name() === 'discuss' ? ['discussion'] : ['homework','video'])).key; }
+            finally { await client.close(); }
+          });
+          return selected;
+        }
+        if (field.name === 'source') {
+          const files: string[] = [];
+          do { files.push(String(await prompts.ask({ name: 'source', message: '反馈来源文件路径', validate: value => typeof value === 'string' && value.length ? undefined : '请输入路径。' }, signal))); }
+          while (await prompts.ask({ name: 'more', message: '继续添加来源文件？', confirm: true }, signal));
+          return files;
+        }
+        return prompts.ask(field, signal);
+      };
+      const values = await fillMissing(z.object(shape), supplied, fields, { interactive: prompts.interactive, ask });
+      for (const argument of requiredArguments) command.processedArgs[command.registeredArguments.indexOf(argument)] = values[argument.name()];
+      for (const option of requiredOptions) if (command.getOptionValueSource(option.attributeName()) !== 'cli') command.setOptionValueWithSource(option.attributeName(), values[option.attributeName()], 'prompt');
+      const { inferTargetScope } = await import('./context.js');
+      await inferTargetScope(program, command.registeredArguments[0]?.name(), command.processedArgs[0], command.parent?.name() === 'discuss');
+    });
+  };
+  program.commands.forEach(visit);
+}
+
+export function requireConfirmation(program: Command, yes: boolean | undefined, dryRun: boolean | undefined): void {
+  if (!yes && !dryRun && !getOutput(program).mode.interactive) throw new CliError('CONFIRMATION_REQUIRED', '此操作需要 --yes；请先使用 --dry-run 查看预览。', 3, ['yes']);
+}

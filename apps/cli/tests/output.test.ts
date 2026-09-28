@@ -78,3 +78,9 @@ describe('output streams and terminal mode', () => {
     expect(cleanText('\u001b]0;attack\u0007中文\r标题')).toBe('中文标题');
   });
 });
+
+it('reports all missing draft inputs before opening a platform client', () => {
+ const result = run(['homework','draft','--json']);
+ expect(result.status).toBe(2);
+ expect(JSON.parse(result.stdout).error.fields).toEqual(['resource', 'output']);
+});

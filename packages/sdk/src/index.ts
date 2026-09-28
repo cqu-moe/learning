@@ -30,7 +30,7 @@ import { zhsQrLaunch, zhsWechatQrLaunch } from './providers/zhs/auth.js';
 import { zhsHikeCourses, zhsHikeOutline, zhsShareCourses, zhsShareOutline } from './providers/zhs/catalog.js';
 import { zhidaoQuery } from './providers/zhs/http.js';
 import { importFeedbackSet, importLegacyDraft } from './services/drafts.js';
-export { exportDraftYaml } from './services/drafts.js';
+export { exportDraftYaml, parseLearningDraft } from './services/drafts.js';
 import { matchDraft } from './content/match.js';
 import { proposeMatches } from './services/model.js';
 import { probeSession } from './auth/flow.js';
