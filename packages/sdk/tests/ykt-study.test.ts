@@ -62,6 +62,23 @@ describe('ykt authoritative progress', () => {
     expect((await client.catalog.progress(resource)).value).toMatchObject({ resource, serverCompleted: false, serverFraction: 0.4, serverSeconds: 12, durationSeconds: 30 });
     transport.assertNoExtraScripts();
   });
+
+  it('falls back to leaf_info media duration when the video was never watched', async () => {
+    const transport = new FakeTransport();
+    transport.scriptInteractions([
+      { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/503/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC2', duration: 458 } } } } } },
+      { request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '503', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { message: null, code: 0, data: {} } } },
+    ]);
+    const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
+    const clock = new FakeClock();
+    const runtime: Runtime = { transport, state: new MemoryStateStore(), clock, masterKey: new Uint8Array(32),
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} };
+    const resource = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'video-unwatched', native: { kind: 'ykt' as const, leafId: '503', leafInfoId: null } };
+    const client = createLearningClient({ scope, runtime });
+    expect((await client.catalog.progress(resource)).value).toMatchObject({ serverCompleted: false, serverFraction: 0, serverSeconds: 0, durationSeconds: 458 });
+    transport.assertNoExtraScripts();
+  });
 });
 
 describe('ykt study job', () => {

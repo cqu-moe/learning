@@ -93,7 +93,7 @@ standard 的 section_leaf_list 是异构：直接单元与 leaf_list 小节混�
 
 源代码 build_heartbeats 是纯函数，时间/随机页标识由调用者给定；新 TS 继续保持。i=5、ts 为字符串、lob=ykt、cp 不超过 duration；pg 和 sq 在一个运行会话内稳定/递增。禁止把学堂所需 ratechange 等事件未经证据复制进雨课堂。
 
-progress.read 查询 cid=courseId，snapshot=1（数字）、no_loading="true"（字符串）；可能 data[videoId] 或顶层[videoId]。合法未观看响应与错误空响应分开建 fixture；duration 未知不能发 fabricated 进度。[Y08]
+progress.read 查询 cid=courseId，snapshot=1（数字）、no_loading="true"（字符串）；可能 data[videoId] 或顶层[videoId]。未观看视频没有行（data 为空对象），duration 优先取 video_length，回落 leaf_info content_info.media.duration（已观看视频两者相等）；playurl 不含 duration。仍未知不能发 fabricated 进度。[Y08]
 
 视频完成、图文 finish、内嵌题 solved/continued-with-wrong/stuck/unknown 分开统计。新默认 questionMode=pause，不迁移穷举猜答案或自动第一项；显式已批准答案可通过平台允许次数执行。需要由反馈重试的模式须单独计次和批准，不能让泛用 retry 中间件处理业务答案。
 

@@ -494,7 +494,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             if (platform === 'ykt') {
               const observed = await yktReadProgress(await httpBound(), runtime.clock, resource);
               if (observed.kind === 'article' && !observed.progress.serverCompleted && observed.skuId === null) throw new LearningError({ code: 'PROTOCOL', message: 'article sku is missing', retryAfterMs: null, operationId: null });
-              if (observed.kind === 'video' && observed.progress.durationSeconds === null && !observed.progress.serverCompleted) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'video duration is unknown; study cannot be planned', retryAfterMs: null, operationId: null });
+              if (observed.kind === 'video' && observed.progress.durationSeconds === null && !observed.progress.serverCompleted) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: `video duration is unknown for ${resource.key}; study cannot be planned`, retryAfterMs: null, operationId: null });
             } else {
               await xtxReadProgress(await httpBound(), runtime.clock, resource);
               await xtxReadStudyIdentity(await httpBound(), resource);

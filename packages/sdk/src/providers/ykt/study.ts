@@ -33,7 +33,9 @@ export async function yktReadProgress(http: SessionHttp, clock: Clock, resource:
   if (typeof payload !== 'object' || payload === null || (payload as { success?: boolean }).success === false) throw new LearningError({ code: 'PROTOCOL', message: 'watch progress returned an error envelope', retryAfterMs: null, operationId: null });
   const observed = parseWatchProgress(payload, videoId);
   if (![observed.rate, observed.videoLength, observed.lastPoint].every((value) => Number.isFinite(value) && value >= 0) || observed.rate > 1) throw new LearningError({ code: 'PROTOCOL', message: 'watch progress numbers are invalid', retryAfterMs: null, operationId: null });
-  return { kind: 'video', identity, progress: { resource, serverCompleted: observed.completed, serverFraction: observed.rate, serverSeconds: observed.lastPoint, durationSeconds: observed.videoLength > 0 ? observed.videoLength : null, observedAtMs: clock.nowMs() } };
+  const leafDuration = Number(leaf?.content_info?.media?.duration ?? 0);
+  const durationSeconds = observed.videoLength > 0 ? observed.videoLength : leafDuration > 0 ? leafDuration : null;
+  return { kind: 'video', identity, progress: { resource, serverCompleted: observed.completed, serverFraction: observed.rate, serverSeconds: observed.lastPoint, durationSeconds, observedAtMs: clock.nowMs() } };
 }
 
 interface StudyCursor { resourceKey: string; cp: number; sq: number; baseline: number; awaiting: boolean; stalls: number }
