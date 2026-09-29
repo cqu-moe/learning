@@ -106,6 +106,25 @@ describe('cli basics (T25, A251/A252)', () => {
     expect(readFileSync(resolve(run.home, 'learning.lock'), 'utf8')).toBe(String(process.pid));
   });
 
+  it('a stale writer lock from a dead pid is taken over automatically', () => {
+    const run = runCli(['init']);
+    expect(run.exitCode).toBe(0);
+    writeFileSync(resolve(run.home, 'learning.lock'), '2147483647');
+    const second = runCli(['init'], { home: run.home });
+    expect(second.exitCode).toBe(0);
+    expect(existsSync(resolve(run.home, 'learning.lock'))).toBe(false);
+  });
+
+  it('an unreadable writer lock is still refused, never overwritten blindly', () => {
+    const run = runCli(['init']);
+    expect(run.exitCode).toBe(0);
+    writeFileSync(resolve(run.home, 'learning.lock'), 'not-a-pid');
+    const second = runCli(['init'], { home: run.home });
+    expect(second.exitCode).toBe(3);
+    expect(second.stderr).toContain('unreadable');
+    expect(readFileSync(resolve(run.home, 'learning.lock'), 'utf8')).toBe('not-a-pid');
+  });
+
   it('a normal second init keeps the existing key', () => {
     const first = runCli(['init']);
     const original = readFileSync(resolve(first.home, 'master.key'), 'utf8');

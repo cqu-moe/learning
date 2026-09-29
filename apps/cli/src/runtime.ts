@@ -54,22 +54,49 @@ export function acquireDataDirLock(dataDir: string, pid: number):
   | { ok: true; release: () => void }
   | { ok: false; reason: string } {
   const lockPath = resolve(dataDir, 'learning.lock');
-  const token = `${pid}\n${randomUUID()}`;
-  try {
-    writeFileSync(lockPath, token, { flag: 'wx', mode: 0o600 });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    const existing = readFileSync(lockPath, 'utf8').trim().split('\n')[0] ?? 'unknown';
-    return { ok: false, reason: `another writer holds the lock (pid ${existing}); stop it or use profile unlock after verifying it is stale` };
-  }
-  return {
-    ok: true,
-    release: () => {
+  for (let attempt = 0; ; attempt++) {
+    const token = `${pid}\n${randomUUID()}`;
+    try {
+      writeFileSync(lockPath, token, { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const existing = readLockPid(lockPath);
+      if (existing !== null && pidAlive(existing)) {
+        return { ok: false, reason: `another writer holds the lock (pid ${existing}); stop it or use profile unlock after verifying it is stale` };
+      }
+      if (attempt >= 2 || existing === null) {
+        return { ok: false, reason: existing === null ? 'writer lock is unreadable; inspect learning.lock manually' : `stale writer lock (pid ${existing}) could not be cleared; retry or use profile unlock` };
+      }
+      try { unlinkSync(lockPath); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      continue;
+    }
+    // Graceful release plus an exit hook: finally alone cannot run when the process dies without unwinding.
+    const remove = () => {
       try {
         if (readFileSync(lockPath, 'utf8') === token) unlinkSync(lockPath);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
-    },
-  };
+    };
+    const onExit = () => { try { remove(); } catch { /* best effort during exit */ } };
+    process.on('exit', onExit);
+    return {
+      ok: true,
+      release: () => { process.off('exit', onExit); remove(); },
+    };
+  }
+}
+
+function readLockPid(lockPath: string): number | null {
+  try {
+    const pid = Number(readFileSync(lockPath, 'utf8').trim().split('\n')[0]);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
 }

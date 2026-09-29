@@ -492,3 +492,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户反馈刷课时只显示"等待下一阶段 · 0/95 个资源"，看不到当前在刷哪个视频。根因：JobRunner.emitProgress 从未被学习循环调用，progress 事件根本不存在。修复：ykt 学习 advance 在每次读取观看进度后（心跳前基线与心跳后核对）调用 emitProgress，事件携带 title（leaf_info.name，未知回落 resource key）、durationSeconds、serverSeconds；JobEvent/CLI progress schema 同步扩展（SDK 侧新字段 optional，兼容旧库中已持久化的事件）。
 - CLI 前台渲染改为：状态 · i/N 个资源 · 视频名 · 1:05/10:30 · 服务端 10.3%（formatClock 支持 h:mm:ss）；JSONL progress 事件透传三个新字段。
 - 修改 packages/sdk/src/{types/models.ts,services/jobs.ts,providers/ykt/{study,resources}.ts}、apps/cli/src/{output.ts,foreground.ts}；新增 apps/cli/tests/output-format.test.ts，扩展 jobs/ykt-study 回归。Node24.11.1：lint、typecheck、SDK 237/237、CLI 100/100 exit 0。未动 zhs/xuetang 学习循环的进度发射（当前无对应事件通路需求，用到再加）。
+
+### 2026-09-29 · 写入锁重设计：Ctrl+C/进程死亡不再留死锁
+
+- 用户 Ctrl+C 取消 run（正常打印"已取消"退出）后再次进入 CLI 连续两次 CONFLICT "another writer holds the lock"。旧实现只在 withCliRuntime 的 finally 释放锁：进程被二次 Ctrl+C、未捕获异常或直接关终端打死时 finally 不执行，锁永久残留；且获取时只要文件存在就拒绝，即使锁内 PID 早已死亡，只能手工 profile unlock。
+- 重设计 acquireDataDirLock：1) 获取到锁后注册 process.on('exit') 同步删锁（兜底未捕获异常/process.exit 退出路径），正常 release 时移除监听防止 home-loop 泄漏；2) 撞到已存在的锁时读取 PID 并用 kill(pid,0) 判活——已死（ESRCH）则自动接管重写锁，活着才 CONFLICT，损坏/不可解析的锁保守拒绝提示人工检查；EPERM 视为存活。SIGKILL/断电等极端场景由死 PID 接管兜住。live 拒绝、profile unlock 行为不变。
+- 新增回归：死 PID 锁自动接管后 init 成功且无残留；不可解析锁拒绝且不覆盖。既有 live 拒绝、SIGTERM 清理、profile unlock 用例全保留通过。修改 apps/cli/src/runtime.ts、apps/cli/tests/basic.test.ts。Node24.11.1：lint、typecheck、CLI 102/102 exit 0（SDK 未动）。
