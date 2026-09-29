@@ -658,7 +658,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           const saved = ActionInputSchema.parse(await jobRunner.input(jobId));
           if (saved.kind !== 'study') throw new LearningError({ code: 'INTEGRITY', message: 'study job has invalid input', retryAfterMs: null, operationId: jobId });
           const http = await httpBound();
-          return advanceYktStudy({ job, action: saved, runner: jobRunner, http, jar: sessionBox.jar, clock: runtime.clock });
+          return advanceYktStudy({ job, action: saved, runner: jobRunner, http, clock: runtime.clock });
         }
         if (job.kind === 'study' && platform === 'xuetang') {
           const session = await readSession(runtime.state, runtime.masterKey, scope);

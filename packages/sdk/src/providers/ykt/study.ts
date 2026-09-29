@@ -7,7 +7,6 @@ import { fetchLeafInfo } from './resources.js';
 import { fetchClassroomContext } from './catalog.js';
 import { fetchEmbeddedList } from './homework-write.js';
 import { YKT_BASE } from './schemas.js';
-import type { SessionCookieJar } from '../../http/cookies.js';
 import type { JobRunner } from '../../services/jobs.js';
 
 export interface YktStudyIdentity { courseId: string; userId: string; skuId: string; ccid: string; exerciseId: string | null }
@@ -49,8 +48,8 @@ function parseCursor(value: string | null): StudyCursor | null {
 }
 
 /** One wall-clock heartbeat at most per advance; never backfills time spent offline. */
-export async function advanceYktStudy(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; jar: SessionCookieJar; clock: Clock }): Promise<Job> {
-  const { job, action, runner, http, jar, clock } = input;
+export async function advanceYktStudy(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; clock: Clock }): Promise<Job> {
+  const { job, action, runner, http, clock } = input;
   const next = action.resources.find((resource) => !job.items.some((item) => item.key === resource.key));
   if (next === undefined) return runner.advance(job.id, async () => ({ completed: true }));
   return runner.advance(job.id, async () => {
@@ -108,16 +107,13 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     if (row === undefined) return finish('needs-input', 'no valid heartbeat could be constructed');
     row.cp = Math.min(row.cp, duration * action.settings.targetFraction);
     row.sq = (cursor?.sq ?? 0) + 1;
-    // Only web_login plants csrftoken; no read endpoint re-seeds it (verified live).
-    const csrf = await jar.cookieValue(new URL(YKT_BASE), 'csrftoken');
-    if (csrf === null) return finish('needs-input', 'CSRF cookie is missing; re-login to refresh the session');
     const baseline = progress.serverFraction ?? 0;
     const sending: StudyCursor = { resourceKey: next.key, cp: row.cp, sq: row.sq, baseline, awaiting: true, stalls: 0 };
     await runner.setCursor(job.id, JSON.stringify(sending));
     await runner.setPendingOperation(job.id, `heartbeat:${job.id}:${next.key}:${row.sq}`);
     const response = await http.request({ kind: 'write', method: 'POST', url: `${YKT_BASE}/video-log/heartbeat/`,
       headers: { 'content-type': 'application/json;charset=utf-8', xtbz: 'ykt', 'classroom-id': row.classroomid,
-        'x-csrftoken': csrf, 'x-requested-with': 'XMLHttpRequest' },
+        'x-requested-with': 'XMLHttpRequest' },
       body: JSON.stringify({ heart_data: [row] }) });
     if (response.status !== 200) throw new LearningError({ code: 'UNCERTAIN', message: `heartbeat returned HTTP ${response.status}`, retryAfterMs: null, operationId: `heartbeat:${job.id}:${next.key}:${row.sq}` });
     const body = await response.text();

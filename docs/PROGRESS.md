@@ -480,3 +480,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户真机任务 job-47cdfe4b 在 0/95 即 needs-input 且无原因展示。读本地任务记录定位：第一个资源 message 为 "CSRF cookie is missing"——心跳写需要 csrftoken 双提交，而该会话 jar 仅含 sessionid+django_language（诊断脚本只打印 cookie 名/域，未导出值，临时目录已删除）。真机验证 userinfo 与 /v2/web 均不补种 csrftoken；参考 ykt-cli auth.py 佐证只有 POST /pc/web_login 种下。曾实现 userinfo 补种并跑通 fixture 测试，真机证伪后回滚，保留干净守卫并新增"缺 csrf 时不发任何写请求"回归（14/14）。
 - CLI run 结束输出现在附带全部 needs-input 条目的 key 与 message，不再让用户猜"需要人工处理"的原因。该会话 sessionid 16:26 过期且缺 csrf，处置为重新 learning login（扫码或导入完整 cookie）后 jobs resume。
 - 修改 packages/sdk/src/providers/ykt/study.ts、apps/cli/src/commands/run.ts、packages/sdk/tests/ykt-study.test.ts。Node24.11.1：lint、typecheck、SDK 237/237、CLI 99/99 exit 0。
+
+### 2026-09-29 · 雨课堂心跳移除 CSRF（平台已弃用）
+
+- 用户判断正确：不是没存 csrftoken，是平台已不再下发。带打点的真实扫码登录（用户扫描本聊天内二维码）证实：sessionid 由 app-web-login 直接 Set-Cookie（Max-Age 43200），pc/web_login 只回 django_language，全流程无 csrftoken；匿名/认证访问 /、/web、/v2/web、mooc 读接口也均不下发。参考 ykt-cli 九月抓包（web_login 种 csrftoken）已过时。
+- 实测心跳：不带 x-csrftoken 的 POST /video-log/heartbeat/ 返回 200 且服务端 last_point 60→65、rate 0.0297→0.0322；带自造双提交对同样 200。结论：该接口已不校验 CSRF。移除 ykt 心拍的 csrf 读取、needs-input 守卫与 x-csrftoken 头；嵌入式答题 POST 的 CSRF 守卫保留（未验证，不猜）。qr-login fixture 按真机改写（app-web-login 种 sessionid、web_login 种 django_language、无 csrftoken）；ykt-study 两条用例改为无 csrf 心跳成功。旧任务跨登录 generation 被 PRECONDITION_CHANGED 拒绝属预期，重开 run 即可。
+- 修改 packages/sdk/src/providers/ykt/study.ts、packages/sdk/src/index.ts、packages/sdk/tests/ykt-study.test.ts、packages/sdk/tests/fixtures/ykt/qr-login.json、docs/PLATFORMS.md。Node24.11.1：lint、typecheck、SDK 237/237、CLI 99/99 exit 0。端到端真机（临时 state 副本）：prepare 零警告、execute 建任务、advance 进入 waiting 心跳循环，无 needs-input。临时副本与打点已删除。

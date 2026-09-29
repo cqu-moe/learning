@@ -30,7 +30,7 @@
       },
       "response": {
         "status": 200,
-        "headers": {},
+        "headers": { "set-cookie": ["sessionid=sess-fixture; Path=/; Secure; SameSite=None; Max-Age=43200"] },
         "body": { "code": 0, "data": { "UserID": 424242, "Auth": "auth-secret-fixture" } }
       }
     },
@@ -44,7 +44,7 @@
       },
       "response": {
         "status": 200,
-        "headers": { "set-cookie": ["sessionid=sess-fixture; Path=/; Domain=yuketang.cn", "csrftoken=csrf-fixture; Path=/; Domain=yuketang.cn"] },
+        "headers": { "set-cookie": ["django_language=zh; Path=/; Secure; SameSite=None"] },
         "body": {}
       }
     },

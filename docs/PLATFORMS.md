@@ -40,7 +40,7 @@
 
 base host 为 `www.yuketang.cn`。CourseRef 稳定字段是 classroomId。provider 的已解析上下文单独保存 `courseSign`、`skuId/freeSkuId`、`universityId`、必要的 `courseId` / `platformUserId`；这些字段来源不同，不能互相代替。
 
-特别地，`/video-log/get_video_watch_progress/` 的 cid 是 **course_id**，而章节接口的 cid 是 **classroom_id**。universityId 从 classroom 接口的 uv_id 获取，不从 Cookie 推导；CSRF 则从目标 host/path 的 CookieJar 取得。[Y03、Y08]
+特别地，`/video-log/get_video_watch_progress/` 的 cid 是 **course_id**，而章节接口的 cid 是 **classroom_id**。universityId 从 classroom 接口的 uv_id 获取，不从 Cookie 推导。2026-09-29 真机验证：登录全流程与认证页面均不再下发 csrftoken，heartbeat 不带 x-csrftoken 被接受且服务端进度推进；嵌入式答题 POST 的 CSRF 要求未验证，守卫保留。[Y03、Y08]
 
 ### Endpoint 映射
 
@@ -81,7 +81,7 @@ base host 为 `www.yuketang.cn`。CourseRef 稳定字段是 classroomId。provid
 
 ### Headers 不得统一误用
 
-mooc 常规读接口必须带 xtbz:ykt；hasKg 必须额外带 university-id，不能仅有 query uv_id。homework POST 身份头来自 YktSession，包括 classroom-id、university-id、uv-id、Xt-Agent、X-CSRFToken。heartbeat 的专属组包含 classroom-id、x-csrftoken、x-requested-with，不能由全部业务头模板简单复制。[Y03、Y08、Y09]
+mooc 常规读接口必须带 xtbz:ykt；hasKg 必须额外带 university-id，不能仅有 query uv_id。homework POST 身份头来自 YktSession，包括 classroom-id、university-id、uv-id、Xt-Agent、X-CSRFToken。heartbeat 的专属组为 classroom-id 与 x-requested-with（x-csrftoken 已于 2026-09-29 真机移除），不能由全部业务头模板简单复制。[Y03、Y08、Y09]
 
 ### 树结构和 key
 
