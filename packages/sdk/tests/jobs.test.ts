@@ -47,11 +47,11 @@ describe('job runner (T18, A181/A182)', () => {
     const runner = makeRunner();
     const job = await runner.create(scope, 'export', { total: 1 });
     await runner.emitProgress(job.id, 'res-1', 0.5);
-    await runner.emitProgress(job.id, 'res-1', 0.9); // high-frequency progress merges
+    await runner.emitProgress(job.id, 'res-1', 0.9, { title: '1.1 视频', durationSeconds: 630, serverSeconds: 65 }); // high-frequency progress merges
     await runner.emitState(job.id);
     const events = await runner.events(job.id, 0);
     expect(events.map((event) => event.sequence)).toEqual([1, 2]);
-    expect(events[0]).toMatchObject({ type: 'progress', serverFraction: 0.9 });
+    expect(events[0]).toMatchObject({ type: 'progress', serverFraction: 0.9, title: '1.1 视频', durationSeconds: 630, serverSeconds: 65 });
     expect(events[1]?.type).toBe('state');
   });
 

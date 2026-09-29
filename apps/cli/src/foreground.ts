@@ -21,7 +21,8 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
     if (event?.type !== 'progress' && signature === lastState) return;
     lastState = signature;
     await callbacks.onState?.(job);
-    await runtime.output?.progress({ jobId: id, resourceKey: event?.type === 'progress' ? event.resourceKey : null, status: job.status, completed: job.completed, total: job.total, serverFraction: event?.type === 'progress' ? event.serverFraction : null, estimatedSeconds: event?.type === 'progress' ? event.estimatedSeconds : null, sourceSequence: event?.sequence ?? null });
+    const live = event?.type === 'progress' ? event : null;
+    await runtime.output?.progress({ jobId: id, resourceKey: live?.resourceKey ?? null, status: job.status, completed: job.completed, total: job.total, serverFraction: live?.serverFraction ?? null, estimatedSeconds: live?.estimatedSeconds ?? null, title: live?.title ?? null, durationSeconds: live?.durationSeconds ?? null, serverSeconds: live?.serverSeconds ?? null, sourceSequence: event?.sequence ?? null });
   };
   const flushEvents = async (job: Job) => {
     if (!runtime.output && !callbacks.onEvent) return;

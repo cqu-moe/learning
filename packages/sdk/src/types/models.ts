@@ -427,6 +427,10 @@ export const JobEventSchema = z.discriminatedUnion('type', [
     resourceKey: z.string(),
     estimatedSeconds: nonNegativeNumberNullable,
     serverFraction: z.number().refine(Number.isFinite).min(0).max(1).nullable(),
+    // Optional so progress events persisted before these fields existed still parse.
+    title: z.string().nullable().optional(),
+    durationSeconds: nonNegativeNumberNullable.optional(),
+    serverSeconds: nonNegativeNumberNullable.optional(),
   }),
   z.object({
     type: z.literal('question'),

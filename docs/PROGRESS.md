@@ -486,3 +486,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户判断正确：不是没存 csrftoken，是平台已不再下发。带打点的真实扫码登录（用户扫描本聊天内二维码）证实：sessionid 由 app-web-login 直接 Set-Cookie（Max-Age 43200），pc/web_login 只回 django_language，全流程无 csrftoken；匿名/认证访问 /、/web、/v2/web、mooc 读接口也均不下发。参考 ykt-cli 九月抓包（web_login 种 csrftoken）已过时。
 - 实测心跳：不带 x-csrftoken 的 POST /video-log/heartbeat/ 返回 200 且服务端 last_point 60→65、rate 0.0297→0.0322；带自造双提交对同样 200。结论：该接口已不校验 CSRF。移除 ykt 心拍的 csrf 读取、needs-input 守卫与 x-csrftoken 头；嵌入式答题 POST 的 CSRF 守卫保留（未验证，不猜）。qr-login fixture 按真机改写（app-web-login 种 sessionid、web_login 种 django_language、无 csrftoken）；ykt-study 两条用例改为无 csrf 心跳成功。旧任务跨登录 generation 被 PRECONDITION_CHANGED 拒绝属预期，重开 run 即可。
 - 修改 packages/sdk/src/providers/ykt/study.ts、packages/sdk/src/index.ts、packages/sdk/tests/ykt-study.test.ts、packages/sdk/tests/fixtures/ykt/qr-login.json、docs/PLATFORMS.md。Node24.11.1：lint、typecheck、SDK 237/237、CLI 99/99 exit 0。端到端真机（临时 state 副本）：prepare 零警告、execute 建任务、advance 进入 waiting 心跳循环，无 needs-input。临时副本与打点已删除。
+
+### 2026-09-29 · 刷课过程进度条：视频名/总时长/当前进度
+
+- 用户反馈刷课时只显示"等待下一阶段 · 0/95 个资源"，看不到当前在刷哪个视频。根因：JobRunner.emitProgress 从未被学习循环调用，progress 事件根本不存在。修复：ykt 学习 advance 在每次读取观看进度后（心跳前基线与心跳后核对）调用 emitProgress，事件携带 title（leaf_info.name，未知回落 resource key）、durationSeconds、serverSeconds；JobEvent/CLI progress schema 同步扩展（SDK 侧新字段 optional，兼容旧库中已持久化的事件）。
+- CLI 前台渲染改为：状态 · i/N 个资源 · 视频名 · 1:05/10:30 · 服务端 10.3%（formatClock 支持 h:mm:ss）；JSONL progress 事件透传三个新字段。
+- 修改 packages/sdk/src/{types/models.ts,services/jobs.ts,providers/ykt/{study,resources}.ts}、apps/cli/src/{output.ts,foreground.ts}；新增 apps/cli/tests/output-format.test.ts，扩展 jobs/ykt-study 回归。Node24.11.1：lint、typecheck、SDK 237/237、CLI 100/100 exit 0。未动 zhs/xuetang 学习循环的进度发射（当前无对应事件通路需求，用到再加）。

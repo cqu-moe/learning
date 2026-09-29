@@ -17,7 +17,7 @@ export const CliEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('start'), data: z.null() }),
   z.object({ ...base, type: z.literal('result'), data: CliResultSchema }),
   z.object({ ...base, type: z.literal('warning'), data: WarningSchema }),
-  z.object({ ...base, type: z.literal('progress'), data: z.object({ jobId: z.string(), resourceKey: z.string().nullable(), status: z.string(), completed: z.number().nonnegative(), total: z.number().nonnegative().nullable(), serverFraction: z.number().min(0).max(1).nullable(), estimatedSeconds: z.number().nonnegative().nullable(), sourceSequence: z.number().nonnegative().nullable() }) }),
+  z.object({ ...base, type: z.literal('progress'), data: z.object({ jobId: z.string(), resourceKey: z.string().nullable(), status: z.string(), completed: z.number().nonnegative(), total: z.number().nonnegative().nullable(), serverFraction: z.number().min(0).max(1).nullable(), estimatedSeconds: z.number().nonnegative().nullable(), title: z.string().nullable(), durationSeconds: z.number().nonnegative().nullable(), serverSeconds: z.number().nonnegative().nullable(), sourceSequence: z.number().nonnegative().nullable() }) }),
   z.object({ ...base, type: z.literal('auth'), data: z.object({ stage: z.string(), generation: z.number().nullable(), expiresAtMs: z.number().nullable(), qrPath: z.string().nullable() }) }),
   z.object({ ...base, type: z.literal('question'), data: z.object({ jobId: z.string(), phaseId: z.string(), question: QuestionSchema, closesAtMs: z.number().nullable(), sourceSequence: z.number() }) }),
   z.object({ ...base, type: z.literal('gap'), data: z.object({ jobId: z.string(), message: z.string(), sourceSequence: z.number() }) }),
@@ -35,6 +35,11 @@ export function resolveOutputMode(flags: Record<string, unknown>, terminal = { s
   const requested = flags.json === true ? 'json' : flags.outputFormat;
   const format = typeof requested === 'string' && ['pretty', 'plain', 'json', 'jsonl'].includes(requested) ? requested as OutputMode['format'] : dynamic ? 'pretty' : 'plain';
   return { format: format === 'pretty' && !dynamic ? 'plain' : format, interactive: tty && !ci && flags.interactive !== false && !['json', 'jsonl'].includes(format), quiet: flags.quiet === true, color: flags.color !== false && terminal.noColor === undefined && dynamic, debug: flags.debug === true };
+}
+export function formatClock(seconds: number): string {
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  return `${h > 0 ? `${h}:` : ''}${h > 0 ? String(m).padStart(2, '0') : m}:${String(s).padStart(2, '0')}`;
 }
 export function errorInfo(error: unknown): { error: z.infer<typeof ErrorSchema>; exitCode: number } {
   if (error instanceof z.ZodError) return errorInfo(new CliError('INVALID_INPUT', '输入数据结构不符合要求。', 2, error.issues.filter(issue => issue.path.length > 0).map(issue => issue.path.map(String).join('.'))));
@@ -149,7 +154,9 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       if (phase === lastPhase && Date.now() - lastProgressAt < interval) return;
       lastPhase = phase; lastProgressAt = Date.now();
       const states: Record<string, string> = { queued: '已排队', running: '进行中', waiting: '等待下一阶段', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
-      const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${value.resourceKey === null ? '' : ` · ${value.resourceKey}`}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
+      const label = value.resourceKey === null && value.title === null ? '' : ` · ${value.title ?? value.resourceKey}`;
+      const clock = value.durationSeconds !== null && value.durationSeconds > 0 && value.serverSeconds !== null ? ` · ${formatClock(value.serverSeconds)}/${formatClock(value.durationSeconds)}` : '';
+      const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${label}${clock}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
       indicatorText = text;
       if (mode.format === 'pretty' && ['queued','running','waiting'].includes(value.status)) {
         if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(text); } else indicator.message(text);

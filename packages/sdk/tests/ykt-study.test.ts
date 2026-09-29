@@ -121,7 +121,7 @@ describe('ykt study job', () => {
     const runtime: Runtime = { transport, state, clock, masterKey,
       artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
       heavy: null, model: null, log: () => {}, wake: async () => {} };
-    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
+    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { name: '1.1 心理与健康', course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
     const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
     const client = createLearningClient({ scope, runtime });
     const write = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/video-log/heartbeat/', headers: { xtbz: 'ykt', 'classroom-id': '28930736', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' } }, response: { status: 200, body: {} } };
@@ -133,6 +133,8 @@ describe('ykt study job', () => {
     const done = await client.jobs.advance(execution.job.id);
     expect(done.status).toBe('succeeded');
     expect(done.completed).toBe(1);
+    const events = await client.jobs.events(execution.job.id, 0);
+    expect(events.some((event) => event.type === 'progress' && event.title === '1.1 心理与健康' && event.durationSeconds === 10 && event.serverSeconds === 0)).toBe(true);
     expect(transport.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
     transport.assertNoExtraScripts();
   });

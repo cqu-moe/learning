@@ -5,7 +5,7 @@ import type { SessionHttp } from '../../http/client.js';
 import { moocEnvelopeChecked, YKT_BASE } from './schemas.js';
 
 interface LeafInfoWire {
-  data?: { leaf_type?: number; finish?: boolean; course_id?: number | string; user_id?: number | string; sku_id?: number | string; content_info?: { media?: { ccid?: string; exercise_id?: number; duration?: number }; leaf_type_id?: number } };
+  data?: { leaf_type?: number; finish?: boolean; name?: string; course_id?: number | string; user_id?: number | string; sku_id?: number | string; content_info?: { media?: { ccid?: string; exercise_id?: number; duration?: number }; leaf_type_id?: number } };
 }
 
 export async function fetchLeafInfo(http: SessionHttp, classroomId: string, leafId: string): Promise<LeafInfoWire['data']> {

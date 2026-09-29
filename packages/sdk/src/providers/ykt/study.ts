@@ -10,7 +10,7 @@ import { YKT_BASE } from './schemas.js';
 import type { JobRunner } from '../../services/jobs.js';
 
 export interface YktStudyIdentity { courseId: string; userId: string; skuId: string; ccid: string; exerciseId: string | null }
-type YktObserved = { kind: 'article'; progress: Progress; skuId: string | null } | { kind: 'video'; progress: Progress; identity: YktStudyIdentity };
+type YktObserved = { kind: 'article'; title: string | null; progress: Progress; skuId: string | null } | { kind: 'video'; title: string | null; progress: Progress; identity: YktStudyIdentity };
 
 /** Read the platform's watch state; missing IDs/duration stay unknown. */
 export async function yktReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef): Promise<YktObserved> {
@@ -21,7 +21,8 @@ export async function yktReadProgress(http: SessionHttp, clock: Clock, resource:
   if (leaf?.leaf_type === 3) {
     if (typeof leaf.finish !== 'boolean') throw new LearningError({ code: 'PROTOCOL', message: 'article leaf_info lacks finish state', retryAfterMs: null, operationId: null });
     const skuId = leaf.sku_id === undefined ? null : String(leaf.sku_id);
-    return { kind: 'article', skuId: skuId === '0' || skuId === '' ? null : skuId, progress: { resource, serverCompleted: leaf.finish, serverFraction: leaf.finish ? 1 : 0, serverSeconds: null, durationSeconds: null, observedAtMs: clock.nowMs() } };
+    const title = typeof leaf.name === 'string' && leaf.name !== '' ? leaf.name : null;
+    return { kind: 'article', title, skuId: skuId === '0' || skuId === '' ? null : skuId, progress: { resource, serverCompleted: leaf.finish, serverFraction: leaf.finish ? 1 : 0, serverSeconds: null, durationSeconds: null, observedAtMs: clock.nowMs() } };
   }
   const identity: YktStudyIdentity = { courseId: String(leaf?.course_id ?? ''), userId: String(leaf?.user_id ?? ''), skuId: String(leaf?.sku_id ?? ''), ccid: String(leaf?.content_info?.media?.ccid ?? ''), exerciseId: leaf?.content_info?.media?.exercise_id ? String(leaf.content_info.media.exercise_id) : null };
   if ([identity.courseId, identity.userId, identity.skuId, identity.ccid].some((value) => value === '' || value === '0')) throw new LearningError({ code: 'PROTOCOL', message: 'leaf_info lacks the identifiers required for progress', retryAfterMs: null, operationId: null });
@@ -34,7 +35,8 @@ export async function yktReadProgress(http: SessionHttp, clock: Clock, resource:
   if (![observed.rate, observed.videoLength, observed.lastPoint].every((value) => Number.isFinite(value) && value >= 0) || observed.rate > 1) throw new LearningError({ code: 'PROTOCOL', message: 'watch progress numbers are invalid', retryAfterMs: null, operationId: null });
   const leafDuration = Number(leaf?.content_info?.media?.duration ?? 0);
   const durationSeconds = observed.videoLength > 0 ? observed.videoLength : leafDuration > 0 ? leafDuration : null;
-  return { kind: 'video', identity, progress: { resource, serverCompleted: observed.completed, serverFraction: observed.rate, serverSeconds: observed.lastPoint, durationSeconds, observedAtMs: clock.nowMs() } };
+  const title = typeof leaf?.name === 'string' && leaf.name !== '' ? leaf.name : null;
+  return { kind: 'video', title, identity, progress: { resource, serverCompleted: observed.completed, serverFraction: observed.rate, serverSeconds: observed.lastPoint, durationSeconds, observedAtMs: clock.nowMs() } };
 }
 
 interface StudyCursor { resourceKey: string; cp: number; sq: number; baseline: number; awaiting: boolean; stalls: number }
@@ -89,6 +91,7 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     if (progress.serverFraction !== null && (progress.serverCompleted || progress.serverFraction >= action.settings.targetFraction)) return finish('succeeded', progress.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
     const duration = progress.durationSeconds;
     if (duration === null || duration <= 0) return finish('needs-input', 'server duration is unknown');
+    await runner.emitProgress(job.id, next.key, progress.serverFraction ?? 0, { title: observed.title, durationSeconds: duration, serverSeconds: progress.serverSeconds });
     const previous = parseCursor((await runner.metadata(job.id)).cursor);
     const cursor = previous?.resourceKey === next.key ? previous : null;
     if (cursor?.awaiting) {
@@ -126,6 +129,7 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     await runner.setPendingOperation(job.id, null);
     const after = (await yktReadProgress(http, clock, next)).progress;
     if (after.serverCompleted || (after.serverFraction ?? 0) >= action.settings.targetFraction) return finish('succeeded', after.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
+    await runner.emitProgress(job.id, next.key, after.serverFraction ?? 0, { title: observed.title, durationSeconds: after.durationSeconds, serverSeconds: after.serverSeconds });
     await runner.setCursor(job.id, JSON.stringify({ ...sending, awaiting: (after.serverFraction ?? 0) <= baseline, baseline: Math.max(baseline, after.serverFraction ?? 0) }));
     return { completed: false, status: 'waiting' as const, nextRunAtMs: clock.nowMs() + 5000 };
   });
