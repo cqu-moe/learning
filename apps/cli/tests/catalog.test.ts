@@ -390,6 +390,30 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
   });
 
+  it('runs a Yuketang study job with the default preset: max speed and full target', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    const profile = await state.get('cli:profile:alpha');
+    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+    const ref = { course: { scope, key: 'fixture-course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'study-video', native: { kind: 'ykt', leafId: '502', leafInfoId: null } };
+    expect(await state.commit({ expected: [{ key: 'cli:resource:study-video', revision: null }], changes: [{ key: 'cli:resource:study-video', value: ref }] })).toBe(true);
+    state.close();
+    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
+    const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
+    const row = { i: 5, et: 'heartbeat', p: 'web', n: 'ali-cdn.xuetangx.com', lob: 'ykt', cp: 10, fp: 0, tp: 10, sp: 5,
+      ts: '__NOW_MS__', u: '424242', uip: '', c: '5184094', v: '502', skuid: '901', classroomid: '28930736', cc: 'CC1', d: 10,
+      pg: '__JOB_PG_502__', sq: 1, t: 'video', cards_id: 0, slide: 0 };
+    const write = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/video-log/heartbeat/', headers: { xtbz: 'ykt', 'classroom-id': '28930736', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' }, body: { heart_data: [row] } }, response: { status: 200, body: {} } };
+    const runFixture = resolve(dir, 'study-default.json');
+    writeFileSync(runFixture, JSON.stringify({ interactions: [leaf, progress(0, 0), leaf, progress(0, 0), write, leaf, progress(1, 10)] }));
+    const actual = run(dir, ['run', 'study-video', '--yes', '--profile', 'alpha', '--json'], runFixture);
+    expect(actual.code, actual.stderr).toBe(0);
+    expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
+  });
+
   it('reconciles an uncertain saved study job with only two GETs', async () => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);

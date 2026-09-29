@@ -498,3 +498,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户 Ctrl+C 取消 run（正常打印"已取消"退出）后再次进入 CLI 连续两次 CONFLICT "another writer holds the lock"。旧实现只在 withCliRuntime 的 finally 释放锁：进程被二次 Ctrl+C、未捕获异常或直接关终端打死时 finally 不执行，锁永久残留；且获取时只要文件存在就拒绝，即使锁内 PID 早已死亡，只能手工 profile unlock。
 - 重设计 acquireDataDirLock：1) 获取到锁后注册 process.on('exit') 同步删锁（兜底未捕获异常/process.exit 退出路径），正常 release 时移除监听防止 home-loop 泄漏；2) 撞到已存在的锁时读取 PID 并用 kill(pid,0) 判活——已死（ESRCH）则自动接管重写锁，活着才 CONFLICT，损坏/不可解析的锁保守拒绝提示人工检查；EPERM 视为存活。SIGKILL/断电等极端场景由死 PID 接管兜住。live 拒绝、profile unlock 行为不变。
 - 新增回归：死 PID 锁自动接管后 init 成功且无残留；不可解析锁拒绝且不覆盖。既有 live 拒绝、SIGTERM 清理、profile unlock 用例全保留通过。修改 apps/cli/src/runtime.ts、apps/cli/tests/basic.test.ts。Node24.11.1：lint、typecheck、CLI 102/102 exit 0（SDK 未动）。
+
+### 2026-09-29 · run 默认预设折叠 + 倍速默认值回车修复
+
+- 用户反馈：wizard 里 run 整门课后"倍速/目标进度"两个提示默认值直接回车报"请输入当前平台允许的倍速"，且刷课默认语义就是"整门课、最高倍速、刷完"，不该连按多次回车。根因：@clack/prompts 1.8.1 的 TextPrompt 在 finalize（应用 defaultValue）之前就运行 validate，空提交以 undefined 校验必然失败；修复为 prompts.ts 统一将空/undefined 提交按 initialValue 校验（submittedText），所有带默认值的 text 提示共用。
+- run 设置折叠为一个选择：向导且未显式给 --speed/--target 时只问一次"学习配置"——默认（倍速=平台上限：ykt 5、zhs 1.5/hike 1.25，目标=刷完整门课）或自定义（才展开原两个提示，倍速预填上限值）；非向导直跑未显式传参时同样按默认预设取平台上限倍速，--speed/--target 显式值不变。选择操作范围仍默认"整门课程"，预览后的执行确认保留。
+- 先红后绿：新增 catalog 用例（不带 --speed/--target 的 run，fixture 心跳断言 sp:5/cp:10/tp:10 一拍完成，旧代码 sp:1 红）；interaction 用例 submittedText(undefined,'5')→'5'（旧代码无此函数红）。修改 apps/cli/src/{prompts.ts,commands/run.ts}、apps/cli/tests/{interaction,catalog}.test.ts。Node24.11.1：lint、typecheck、CLI 104/104 exit 0（SDK 未动）。证据缺口：向导"学习配置"菜单本身未做 PTY 端到端（其 select 机制与其余向导提示同路径，由既有 terminal 套件覆盖）。

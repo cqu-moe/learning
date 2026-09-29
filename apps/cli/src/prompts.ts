@@ -7,6 +7,10 @@ import type { Command } from 'commander';
 
 export type Choice = { value: string; label: string; hint?: string };
 export type PromptField = { name: string; message: string; options?: Choice[]; initialValue?: string; multiple?: boolean; confirm?: boolean; validate?: (value: unknown) => string | undefined };
+/** clack validates before applying defaultValue, so an untouched input must validate against the default. */
+export function submittedText(value: unknown, initialValue?: string): unknown {
+  return value === undefined || value === '' ? initialValue : value;
+}
 export function createPrompts(mode: OutputMode) {
   clack.updateSettings({ messages: { cancel: '已取消', error: '操作失败' } });
   const askValue = async (field: PromptField, signal?: AbortSignal): Promise<unknown> => {
@@ -23,7 +27,7 @@ export function createPrompts(mode: OutputMode) {
       if (field.confirm) value = await clack.confirm({ ...base, initialValue: false, active: '是', inactive: '否' });
       else if (options && field.multiple) value = await clack.multiselect({ ...base, options, required: true });
       else if (options) value = await clack.autocomplete({ ...base, options, ...(field.initialValue === undefined ? {} : { initialValue: field.initialValue }) });
-      else value = await clack.text({ ...base, ...(field.initialValue === undefined ? {} : { defaultValue: field.initialValue, placeholder: field.initialValue }), validate: value => field.validate?.(value) });
+      else value = await clack.text({ ...base, ...(field.initialValue === undefined ? {} : { defaultValue: field.initialValue, placeholder: field.initialValue }), validate: value => field.validate?.(submittedText(value, field.initialValue)) });
       if (clack.isCancel(value) || signal?.aborted) throw new CliError('CANCELED', '操作已取消。', 3);
       return value;
     }

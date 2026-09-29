@@ -1,5 +1,6 @@
 import { CliError, getOutput } from '../output.js';
 import { createPrompts, confirmAction, askDefaults } from '../prompts.js';
+import type { PromptField } from '../prompts.js';
 import { isWizard } from '../wizard.js';
 import type { Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
@@ -57,10 +58,22 @@ export function registerRunCommands(program: Command): void {
         }
         if (profile.scope.platform === 'zhs' && resources.some((resource) => resource.native.kind === 'zhs-hike') && speed > 1.25) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS hike speed cannot exceed 1.25', retryAfterMs: null, operationId: null });
         const maxSpeed = profile.scope.platform === 'zhs' ? resources.some(resource => resource.native.kind === 'zhs-hike') ? 1.25 : 1.5 : 5;
-        await askDefaults(run, [
-          { name: 'speed', message: `倍速（1–${maxSpeed}）`, initialValue: '1', validate: value => Number(value) >= 1 && Number(value) <= maxSpeed && (profile.scope.platform === 'zhs' || Number.isInteger(Number(value))) ? undefined : '请输入当前平台允许的倍速。' },
+        const settingFields: PromptField[] = [
+          { name: 'speed', message: `倍速（1–${maxSpeed}）`, initialValue: String(maxSpeed), validate: value => Number(value) >= 1 && Number(value) <= maxSpeed && (profile.scope.platform === 'zhs' || Number.isInteger(Number(value))) ? undefined : '请输入当前平台允许的倍速。' },
           { name: 'target', message: '目标进度（大于 0、不超过 1）', initialValue: '1', validate: value => Number(value) > 0 && Number(value) <= 1 ? undefined : '请输入有效的目标进度。' },
-        ], isWizard(program));
+        ];
+        const explicit = run.getOptionValueSource('speed') === 'cli' || run.getOptionValueSource('target') === 'cli';
+        if (isWizard(program) && !explicit) {
+          const preset = String(await createPrompts(getOutput(program).mode).ask({ name: 'preset', message: '学习配置', options: [
+            { value: 'default', label: `默认 — 倍速 ${maxSpeed}，刷完整门课` },
+            { value: 'custom', label: '自定义 — 选择倍速和目标进度' },
+          ], initialValue: 'default' }));
+          if (preset === 'custom') await askDefaults(run, settingFields, true);
+          else { run.setOptionValueWithSource('speed', String(maxSpeed), 'prompt'); run.setOptionValueWithSource('target', '1', 'prompt'); }
+        } else {
+          await askDefaults(run, settingFields, isWizard(program));
+          if (!explicit) run.setOptionValueWithSource('speed', String(maxSpeed), 'default');
+        }
         speed = Number(run.opts<{ speed: string }>().speed); targetFraction = Number(run.opts<{ target: string }>().target);
         getOutput(program).activity(`正在核对 ${resources.length} 个资源的服务器进度，请稍候…`);
         const preview = await client.actions.prepare({ kind: 'study', resources, settings: { speed, targetFraction, questionMode: 'pause', maxDurationSeconds: 24 * 60 * 60 } });

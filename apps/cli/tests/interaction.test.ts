@@ -25,6 +25,16 @@ describe('missing input resolution', () => {
   });
 });
 
+describe('text prompt default submission', () => {
+  it('validates empty submissions against the default value', async () => {
+    const { submittedText } = await import('../src/prompts.js');
+    expect(submittedText(undefined, '5')).toBe('5');
+    expect(submittedText('', '1')).toBe('1');
+    expect(submittedText('3', '1')).toBe('3');
+    expect(submittedText(undefined)).toBeUndefined();
+  });
+});
+
 describe('course selection', () => {
  it('loads another page explicitly and keeps a duplicate title unambiguous', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs');
