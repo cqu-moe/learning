@@ -71,7 +71,7 @@ export class ActionStore {
     if (!ok) throw failure('CONFLICT', 'operation changed concurrently', record.operationId);
   }
 
-  async prepare(input: ActionInput, generation: number, executor: () => Promise<Receipt>, options: { blockers?: string[]; scope?: Scope; preflight?: () => Promise<void> } = {}): Promise<Preview> {
+  async prepare(input: ActionInput, generation: number, executor: () => Promise<Receipt>, options: { blockers?: string[]; warnings?: Preview['warnings']; scope?: Scope; preflight?: () => Promise<void> } = {}): Promise<Preview> {
     const parsed = ActionInputSchema.parse(input);
     const id = `preview-${crypto.randomUUID()}`;
     const operationId = `operation-${crypto.randomUUID()}`;
@@ -86,6 +86,7 @@ export class ActionStore {
       startsTimer: parsed.kind === 'exam.start' || parsed.kind === 'live.join',
       finalSubmission: parsed.kind === 'exam.finalize',
       blockers: options.blockers ?? [],
+      warnings: options.warnings ?? [],
     };
     const record: StoredOperation = { preview, operationId, inputCiphertext: await encryptJson(this.masterKey, JSON.stringify(parsed), this.aad(preview)), phase: 'preview', receipt: null };
     const ok = await this.state.commit({

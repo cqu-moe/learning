@@ -369,6 +369,7 @@ export const PreviewSchema = z.object({
   startsTimer: z.boolean(),
   finalSubmission: z.boolean(),
   blockers: z.array(z.string()),
+  warnings: z.array(WarningSchema).default([]),
 });
 export type Preview = z.infer<typeof PreviewSchema>;
 

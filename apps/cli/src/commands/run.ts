@@ -62,6 +62,7 @@ export function registerRunCommands(program: Command): void {
           { name: 'target', message: '目标进度（大于 0、不超过 1）', initialValue: '1', validate: value => Number(value) > 0 && Number(value) <= 1 ? undefined : '请输入有效的目标进度。' },
         ], isWizard(program));
         speed = Number(run.opts<{ speed: string }>().speed); targetFraction = Number(run.opts<{ target: string }>().target);
+        getOutput(program).activity(`正在核对 ${resources.length} 个资源的服务器进度，请稍候…`);
         const preview = await client.actions.prepare({ kind: 'study', resources, settings: { speed, targetFraction, questionMode: 'pause', maxDurationSeconds: 24 * 60 * 60 } });
         const summary = `账号：${profile.name}\n学习 ${resources.length} 个资源，倍速 ${speed}，目标 ${targetFraction * 100}%\n${resources.map(resource => resource.key).join('\n')}`;
         if (options.dryRun) { getOutput(program).set(preview, summary, 'preview'); return; }

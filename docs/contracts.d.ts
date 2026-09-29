@@ -72,7 +72,7 @@ export type ActionInput =
   | { kind: 'document.visit'; resource: ResourceRef }
   | { kind: 'live.join'; lesson: LessonRef; maxDurationSeconds: number }
   | { kind: 'live.answer'; liveJobId: string; questionId: string; phaseId: string; answer: Answer };
-export interface Preview { id: string; scope: Scope; kind: ActionInput['kind']; digest: string; generation: number; expiresAtMs: number; description: string; startsTimer: boolean; finalSubmission: boolean; blockers: string[] }
+export interface Preview { id: string; scope: Scope; kind: ActionInput['kind']; digest: string; generation: number; expiresAtMs: number; description: string; startsTimer: boolean; finalSubmission: boolean; blockers: string[]; warnings: Warning[] }
 export interface Receipt { operationId: string; state: 'confirmed' | 'uncertain' | 'rejected'; message: string; result: Json }
 export type Execution = { type: 'receipt'; receipt: Receipt } | { type: 'job'; job: Job };
 export type ExportInput =

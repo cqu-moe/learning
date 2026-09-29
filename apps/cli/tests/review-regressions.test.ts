@@ -39,7 +39,7 @@ describe('independent review regressions', () => {
   runtime.transport.fetch = async () => { throw new Error('network not registered'); };
   const scope = { userId:'local',profileId:'one',platform:'ykt' as const };
   const client = sdk.createLearningClient({scope,runtime});
-  vi.spyOn(client.actions,'prepare').mockResolvedValue({id:'preview',scope,kind:'live.answer',digest:'digest',generation:1,expiresAtMs:Date.now()+10000,description:'question',startsTimer:false,finalSubmission:false,blockers:[]});
+  vi.spyOn(client.actions,'prepare').mockResolvedValue({id:'preview',scope,kind:'live.answer',digest:'digest',generation:1,expiresAtMs:Date.now()+10000,description:'question',startsTimer:false,finalSubmission:false,blockers:[],warnings:[]});
   vi.spyOn(client.actions,'execute').mockImplementation(async () => { await new Promise(resolve => setTimeout(resolve,200)); throw new LearningError({code:'UNCERTAIN',message:'response lost',operationId:'op-sent',retryAfterMs:null}); });
   mocked.ask.mockResolvedValueOnce('true').mockResolvedValueOnce(true);
   const output = createOutput({format:'plain',interactive:true,quiet:false,color:false,debug:false},{stdout:sink(),stderr:sink()});

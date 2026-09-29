@@ -468,3 +468,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户真机 run 大学心理（uu-ykt，倍速 5，目标 0.5）报 INTERACTION_REQUIRED "video duration is unknown"。经授权用登录态只读复现（run --dry-run，全程零写调用）：课程 89 个视频中除首个已观看外全部未观看，get_video_watch_progress 对未观看视频返回 data:{} 无 video_length；leaf_info content_info.media.duration 全部有值且与已观看视频的 video_length 相等（2052=2052）。
 - 修复 yktReadProgress：duration 先取 watch progress video_length，未知回落 leaf_info media.duration；study planner 拒绝信息附带 resource key。新增回归测试（未观看空 data + leaf 时长）先红后绿。剩余 84704827 为平台脏数据：media.duration=0 且 playurl 仅返回 mp4 地址无时长字段，按 A192 拒绝虚构进度；官方网页播放器先播放几秒生成 watch 行后即可规划。
 - 修改 packages/sdk/src/providers/ykt/{study,resources}.ts、packages/sdk/src/index.ts、packages/sdk/tests/ykt-study.test.ts、docs/PLATFORMS.md。Node24.11.1 验证：lint、typecheck、SDK 234/234、CLI 99/99 exit 0；test:e2e 6/7，唯一失败为隔离消费者 pnpm install --offline 无法从本机 npmmirror 缓存解析 yaml@2.9.1（依赖树未变，属本机离线镜像元数据缺失，与本次改动无关）。真机复检：run 大学心理 --dry-run 依次通过全部 88 个可规划视频，仅 84704827 如预期拒绝且报错带 resource key。
+
+### 2026-09-29 · 整门课不再被无时长视频卡死 + prepare 提示
+
+- 用户真机交互 run 大学心理在表单后静默约 41 秒（89 个资源逐个 leaf_info+watch_progress 只读核对，无任何输出），最终被一个无时长视频整体拒绝。修复：study prepare 对 ykt 无时长视频改为跳过并逐资源记录 SKIPPED_UNKNOWN_DURATION 警告（Preview 新增 warnings 字段，actionStore.prepare 透传，contracts.d.ts 同步）；全部无时长才拒绝。CLI run 在 prepare 前用 activity spinner 显示"正在核对 N 个资源的服务器进度"。
+- 新增回归先红后绿：1 好+1 坏视频 → 预览成功、警告 1 条、job total 1；全坏 → 仍 INTERACTION_REQUIRED。review-regressions 的 Preview mock 补 warnings: []。
+- 修改 packages/sdk/src/{index.ts,types/models.ts,services/actions.ts}、apps/cli/src/commands/run.ts、docs/contracts.d.ts、两处测试。Node24.11.1：lint、typecheck、SDK 236/236、CLI 99/99 exit 0。真机 dry-run：exit 0，86 个视频入计划，3 个平台脏数据视频（2d0bd543/30b266cb/1fcb97b2）逐个警告跳过；官方网页各播放数秒后即可纳入。

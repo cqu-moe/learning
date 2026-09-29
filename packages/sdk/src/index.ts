@@ -490,20 +490,27 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           }
           const session = await readSession(runtime.state, runtime.masterKey, scope);
           if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login is required before study', retryAfterMs: null, operationId: null });
+          const planResources: typeof actionInput.resources = [];
+          const skipped: string[] = [];
           for (const resource of actionInput.resources) {
             if (platform === 'ykt') {
               const observed = await yktReadProgress(await httpBound(), runtime.clock, resource);
               if (observed.kind === 'article' && !observed.progress.serverCompleted && observed.skuId === null) throw new LearningError({ code: 'PROTOCOL', message: 'article sku is missing', retryAfterMs: null, operationId: null });
-              if (observed.kind === 'video' && observed.progress.durationSeconds === null && !observed.progress.serverCompleted) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: `video duration is unknown for ${resource.key}; study cannot be planned`, retryAfterMs: null, operationId: null });
+              if (observed.kind === 'video' && observed.progress.durationSeconds === null && !observed.progress.serverCompleted) { skipped.push(resource.key); continue; }
+              planResources.push(resource);
             } else {
               await xtxReadProgress(await httpBound(), runtime.clock, resource);
               await xtxReadStudyIdentity(await httpBound(), resource);
+              planResources.push(resource);
             }
           }
-          return actionStore.prepare(actionInput, session.generation, async () => {
-            const job = await jobRunner.create(scope, 'study', { total: actionInput.resources.length, payload: actionInput, generation: session.generation });
+          if (skipped.length === actionInput.resources.length) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: `video duration is unknown for ${skipped.join(', ')}; study cannot be planned`, retryAfterMs: null, operationId: null });
+          const input = { ...actionInput, resources: planResources };
+          const warnings = skipped.map((key) => ({ code: 'SKIPPED_UNKNOWN_DURATION', message: 'video duration is unknown; play it once in the official web player, then retry', resourceKey: key }));
+          return actionStore.prepare(input, session.generation, async () => {
+            const job = await jobRunner.create(scope, 'study', { total: input.resources.length, payload: input, generation: session.generation });
             return { operationId: 'ack', state: 'confirmed', message: 'study job created', result: { jobId: job.id } };
-          });
+          }, { warnings });
         }
         if ((platform !== 'ykt' && platform !== 'xuetang') || actionInput.kind !== 'homework.apply') return asyncUnsupported(platform, `actions.prepare(${actionInput.kind})`);
         const owner = actionInput.draft.ref.resource.course.scope;
