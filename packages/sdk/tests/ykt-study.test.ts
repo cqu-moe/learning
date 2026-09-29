@@ -110,6 +110,32 @@ describe('ykt study job', () => {
     transport.assertNoExtraScripts();
   });
 
+  it('stops before any write when the session lacks the csrf cookie', async () => {
+    const scope = { userId: 'local', profileId: 'p-csrf', platform: 'ykt' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'video', native: { kind: 'ykt' as const, leafId: '502', leafInfoId: null } };
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const masterKey = new Uint8Array(32).fill(5);
+    await writeSession(state, masterKey, { schemaVersion: 1, scope, generation: 1, platformUserId: '424242', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: clock.nowMs() });
+    const runtime: Runtime = { transport, state, clock, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} };
+    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
+    const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
+    const client = createLearningClient({ scope, runtime });
+    transport.scriptInteractions([leaf, progress(0, 0)]);
+    const preview = await client.actions.prepare({ kind: 'study', resources: [resource], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause', maxDurationSeconds: 60 } });
+    const execution = await client.actions.execute(preview.id);
+    if (execution.type !== 'job') throw Error('missing study job');
+    transport.scriptInteractions([leaf, progress(0, 0)]);
+    const done = await client.jobs.advance(execution.job.id);
+    expect(done.status).toBe('needs-input');
+    expect(done.items[0]?.message).toBe('CSRF cookie is missing; re-login to refresh the session');
+    expect(transport.calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+    transport.assertNoExtraScripts();
+  });
+
   it('still rejects when every requested video has unknown duration', async () => {
     const scope = { userId: 'local', profileId: 'p-allbad', platform: 'ykt' as const };
     const bad = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'video-bad', native: { kind: 'ykt' as const, leafId: '504', leafInfoId: null } };

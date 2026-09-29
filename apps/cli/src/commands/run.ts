@@ -74,7 +74,8 @@ export function registerRunCommands(program: Command): void {
         if (job.status === 'uncertain') process.exitCode = 5;
         else if (job.status === 'partial') process.exitCode = 4;
         else if (job.status !== 'succeeded') process.exitCode = 3;
-        printResult(program, job, `${job.id}: ${job.status} (${job.completed}/${job.total ?? '?'})`);
+        const reasons = job.items.filter((item) => item.state === 'needs-input' && item.message !== null).map((item) => item.key + ': ' + item.message);
+        printResult(program, job, [job.id + ': ' + job.status + ' (' + job.completed + '/' + (job.total ?? '?') + ')', ...reasons].join('\n'));
       } finally { await client.close(); }
     });
   });

@@ -108,8 +108,9 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     if (row === undefined) return finish('needs-input', 'no valid heartbeat could be constructed');
     row.cp = Math.min(row.cp, duration * action.settings.targetFraction);
     row.sq = (cursor?.sq ?? 0) + 1;
+    // Only web_login plants csrftoken; no read endpoint re-seeds it (verified live).
     const csrf = await jar.cookieValue(new URL(YKT_BASE), 'csrftoken');
-    if (csrf === null) return finish('needs-input', 'CSRF cookie is missing');
+    if (csrf === null) return finish('needs-input', 'CSRF cookie is missing; re-login to refresh the session');
     const baseline = progress.serverFraction ?? 0;
     const sending: StudyCursor = { resourceKey: next.key, cp: row.cp, sq: row.sq, baseline, awaiting: true, stalls: 0 };
     await runner.setCursor(job.id, JSON.stringify(sending));

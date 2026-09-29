@@ -474,3 +474,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户真机交互 run 大学心理在表单后静默约 41 秒（89 个资源逐个 leaf_info+watch_progress 只读核对，无任何输出），最终被一个无时长视频整体拒绝。修复：study prepare 对 ykt 无时长视频改为跳过并逐资源记录 SKIPPED_UNKNOWN_DURATION 警告（Preview 新增 warnings 字段，actionStore.prepare 透传，contracts.d.ts 同步）；全部无时长才拒绝。CLI run 在 prepare 前用 activity spinner 显示"正在核对 N 个资源的服务器进度"。
 - 新增回归先红后绿：1 好+1 坏视频 → 预览成功、警告 1 条、job total 1；全坏 → 仍 INTERACTION_REQUIRED。review-regressions 的 Preview mock 补 warnings: []。
 - 修改 packages/sdk/src/{index.ts,types/models.ts,services/actions.ts}、apps/cli/src/commands/run.ts、docs/contracts.d.ts、两处测试。Node24.11.1：lint、typecheck、SDK 236/236、CLI 99/99 exit 0。真机 dry-run：exit 0，86 个视频入计划，3 个平台脏数据视频（2d0bd543/30b266cb/1fcb97b2）逐个警告跳过；官方网页各播放数秒后即可纳入。
+
+### 2026-09-29 · study needs-input 原因可见化 + CSRF 缺失定界
+
+- 用户真机任务 job-47cdfe4b 在 0/95 即 needs-input 且无原因展示。读本地任务记录定位：第一个资源 message 为 "CSRF cookie is missing"——心跳写需要 csrftoken 双提交，而该会话 jar 仅含 sessionid+django_language（诊断脚本只打印 cookie 名/域，未导出值，临时目录已删除）。真机验证 userinfo 与 /v2/web 均不补种 csrftoken；参考 ykt-cli auth.py 佐证只有 POST /pc/web_login 种下。曾实现 userinfo 补种并跑通 fixture 测试，真机证伪后回滚，保留干净守卫并新增"缺 csrf 时不发任何写请求"回归（14/14）。
+- CLI run 结束输出现在附带全部 needs-input 条目的 key 与 message，不再让用户猜"需要人工处理"的原因。该会话 sessionid 16:26 过期且缺 csrf，处置为重新 learning login（扫码或导入完整 cookie）后 jobs resume。
+- 修改 packages/sdk/src/providers/ykt/study.ts、apps/cli/src/commands/run.ts、packages/sdk/tests/ykt-study.test.ts。Node24.11.1：lint、typecheck、SDK 237/237、CLI 99/99 exit 0。
