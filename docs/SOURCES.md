@@ -12,6 +12,29 @@
 
 原仓库只能通过用户授权读取；不能找公开同名仓库替代。不把参考 checkout、真实凭据、字体文件或敏感样本提交到新 repo。当前运行源码 > 同 ref 测试 > 协议记录 > 历史设计；但已知源码 bug 不要求复现。
 
+## 2026-10-09 · Chaoxing 追加来源
+
+用户当日在原始三平台范围外明确追加“超星学习通，只接刷课”。补充来源是公开仓库 `Samueli924/chaoxing` 固定 commit `45d2106b16764231c2de2038fb042e71b23d878f`；只读对照，不运行该项目：
+
+| 编号 | 固定源码 | 已读范围 | 支持的设计判断 |
+|---|---|---|---|
+| C01 | [api/base.py](https://github.com/Samueli924/chaoxing/blob/45d2106b16764231c2de2038fb042e71b23d878f/api/base.py) | 课程大纲、卡片与学习上报关键段 | `studentcourse`、`knowledge/cards`、`ananas/status`、多媒体 log 的参数和时序 |
+| C02 | [api/decode.py](https://github.com/Samueli924/chaoxing/blob/45d2106b16764231c2de2038fb042e71b23d878f/api/decode.py) | HTML/JSON 提取段 | `mArg` 平衡 JSON、视频 attachment 字段 |
+| C03 | [api/config.py](https://github.com/Samueli924/chaoxing/blob/45d2106b16764231c2de2038fb042e71b23d878f/api/config.py) | 常量段 | MD5 盐、`rt=0.9`、上报字段 |
+
+同日对用户提供的课程页做只读浏览器验证：真实 `studentcourse` HTML 含 9 个 `.chapter_unit`、48 个知识点；单元题为 `.catalog_title .clicktitle`，知识点为 `.chapter_unit li div[id^="cur"]`，点题为 `a.clicktitle`，任务数为 `input.knowledgeJobCount`。`knowledge/cards` 的当前 query 需 `v=2025-0424-1038-3&mooc2=1`。真实浏览器验证 `ananas/status` 需视频模块 Referer；同 URL 无 Referer 直达为 403。未导出、保存或提交 Cookie。
+
+用户随后明确基础登录也在范围内。补充只读固定源码 `DanMo661/Xuexitong-mcp@ebce2cc735bc7acc45fac7ccf32bcefe1a6b2a54`：
+
+| 编号 | 固定源码 | 已读范围 | 支持的设计判断 |
+|---|---|---|---|
+| C04 | [xuexitong_mcp/client.py](https://github.com/DanMo661/Xuexitong-mcp/blob/ebce2cc735bc7acc45fac7ccf32bcefe1a6b2a54/xuexitong_mcp/client.py) | 常量、AES、`ChaoxingClient.login`、base 探测 | `fanyalogin` 的 URL、九个表单字段、AES key/iv/PKCS7/base64、浏览器 UA、`status=true` 与 `i.chaoxing.com/base` 核验 |
+| C05 | [README.md](https://github.com/DanMo661/Xuexitong-mcp/blob/ebce2cc735bc7acc45fac7ccf32bcefe1a6b2a54/README.md) | 登录逆向说明与 2026-09 真实账号声明 | 交叉确认登录算法；该仓库的“曾实测”不代表本仓库已完成验收 |
+
+该源码把密码错误与验证码合并为失败提示，没有提供权威状态码区分。本实现仅在 `msg2` 明确包含验证码/风险/安全验证时输出人工处理类错误；其余失败统一按拒绝凭据处理，不猜协议状态码。
+
+该公开仓库是本次用户追加能力的补充对照，不改变 `docs/source-lock.json` 中三个私有基线仓库的完整性检查；Chaoxing 的工程证据以本仓库 fixture 测试和后续用户授权的本机验收为准。
+
 ## S03. 源码索引
 
 | 编号 | 固定源码 | 已读范围 | 支持的设计判断 |

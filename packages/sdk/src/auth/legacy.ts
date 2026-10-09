@@ -25,7 +25,13 @@ export async function importLegacyCookies(
   cookies: LegacyCookie[],
 ): Promise<{ value: SessionView; warnings: Warning[] }> {
   const jar = new SessionCookieJar();
-  const hosts = scope.platform === 'ykt' ? ['yuketang.cn', 'xuetangx.com'] : scope.platform === 'xuetang' ? ['xuetangx.com'] : ['zhihuishu.com'];
+  const hosts = scope.platform === 'ykt'
+    ? ['yuketang.cn', 'xuetangx.com']
+    : scope.platform === 'xuetang'
+      ? ['xuetangx.com']
+      : scope.platform === 'chaoxing'
+        ? ['chaoxing.com']
+        : ['zhihuishu.com'];
   for (const cookie of cookies) {
     const host = cookie.domain.replace(/^\./, '').toLowerCase();
     const path = cookie.path ?? '/';

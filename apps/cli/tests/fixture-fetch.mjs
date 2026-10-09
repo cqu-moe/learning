@@ -86,7 +86,9 @@ globalThis.fetch = async (input) => {
     } });
   } else responseBody = typeof expected.response.base64 === 'string'
     ? Buffer.from(expected.response.base64, 'base64')
-    : JSON.stringify(expected.response.body ?? {});
+    : typeof expected.response.body === 'string'
+      ? expected.response.body
+      : JSON.stringify(expected.response.body ?? {});
   return new Response(responseBody, { status: expected.response.status, headers });
 };
 

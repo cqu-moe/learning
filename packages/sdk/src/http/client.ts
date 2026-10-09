@@ -64,6 +64,7 @@ export interface HttpInput {
   body?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  followRedirects?: boolean;
 }
 
 export interface HttpResult {
@@ -144,6 +145,7 @@ export class SessionHttp {
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
         if (location === null) return this.result(response, url);
+        if (input.followRedirects === false) return this.result(response, url);
         const next = new URL(location, url);
         hops += 1;
         if (hops > MAX_REDIRECT_HOPS) {

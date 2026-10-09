@@ -44,12 +44,14 @@ describe('local profiles', () => {
     expect(created.scope).toMatchObject({ platform: 'ykt', userId: 'local' });
     expect(created.scope.profileId).toBeTruthy();
     expect(run(dir, 'profile', 'add', 'alpha', '--platform', 'zhs').code).toBe(2);
+    expect(run(dir, 'profile', 'add', 'chaoxing', '--platform', 'chaoxing', '--json').code).toBe(0);
     const listed = run(dir, 'profile', 'list', '--json');
     expect(listed.code).toBe(0);
-    expect(JSON.parse(listed.stdout).data).toEqual({ profiles: [created] });
+    expect(JSON.parse(listed.stdout).data.profiles.map((profile: { name: string }) => profile.name)).toEqual(['alpha', 'chaoxing']);
     expect(listed.stdout).not.toContain('cookie');
     expect(run(dir, 'profile', 'remove', 'alpha').code).toBe(3);
     expect(run(dir, 'profile', 'remove', 'alpha', '--yes').code).toBe(0);
+    expect(run(dir, 'profile', 'remove', 'chaoxing', '--yes').code).toBe(0);
     expect(JSON.parse(run(dir, 'profile', 'list', '--json').stdout).data).toEqual({ profiles: [] });
   });
 

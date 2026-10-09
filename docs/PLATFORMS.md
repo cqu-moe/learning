@@ -1,6 +1,6 @@
-# learning — 三平台协议与功能范围
+# learning — 三平台与 Chaoxing 追加协议范围
 
-版本 1.1。本文件的源码判断继承先前已读的三个固定版本；本轮依据附件复核，没有重新调用平台或重新读取远端 HEAD。源码“曾实测”的注释不等于本次验证。来源编号在 SOURCES.md。任何通用架构用词以新的 SPEC/SDK 为准，不能恢复旧 PolicyPort、ApprovalRef 或7包架构。
+版本 1.1。P01–P06 的源码判断继承先前已读的三个固定版本；本轮依据附件复核，没有重新调用平台或重新读取远端 HEAD。2026-10-09 用户追加的 Chaoxing 基础登录与刷课见 P07。源码“曾实测”的注释不等于本次验证。来源编号在 SOURCES.md。任何通用架构用词以新的 SPEC/SDK 为准，不能恢复旧 PolicyPort、ApprovalRef 或7包架构。
 
 ## P01. 迁移范围
 
@@ -294,3 +294,39 @@ HTML 先用 parser 生成 contracts 中的 RichText；提取 data-formula/数学
 | source 缺失字段回退 0 | 必需标识符拒绝，不生成伪资源 |
 
 上述变化属于目标行为修正，不能因为 Python 对照不同就回退。差分测试应明确允许这些差异，并把新行为作为目标，而不是要求与旧 bug 逐字一致。
+
+## P07. Chaoxing 基础登录与 Mooc 视频刷课（用户追加范围）
+
+### 范围与登录
+
+只支持 Chaoxing 账号密码登录、本地 Cookie 导入/核验和 Mooc 视频/进度/学习链路；不支持课程列表、扫码登录、下载、字幕、文档、章节测验、作业、考试、讨论、直播或云端执行。公开仓库中的瞬时完成尝试不迁移。
+
+账号密码登录先清空本 profile 旧身份 Cookie，用固定浏览器 UA 一次性、不自动跟随重定向地 `POST https://passport2.chaoxing.com/fanyalogin`。`uname/password` 均为 AES-128-CBC/PKCS7 + base64，key=iv=`u2oh6Vu^HWe4_AES`；表单固定为 `fid=-1,refer=https%3A%2F%2Fi.chaoxing.com,t=true,forbidotherlogin=0,validate=,doubleFactorLogin=0,independentId=0`。成功信封必须 `status=true`，随后读取 `i.chaoxing.com/base` 并解析安全 UID；只有两者都成立才写入完整加密 Cookie session。请求发送后网络结果未知为 `UNCERTAIN`，不得自动重发；密码错误、验证码、风险或二因素均失败并留给官方页面人工处理。
+
+用户也可从本机 cookie-array 文件导入完整 Cookie；`i.chaoxing.com/base` 能解析出稳定的 3 位以上数字 `uid/personid` 时才把 session 提升为 `identityVerified=true`。登录页、无安全 ID、或与既有 platformUserId 不一致均按 expired 处理。验证码和额外风控留给官方页面人工处理。
+
+课程入口接受精确的 `https://*.chaoxing.com/mooc2-ans/mycourse/stu` URL，只保留并持久化 `courseId`、`clazzId`、`cpi`；URL 中的一次性 `enc`、时间戳和展示参数不保存。
+
+### 读取与视频定位
+
+| 动作 | 路径 | 语义 |
+|---|---|---|
+| outline | `GET https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/studentcourse?courseid=<id>&clazzid=<id>&cpi=<id>&ut=s` | 解析章节/知识点/任务数 |
+| card | `GET https://mooc1.chaoxing.com/mooc-ans/knowledge/cards` | `clazzid,courseid,knowledgeid,num,ut=s,cpi,v=2025-0424-1038-3,mooc2=1`；`num=0..5`，无 `mArg` 终止 |
+| progress | 读取同知识点对应 card | 顶层 `objectId/jobid/mid/otherInfo/attDuration/attDurationEnc/isPassed`；视频字段不完整则拒绝 |
+| media status | `GET https://mooc1.chaoxing.com/ananas/status/{objectId}?k={fid}&flag=normal` | 必须带视频模块 Referer 与浏览器 UA；时长必须与 card 一致 |
+
+大纲真实 DOM：单元题为 `.catalog_title .clicktitle`；知识点为 `.chapter_unit li div[id^="cur"]`；点题为其中 `a.clicktitle`；任务数为 `input.knowledgeJobCount`。目录解析出的知识点与卡片中的视频分别形成稳定 native locator；同视频多处出现仍是不同资源。
+
+### 1× 学习上报
+
+状态读取得到 `dtoken` 后调用 card `defaults.reportUrl` 限定的 `GET /mooc-ans/multimedia/log/a/{cpi}/{dtoken}`。`enc` 为 MD5：
+
+```text
+[clazzId][userid][jobid][objectId][playingTime*1000]
+[d_yHJ!$pdA~5][duration*1000][0_duration]
+```
+
+`otherInfo` 只取第一个 `&` 前的段；`rt=0.9`、`dtype=Video`、`isdrag=3`。SDK 只允许 speed=1，按服务器 `reportTimeInterval` 的真实时间推进，不采用源项目的时长加 `isdrag=4` 瞬时完成捷径。目标 fraction 低于 1 时 ACK 可结束“达到目标”项，但不写 `serverCompleted=true`；目标为 1 时最终 ACK 后必须重新读取 card 并看到 `isPassed=true` 才能计 succeeded。
+
+每次上报前持久化 cursor 和 pending operation；响应丢失或进程中断进入 uncertain，只允许只读核对，不得自动重发。`videoTimeLimit`、`hasJobLimit` 或最终未观察到 pass 均 needs-input，由用户去官方页面处理。

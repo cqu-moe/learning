@@ -30,29 +30,82 @@ function readCookieFile(path: string): string {
   return text;
 }
 
+function readPasswordFile(path: string): string {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024) {
+    throw new LearningError({ code: 'INVALID_INPUT', message: 'password file must be a regular file under 64 KiB', retryAfterMs: null, operationId: null });
+  }
+  if ((stat.mode & 0o077) !== 0) {
+    throw new LearningError({ code: 'INVALID_INPUT', message: 'password file must be owner-only', retryAfterMs: null, operationId: null });
+  }
+  const password = readFileSync(path, 'utf8').replace(/\r?\n$/, '');
+  if (password === '' || password.includes('\0')) {
+    throw new LearningError({ code: 'INVALID_INPUT', message: 'password file is empty or contains a NUL byte', retryAfterMs: null, operationId: null });
+  }
+  return password;
+}
+
 export function registerLoginCommands(program: Command): void {
-  const login = program.command('login').description('扫码登录或导入本地 Cookie 文件')
+  const login = program.command('login').description('登录学习平台')
     .option('--import <file>', '导入指定 Cookie 数组文件')
+    .option('--username <username>', '超星学习通手机号或用户名')
+    .option('--password-file <file>', '超星学习通密码文件（owner-only，支持 CHAOXING_PASSWORD_FILE）')
     .option('--qr-file <file>', '二维码图片的新文件路径；机器扫码模式必须明确指定')
     .option('--variant <variant>', '智慧树二维码：default 或 native', 'default');
   login.action(async () => {
     const output = getOutput(program);
-    const options = login.opts<{ import?: string; qrFile?: string; variant: string }>();
-    if (options.import !== undefined && options.qrFile !== undefined) throw new CliError('INVALID_INPUT', '--import 与 --qr-file 不能同时使用。');
+    const options = login.opts<{ import?: string; username?: string; passwordFile?: string; qrFile?: string; variant: string }>();
+    const selectedMethods = [
+      options.import !== undefined,
+      options.username !== undefined || options.passwordFile !== undefined,
+      options.qrFile !== undefined,
+    ].filter(Boolean).length;
+    if (selectedMethods > 1) throw new CliError('INVALID_INPUT', '--import、账号密码登录与 --qr-file 不能同时使用。', 2, ['import', 'username', 'passwordFile', 'qrFile']);
     if (!['default', 'native'].includes(options.variant)) throw new CliError('INVALID_INPUT', '二维码类型必须为 default 或 native。');
-    if (isWizard(program) && options.import === undefined && options.qrFile === undefined) {
-      const prompts = createPrompts(output.mode);
-      const method = await prompts.ask({ name: 'method', message: '选择登录方式', options: [{ value: 'qr', label: '扫描二维码' }, { value: 'import', label: '导入本地 Cookie 文件' }] });
-      if (method === 'import') options.import = String(await prompts.ask({ name: 'file', message: 'Cookie 文件路径', validate: value => typeof value === 'string' && value.length > 0 ? undefined : '请输入文件路径。' }));
+    const explicitPasswordMode = options.username !== undefined || options.passwordFile !== undefined;
+    if (!output.mode.interactive && options.import === undefined && options.qrFile === undefined && !explicitPasswordMode) {
+      throw new CliError('INTERACTION_REQUIRED', '登录需要人工操作；自动化请明确使用 --import、--qr-file 或超星账号密码文件。', 3);
     }
-    if (options.import !== undefined && login.getOptionValueSource('import') !== 'cli') login.setOptionValueWithSource('import', options.import, 'prompt');
-    if (!output.mode.interactive && options.import === undefined && options.qrFile === undefined) throw new CliError('INTERACTION_REQUIRED', '扫码需要人工操作；自动化请明确使用 --import 或 --qr-file。', 3);
     await withCliRuntime(program, true, async (runtime, dataDir) => {
       const profile = await selectProfile(program, runtime);
       const client = createLearningClient({ scope: profile.scope, runtime });
       let qrPath: string | null = null;
       let descriptor: number | null = null;
       try {
+        if (profile.scope.platform === 'chaoxing' && options.qrFile !== undefined && options.username === undefined && options.passwordFile === undefined) {
+          throw new CliError('INVALID_INPUT', '超星学习通不支持扫码登录；请使用账号密码文件或导入 Cookie。', 2, ['qrFile']);
+        }
+        if (isWizard(program) && selectedMethods === 0) {
+          const prompts = createPrompts(output.mode);
+          const method = await prompts.ask({
+            name: 'method',
+            message: '选择登录方式',
+            options: profile.scope.platform === 'chaoxing'
+              ? [{ value: 'password', label: '账号密码文件' }, { value: 'import', label: '导入本地 Cookie 文件' }]
+              : [{ value: 'qr', label: '扫描二维码' }, { value: 'import', label: '导入本地 Cookie 文件' }],
+          });
+          if (method === 'import') options.import = String(await prompts.ask({ name: 'file', message: 'Cookie 文件路径', validate: value => typeof value === 'string' && value.length > 0 ? undefined : '请输入文件路径。' }));
+          if (method === 'password') {
+            options.username = String(await prompts.ask({ name: 'username', message: '手机号或用户名', validate: value => typeof value === 'string' && value.trim().length > 0 ? undefined : '请输入手机号或用户名。' })).trim();
+            options.passwordFile = String(await prompts.ask({ name: 'passwordFile', message: 'owner-only 密码文件路径', validate: value => typeof value === 'string' && value.length > 0 ? undefined : '请输入密码文件路径。' }));
+          }
+        }
+        if (options.username !== undefined || options.passwordFile !== undefined) {
+          if (profile.scope.platform !== 'chaoxing') throw new CliError('INVALID_INPUT', '账号密码文件仅用于超星学习通。', 2, ['username', 'passwordFile']);
+          const username = (options.username ?? process.env.CHAOXING_USERNAME ?? '').trim();
+          const passwordPath = options.passwordFile ?? process.env.CHAOXING_PASSWORD_FILE;
+          if (username === '') throw new CliError('INVALID_INPUT', '缺少参数：username。', 2, ['username']);
+          if (passwordPath === undefined) throw new CliError('INVALID_INPUT', '缺少参数：passwordFile。', 2, ['passwordFile']);
+          const flow = await client.auth.begin({ method: 'password', username, password: readPasswordFile(passwordPath) });
+          void flow.result.catch(() => {});
+          for await (const event of flow.events) {
+            if (event.type !== 'authenticated') {
+              await output.event({ type: 'auth', data: { stage: event.type, generation: 'generation' in event ? event.generation : null, expiresAtMs: null, qrPath: null } });
+            }
+          }
+          printResult(program, await flow.result, `已登录账号：${profile.name}`);
+          return;
+        }
         if (options.import !== undefined) {
           const imported = await client.auth.importLegacy({ format: 'cookie-array', text: readCookieFile(options.import) });
           printResult(program, unwrapResult(program, imported), `已导入 ${profile.name} 的会话，身份尚未在线验证。`);

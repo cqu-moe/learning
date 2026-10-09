@@ -34,6 +34,7 @@ export function registerRunCommands(program: Command): void {
       const profile = await selectProfile(program, runtime);
       if (profile.scope.platform !== 'zhs' && !Number.isSafeInteger(speed)) throw new LearningError({ code: 'INVALID_INPUT', message: 'Yuketang and Xuetang speed must be an integer', retryAfterMs: null, operationId: null });
       if (profile.scope.platform === 'zhs' && speed > 1.5) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS speed cannot exceed 1.5', retryAfterMs: null, operationId: null });
+      if (profile.scope.platform === 'chaoxing' && speed !== 1) throw new LearningError({ code: 'INVALID_INPUT', message: 'Chaoxing speed must be 1', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         key ??= await chooseTarget(client, runtime, createPrompts(getOutput(program).mode), profile.scope.platform === 'ykt' ? ['video', 'document'] : ['video']);
@@ -56,7 +57,7 @@ export function registerRunCommands(program: Command): void {
           throw new LearningError({ code: 'INVALID_INPUT', message: 'no study resources in this profile were selected', retryAfterMs: null, operationId: null });
         }
         if (profile.scope.platform === 'zhs' && resources.some((resource) => resource.native.kind === 'zhs-hike') && speed > 1.25) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS hike speed cannot exceed 1.25', retryAfterMs: null, operationId: null });
-        const maxSpeed = profile.scope.platform === 'zhs' ? resources.some(resource => resource.native.kind === 'zhs-hike') ? 1.25 : 1.5 : 5;
+        const maxSpeed = profile.scope.platform === 'chaoxing' ? 1 : profile.scope.platform === 'zhs' ? resources.some(resource => resource.native.kind === 'zhs-hike') ? 1.25 : 1.5 : 5;
         await askDefaults(run, [
           { name: 'speed', message: `倍速（1–${maxSpeed}）`, initialValue: '1', validate: value => Number(value) >= 1 && Number(value) <= maxSpeed && (profile.scope.platform === 'zhs' || Number.isInteger(Number(value))) ? undefined : '请输入当前平台允许的倍速。' },
           { name: 'target', message: '目标进度（大于 0、不超过 1）', initialValue: '1', validate: value => Number(value) > 0 && Number(value) <= 1 ? undefined : '请输入有效的目标进度。' },

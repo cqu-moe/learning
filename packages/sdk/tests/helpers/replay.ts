@@ -26,7 +26,7 @@ export interface FixtureInteraction {
 
 export interface Fixture {
   id: string;
-  platform: 'ykt' | 'xuetang' | 'zhs';
+  platform: 'ykt' | 'xuetang' | 'zhs' | 'chaoxing';
   source: { repo: string; ref: string; path: string; symbol: string };
   synthetic: boolean;
   interactions: FixtureInteraction[];

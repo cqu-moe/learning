@@ -3,10 +3,10 @@ import { parseDto } from './errors.js';
 import type { LearningError } from './errors.js';
 import { sha256Hex } from './sha256.js';
 
-export const PlatformSchema = z.enum(['ykt', 'xuetang', 'zhs']);
+export const PlatformSchema = z.enum(['ykt', 'xuetang', 'zhs', 'chaoxing']);
 export type Platform = z.infer<typeof PlatformSchema>;
 
-export const SystemSchema = z.enum(['ykt-standard', 'ykt-kg', 'xuetang', 'zhs-share', 'zhs-hike']);
+export const SystemSchema = z.enum(['ykt-standard', 'ykt-kg', 'xuetang', 'zhs-share', 'zhs-hike', 'chaoxing-mooc']);
 export type System = z.infer<typeof SystemSchema>;
 
 const SAFE_INTEGER_MAX = 9007199254740991n;
@@ -30,6 +30,19 @@ export function safeId(options: { allowZero?: boolean } = {}) {
     }, 'numeric id exceeds the safe integer range');
 }
 
+/** Opaque platform token: stable as a string, but not necessarily a safe JS number. */
+const opaqueId = z
+  .string()
+  .min(1)
+  .refine((v) => v === v.trim(), 'opaque id must not have surrounding whitespace')
+  .refine(
+    (v) => !Array.from(v).some((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code <= 0x1f || code === 0x7f;
+    }),
+    'opaque id contains a control character',
+  );
+
 export const ScopeSchema = z.object({
   userId: z.string().min(1),
   profileId: z.string().min(1),
@@ -47,6 +60,12 @@ export const CourseLocatorSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('zhs-share'), recruitAndCourseId: safeId() }),
   z.object({ kind: z.literal('zhs-hike'), courseId: safeId() }),
+  z.object({
+    kind: z.literal('chaoxing'),
+    courseId: safeId(),
+    clazzId: safeId(),
+    cpi: safeId(),
+  }),
 ]);
 export type CourseLocator = z.infer<typeof CourseLocatorSchema>;
 
@@ -68,6 +87,14 @@ export const ResourceLocatorSchema = z.discriminatedUnion('kind', [
     videoId: safeId(),
   }),
   z.object({ kind: z.literal('zhs-hike'), fileId: safeId() }),
+  z.object({
+    kind: z.literal('chaoxing'),
+    knowledgeId: safeId(),
+    cardIndex: z.number().refine(Number.isSafeInteger).nonnegative(),
+    objectId: opaqueId,
+    jobid: safeId(),
+    mid: opaqueId,
+  }),
 ]);
 export type ResourceLocator = z.infer<typeof ResourceLocatorSchema>;
 
@@ -108,6 +135,8 @@ function courseTuple(native: CourseLocator): string[] {
       return ['zhs-share', native.recruitAndCourseId];
     case 'zhs-hike':
       return ['zhs-hike', native.courseId];
+    case 'chaoxing':
+      return ['chaoxing', native.courseId, native.clazzId, native.cpi];
   }
 }
 
@@ -127,6 +156,8 @@ function resourceTuple(native: ResourceLocator): (string | null)[] {
       ];
     case 'zhs-hike':
       return ['zhs-hike', native.fileId];
+    case 'chaoxing':
+      return ['chaoxing', native.knowledgeId, String(native.cardIndex), native.objectId, native.jobid, native.mid];
   }
 }
 
