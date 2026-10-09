@@ -1,7 +1,7 @@
 /** learning 1.1 specification declarations (SDK + CLI phase). This is not an SDK implementation. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-export type Platform = 'ykt' | 'xuetang' | 'zhs';
-export type System = 'ykt-standard' | 'ykt-kg' | 'xuetang' | 'zhs-share' | 'zhs-hike';
+export type Platform = 'ykt' | 'xuetang' | 'zhs' | 'chaoxing';
+export type System = 'ykt-standard' | 'ykt-kg' | 'xuetang' | 'zhs-share' | 'zhs-hike' | 'chaoxing-mooc';
 export interface Scope { userId: string; profileId: string; platform: Platform }
 export interface Options { signal?: AbortSignal; deadlineAtMs?: number }
 export interface Warning { code: string; message: string; resourceKey: string | null }
@@ -12,13 +12,15 @@ export type CourseLocator =
   | { kind: 'ykt'; classroomId: string }
   | { kind: 'xuetang'; classroomId: string; courseSign: string; skuId: string }
   | { kind: 'zhs-share'; recruitAndCourseId: string }
-  | { kind: 'zhs-hike'; courseId: string };
+  | { kind: 'zhs-hike'; courseId: string }
+  | { kind: 'chaoxing'; courseId: string; clazzId: string; cpi: string };
 export interface CourseRef { scope: Scope; key: string; native: CourseLocator }
 export type ResourceLocator =
   | { kind: 'ykt'; leafId: string; leafInfoId: string | null }
   | { kind: 'xuetang'; leafId: string; leafInfoId: string | null }
   | { kind: 'zhs-share'; chapterId: string; lessonId: string; smallLessonId: string; videoId: string }
-  | { kind: 'zhs-hike'; fileId: string };
+  | { kind: 'zhs-hike'; fileId: string }
+  | { kind: 'chaoxing'; knowledgeId: string; cardIndex: number; objectId: string; jobid: string; mid: string };
 export interface ResourceRef { course: CourseRef; key: string; native: ResourceLocator }
 export interface LessonRef { scope: Scope; course: CourseRef | null; lessonId: string }
 export interface AssessmentRef { resource: ResourceRef; kind: 'homework' | 'exam' | 'embedded'; assessmentId: string }

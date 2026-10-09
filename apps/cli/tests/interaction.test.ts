@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { fillMissing } from '../src/prompts.js';
 
 describe('missing input resolution', () => {
-  const schema = z.object({ name: z.string().min(1), platform: z.enum(['ykt', 'xuetang', 'zhs']) });
+  const schema = z.object({ name: z.string().min(1), platform: z.enum(['ykt', 'xuetang', 'zhs', 'chaoxing']) });
   it('only asks for the missing field', async () => {
     const asked: string[] = [];
     const prompts = { interactive: true, ask: async (field: { name: string }) => { asked.push(field.name); return 'alpha'; } };

@@ -498,3 +498,24 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户 Ctrl+C 取消 run（正常打印"已取消"退出）后再次进入 CLI 连续两次 CONFLICT "another writer holds the lock"。旧实现只在 withCliRuntime 的 finally 释放锁：进程被二次 Ctrl+C、未捕获异常或直接关终端打死时 finally 不执行，锁永久残留；且获取时只要文件存在就拒绝，即使锁内 PID 早已死亡，只能手工 profile unlock。
 - 重设计 acquireDataDirLock：1) 获取到锁后注册 process.on('exit') 同步删锁（兜底未捕获异常/process.exit 退出路径），正常 release 时移除监听防止 home-loop 泄漏；2) 撞到已存在的锁时读取 PID 并用 kill(pid,0) 判活——已死（ESRCH）则自动接管重写锁，活着才 CONFLICT，损坏/不可解析的锁保守拒绝提示人工检查；EPERM 视为存活。SIGKILL/断电等极端场景由死 PID 接管兜住。live 拒绝、profile unlock 行为不变。
 - 新增回归：死 PID 锁自动接管后 init 成功且无残留；不可解析锁拒绝且不覆盖。既有 live 拒绝、SIGTERM 清理、profile unlock 用例全保留通过。修改 apps/cli/src/runtime.ts、apps/cli/tests/basic.test.ts。Node24.11.1：lint、typecheck、CLI 102/102 exit 0（SDK 未动）。
+
+
+### 2026-10-09 · Chaoxing-only-study 平台接入（partial）
+
+- 用户追加范围：超星学习通仅刷课，并提供课程 URL 作为测试入口。按仓库规则在隔离 worktree 分支 `codex/chaoxing-study-current` 开发；未把一次性课程 URL `enc` 写入代码或文档。
+- 实际改动：`packages/sdk/src/providers/chaoxing/study.ts`（URL 解析、真实 DOM 大纲、卡片 `mArg`、media status、1× 学习上报与 uncertain 核对）、共享 MD5、平台/locator/contracts、SDK auth/import/catalog/progress/study/reconcile 接线、CLI 平台选项与 1× 上限、SDK 与 CLI 进程 fixture 测试、SPEC/PLATFORMS/SOURCES 证据边界。
+- 协议证据：只读参考 `Samueli924/chaoxing@45d2106b16764231c2de2038fb042e71b23d878f`；用户课程页真实只读验证 9 个单元/48 个知识点及 DOM 选择器；`knowledge/cards` 必带 `v=2025-0424-1038-3&mooc2=1`；`ananas/status` 必带视频模块 Referer，无 Referer 直达 403。未导出/保存 Cookie。
+- 回归先红后绿：真实 DOM/otherInfo 截断/cards query/status headers/auth base probe 初次 4+1 项失败，修正后 `tests/chaoxing-study.test.ts` 8/8 通过。最终上报 ACK 后必须再读 card 且 `isPassed=true` 才计完成；响应丢失保留 pending operation，只允许只读 reconcile，不自动重发。
+- Node v24.11.1 / pnpm 11.19.0 实际命令：`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 245/245、CLI 105/105）、`pnpm build`、`node scripts/check-boundaries.mjs`、`node scripts/check-source-lock.mjs`、`git diff --check` 均 exit 0。
+- `pnpm test:e2e` 为 6/7、exit 1：唯一失败仍是隔离消费者 `pnpm install --offline` 无法从本机 npmmirror 缓存解析既有依赖 `pdf-lib@1.17.1`。本分支未修改依赖树；该失败不能当作 Chaoxing 功能回归，也不能宣称完整 E2E 通过。
+- 未运行：Chaoxing 真机 `whoami`、课程大纲、最小视频写入与读回。当前没有可用的本机 Chaoxing cookie-array 文件；不从聊天或浏览器导出 Cookie。下一步由用户提供安全本机文件后导入临时 profile，先只读验收，再经明确确认做最小写入。
+
+### 2026-10-09 · Chaoxing 基础账号密码登录补齐（partial）
+
+- 用户纠正范围：“登录也要做啊，就是基础功能要做的”。补充只读源码 `DanMo661/Xuexitong-mcp@ebce2cc735bc7acc45fac7ccf32bcefe1a6b2a54`，记录 `fanyalogin` URL、九个表单字段、AES-128-CBC/PKCS7/base64、固定 key/iv、浏览器 UA、`status=true` 与 `i.chaoxing.com/base` 身份核验；该仓库 2026-09 自称真实账号测试，不作为本仓库验收。
+- 实际改动：`packages/sdk/src/crypto/aes.ts` 提取中立 WebCrypto AES；`providers/chaoxing/auth.ts` 实现登录字段加密、一次性不跟随重定向的 `POST /fanyalogin`、错误信封、base 安全 UID 核验和 AuthLifecycle 持久化；`http/client.ts` 增加单请求 `followRedirects:false`；`index.ts` 增加 `chaoxing.auth.begin(password)` capability/接线；CLI `login` 支持 `--username`、`--password-file`/`CHAOXING_PASSWORD_FILE`、owner-only 常规文件检查和输出脱敏；SPEC/PLATFORMS/SOURCES/USAGE 同步范围。
+- 先红后绿：新增 SDK 3 项登录用例后 `pnpm --filter @learning/sdk exec vitest run tests/chaoxing-study.test.ts` 先 3 failed/8 passed、exit 1，且 `tsc --noEmit` 因测试 JSON 类型 exit 2；新增 CLI 密码文件用例后先因 `unknown option '--username'` 1 failed、exit 1。修正后 targeted SDK 11/11、CLI 2/2 通过。
+- 登录安全语义：登录前清空同 profile 旧身份 Cookie；POST 作为 write 只发送一次，网络丢失为 `UNCERTAIN`，302 不自动跟随/重发；`status=false` 不写 session，验证码/风险/二因素提示人工处理且不回显服务端 `msg2`；只有登录成功且 base 解析安全 UID 后才保存完整加密 Cookie session。CLI 不接受明文密码参数，不输出用户名、明文/密文密码或 Cookie。
+- Node v24.11.1 / pnpm 11.19.0 最终命令：`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 248/248、CLI 106/106）、`pnpm build`、`node scripts/check-boundaries.mjs`、`node scripts/check-source-lock.mjs`、`git diff --check` 均 exit 0。
+- `pnpm test:e2e` 仍为 6/7、exit 1：唯一失败是隔离消费者 `pnpm install --offline` 无法从本机 npmmirror 缓存解析既有 `pdf-lib@1.17.1`；本分支未修改依赖树，不能宣称 E2E 通过。
+- 未运行：Chaoxing 真机账号密码登录/`whoami`、课程大纲、最小视频写入与读回。未获取、保存或请求用户凭据；后续由用户在本机创建 owner-only 密码文件并明确授权后验收。

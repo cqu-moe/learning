@@ -44,6 +44,8 @@ import { fetchDiscussionComments, fetchUnitDiscussion, postComment, submitXtxPro
 import { sha256Hex } from './types/sha256.js';
 import { encodeExamAnswer, xtxReadStartCover, xtxSaveExam, xtxStartExam } from './providers/xuetang/exam-write.js';
 import { advanceHikeStudy, advanceShareStudy, reconcileHikeSave, reconcileShareSave, zhsHikeReadProgress, zhsSharePopupPoints, zhsSharePrelearningNote, zhsShareReadProgress, zhsShareReadState, zhsShareSave } from './providers/zhs/study.js';
+import { advanceChaoxingStudy, chaoxingCourseRef, chaoxingOutline, chaoxingReadProgress, reconcileChaoxingReport } from './providers/chaoxing/study.js';
+import { chaoxingPasswordLaunch } from './providers/chaoxing/auth.js';
 import { YktLiveSession } from './providers/ykt/live.js';
 import { z } from 'zod';
 
@@ -51,6 +53,7 @@ const PLATFORM_HOSTS: Record<Platform, string[]> = {
   ykt: ['yuketang.cn', 'xuetangx.com'],
   xuetang: ['xuetangx.com'],
   zhs: ['zhihuishu.com'],
+  chaoxing: ['chaoxing.com'],
 };
 
 function unsupported(platform: Platform, what: string): LearningError {
@@ -89,6 +92,7 @@ const IMPLEMENTED: Record<Platform, Set<string>> = {
   ykt: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'catalog.resolveCourse', 'resources.media', 'resources.transcript', 'resources.lessons', 'resources.slides', 'assessments.resolve', 'assessments.get']),
   xuetang: new Set(['auth.begin', 'auth.probe', 'auth.importLegacy', 'catalog.courses', 'catalog.outline', 'resources.media', 'resources.transcript', 'assessments.resolve', 'assessments.get']),
   zhs: new Set(['auth.begin', 'auth.importLegacy', 'catalog.courses', 'catalog.outline']),
+  chaoxing: new Set(['auth.begin', 'auth.importLegacy', 'auth.probe', 'catalog.resolveCourse', 'catalog.outline', 'catalog.progress']),
 };
 
 function capabilitiesFor(platform: Platform): Capability[] {
@@ -152,6 +156,19 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     auth: {
       begin: async (loginInput): Promise<AuthFlow> => {
         await lifecycle.seedGeneration();
+        if (platform === 'chaoxing' && loginInput.method === 'password') {
+          // Password login is a replacement flow: stale identity cookies must not leak into it.
+          sessionBox.jar = new SessionCookieJar();
+          sessionBox.hydrated = true;
+          const http = await httpBound();
+          return lifecycle.begin(chaoxingPasswordLaunch({
+            http,
+            jar: sessionBox.jar,
+            clock: runtime.clock,
+            username: loginInput.username,
+            password: loginInput.password,
+          }));
+        }
         if (platform === 'ykt' && loginInput.method === 'qr') {
           const http = await httpBound();
           return lifecycle.begin(yktQrLaunch({ http, jar: sessionBox.jar, clock: runtime.clock }));
@@ -215,6 +232,22 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             return { scope, generation: updated.generation, displayName: updated.displayName, platformUserId: uuid, identityVerified: true, checkedAtMs: updated.checkedAtMs };
           } } });
         }
+        if (platform === 'chaoxing') {
+          const http = await httpBound();
+          return probeSession({ scope, state: runtime.state, masterKey: runtime.masterKey, provider: { probe: async (record) => {
+            if (record === null) return null;
+            const response = await http.request({ kind: 'read', method: 'GET', url: 'https://i.chaoxing.com/base' });
+            const html = await response.text();
+            if (/passport2\.chaoxing\.com\/login/i.test(html) || /请登录/.test(html)) return null;
+            const uid = /(?:uid|personid)["'=:\s]+(\d{3,})/i.exec(html)?.[1];
+            if (uid !== undefined && (!/^[1-9]\d*$/.test(uid) || Number(uid) > Number.MAX_SAFE_INTEGER)) return null;
+            if (uid === undefined) return null;
+            if (record.platformUserId !== null && record.platformUserId !== uid) return null;
+            const updated = { ...record, platformUserId: uid, identityVerified: true, checkedAtMs: runtime.clock.nowMs(), cookieJar: await sessionBox.jar.serialize() };
+            await writeSession(runtime.state, runtime.masterKey, updated);
+            return { scope, generation: updated.generation, displayName: updated.displayName, platformUserId: uid, identityVerified: true, checkedAtMs: updated.checkedAtMs };
+          } } });
+        }
         return asyncUnsupported(platform, 'auth.probe');
       },
       importLegacy: async (legacyInput) => {
@@ -231,6 +264,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     catalog: {
       resolveCourse: async (url) => {
         if (platform === 'ykt') return yktResolveCourse(scope, url);
+        if (platform === 'chaoxing') return chaoxingCourseRef(scope, url);
         return asyncUnsupported(platform, `catalog.resolveCourse(${url})`);
       },
       courses: async (): Promise<Page<Course>> => {
@@ -253,6 +287,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           const http = await httpBound();
           return course.native.kind === 'zhs-hike' ? zhsHikeOutline(http, runtime.clock, course) : zhsShareOutline(http, runtime.clock, course);
         }
+        if (platform === 'chaoxing') return chaoxingOutline(await httpBound(), course);
         return asyncUnsupported(platform, `catalog.outline(${course.key})`);
       },
       progress: async (resource) => {
@@ -261,6 +296,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         if (platform === 'xuetang') return { value: await xtxReadProgress(await httpBound(), runtime.clock, resource), warnings: [] };
         if (platform === 'zhs' && resource.native.kind === 'zhs-hike') return { value: await zhsHikeReadProgress(await httpBound(), runtime.clock, resource), warnings: [] };
         if (platform === 'zhs' && resource.native.kind === 'zhs-share') return { value: await zhsShareReadProgress(await httpBound(), runtime.clock, resource), warnings: [] };
+        if (platform === 'chaoxing' && resource.native.kind === 'chaoxing') return { value: await chaoxingReadProgress(await httpBound(), runtime.clock, resource), warnings: [] };
         return asyncUnsupported(platform, `catalog.progress(${resource.key})`);
       },
     },
@@ -416,6 +452,20 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           return actionStore.prepare(actionInput, session.generation, async () => {
             const job = await jobRunner.create(scope, 'study', { total: actionInput.resources.length, payload: actionInput, generation: session.generation });
             return { operationId: 'ack', state: 'confirmed', message: 'hike study job created', result: { jobId: job.id } };
+          });
+        }
+        if (actionInput.kind === 'study' && platform === 'chaoxing') {
+          if (actionInput.resources.length === 0 || actionInput.resources.some((resource) => !ownsScope(resource.course.scope) || resource.native.kind !== 'chaoxing' || resource.course.native.kind !== 'chaoxing')) {
+            throw new LearningError({ code: 'INVALID_INPUT', message: 'Chaoxing study needs video resources from this profile', retryAfterMs: null, operationId: null });
+          }
+          if (actionInput.settings.questionMode !== 'pause' || actionInput.settings.speed !== 1) {
+            throw new LearningError({ code: 'INVALID_INPUT', message: 'Chaoxing study supports pause mode and speed 1 only', retryAfterMs: null, operationId: null });
+          }
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified Chaoxing login required before study', retryAfterMs: null, operationId: null });
+          return actionStore.prepare(actionInput, session.generation, async () => {
+            const job = await jobRunner.create(scope, 'study', { total: actionInput.resources.length, payload: actionInput, generation: session.generation });
+            return { operationId: 'ack', state: 'confirmed', message: 'Chaoxing study job created', result: { jobId: job.id } };
           });
         }
         if (actionInput.kind === 'exam.finalize' && platform === 'xuetang') {
@@ -585,8 +635,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         return { type: 'receipt', receipt };
       },
       reconcile: async (operationId) => {
-        if (((operationId.startsWith('heartbeat:') || operationId.startsWith('article:')) && platform === 'ykt') || (operationId.startsWith('xtx-heartbeat:') && platform === 'xuetang') || ((operationId.startsWith('hike:') || operationId.startsWith('share-save:') || operationId.startsWith('prelearn:')) && platform === 'zhs')) {
-          const jobId = /^(?:(?:xtx-)?heartbeat|article|hike|share-save|prelearn):(job-[^:]+):/.exec(operationId)?.[1];
+        if (((operationId.startsWith('heartbeat:') || operationId.startsWith('article:')) && platform === 'ykt') || (operationId.startsWith('xtx-heartbeat:') && platform === 'xuetang') || ((operationId.startsWith('hike:') || operationId.startsWith('share-save:') || operationId.startsWith('prelearn:')) && platform === 'zhs') || (operationId.startsWith('chaoxing-report:') && platform === 'chaoxing')) {
+          const jobId = /^(?:(?:xtx-)?heartbeat|article|hike|share-save|prelearn|chaoxing-report):(job-[^:]+):/.exec(operationId)?.[1];
           if (jobId === undefined) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid heartbeat operation id', retryAfterMs: null, operationId });
           let job = await assertOwnedJob(jobId);
           if (job.status === 'running' && (await jobRunner.metadata(jobId)).running) job = await jobRunner.recoverInterrupted(jobId);
@@ -596,6 +646,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           if (session === null || (await jobRunner.metadata(jobId)).generation !== session.generation) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'session changed before heartbeat reconciliation', retryAfterMs: null, operationId });
           if (platform === 'ykt') return reconcileYktHeartbeat({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId });
           if (platform === 'xuetang') return reconcileXtxHeartbeat({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId });
+          if (platform === 'chaoxing') return reconcileChaoxingReport({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, operationId });
           if (operationId.startsWith('prelearn:')) return { operationId, state: 'uncertain', message: 'prelearning note outcome cannot be proven from watch state; do not repeat', result: null };
           if (operationId.startsWith('share-save:')) {
             const resourceKey = operationId.split(':')[2];
@@ -688,6 +739,14 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             });
           }
           return advanceHikeStudy({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock, uuid });
+        }
+        if (job.kind === 'study' && platform === 'chaoxing') {
+          const session = await readSession(runtime.state, runtime.masterKey, scope);
+          if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified Chaoxing login required to advance study', retryAfterMs: null, operationId: jobId });
+          if ((await jobRunner.metadata(jobId)).generation !== session.generation) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'session generation changed since job creation', retryAfterMs: null, operationId: jobId });
+          const saved = ActionInputSchema.parse(await jobRunner.input(jobId));
+          if (saved.kind !== 'study') throw new LearningError({ code: 'INTEGRITY', message: 'Chaoxing job has invalid input', retryAfterMs: null, operationId: jobId });
+          return advanceChaoxingStudy({ job, action: saved, runner: jobRunner, http: await httpBound(), clock: runtime.clock });
         }
         if (job.kind !== 'export') return asyncUnsupported(platform, `jobs.advance(${jobId})`);
         return advanceExport({

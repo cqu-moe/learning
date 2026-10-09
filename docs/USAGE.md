@@ -13,7 +13,7 @@ learning --home ~/.learning --profile school courses --json
 learning --home ~/.learning --profile school outline <course-key> --json
 ```
 
-`--home` 可放在命令前后；省略时使用 `LEARNING_HOME`，再回退到 `~/.learning`。多账号可明确保存默认账号，否则非交互调用须传 `--profile`；带有可靠所属账号的 job/草稿使用其 scope。`--json` 在 stdout 输出一个结果 envelope，业务数据位于 `data`；`jobs list` 列表位于 `data.jobs`。机器扫码需 `--qr-file`，不会隐式等待输入。Cookie 导入只接受本机常规 JSON 文件：`learning --profile school login --import <file>`，导入后身份仍未验证。
+`--home` 可放在命令前后；省略时使用 `LEARNING_HOME`，再回退到 `~/.learning`。多账号可明确保存默认账号，否则非交互调用须传 `--profile`；带有可靠所属账号的 job/草稿使用其 scope。`--json` 在 stdout 输出一个结果 envelope，业务数据位于 `data`；`jobs list` 列表位于 `data.jobs`。机器扫码需 `--qr-file`，不会隐式等待输入。Cookie 导入只接受本机常规 JSON 文件：`learning --profile school login --import <file>`，导入后身份仍未验证。超星账号密码登录不接收明文密码参数：先创建 owner-only 密码文件，再运行 `learning --profile school login --username <phone-or-username>`，密码文件用 `--password-file <file>` 或 `CHAOXING_PASSWORD_FILE` 指向。
 
 ```bash
 learning --profile school download <course-or-resource-key> --types video --dry-run

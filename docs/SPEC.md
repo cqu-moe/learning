@@ -6,7 +6,7 @@
 
 ## 1. 要做什么
 
-本期交付一份 TypeScript SDK 和使用它的聚合命令行 `learning`。SDK 迁移雨课堂、学堂在线、智慧树既定平台能力，CLI 在本机直接调用它，不需要 Web 服务、Cloudflare 账号或云端密钥。
+本期交付一份 TypeScript SDK 和使用它的聚合命令行 `learning`。SDK 迁移雨课堂、学堂在线、智慧树既定平台能力；2026-10-09 用户追加超星学习通基础登录与 Mooc 视频刷课能力，其他超星能力不做。CLI 在本机直接调用 SDK，不需要 Web 服务、Cloudflare 账号或云端密钥。
 
 **本期只推迟 Web，不把已定的 SDK/CLI 功能偷偷缩成“登录和课程列表”的原型。** 先只读、再写操作/任务/完整 CLI 是本期内部实施顺序；已承诺的功能仍按 PLATFORMS 逐项实现、测试并记录证据缺口。SDK 的“基础”指共用底层，不是另减一次功能范围。
 
@@ -43,7 +43,7 @@ learning/
 │       ├── types/
 │       ├── http/
 │       ├── auth/ 与 session/
-│       ├── providers/{ykt,xuetang,zhs}/
+│       ├── providers/{ykt,xuetang,zhs,chaoxing}/
 │       ├── services/
 │       ├── jobs/
 │       ├── content/
@@ -85,7 +85,7 @@ T01 只安装当前基础任务用到的依赖；Commander 在 CLI 任务、Play
 ```text
 终端参数/菜单
     → apps/cli：配置、profile、确认、输出
-    → @learning/sdk：统一服务 + 三平台 provider
+    → @learning/sdk：统一服务 + 三平台 provider + Chaoxing 基础登录/刷课
     → Node Runtime：HTTP/WS、SQLite、本机 ArtifactStore
     → 学习平台与本地文件
              └─ 有需要时调用同 SDK 的本地 HeavyRenderer
@@ -105,7 +105,7 @@ SDK/CLI 验收不需要 Cloudflare 账号、信用卡、R2 桶、DO namespace、
 
 ## 7. 数据模型和平台边界
 
-平台固定 ykt、xuetang、zhs；zhs 内含 share/hike；雨课堂 standard/KG 分树解析器。不做靠换域名工作的万能 BasePlatform 或动态插件系统。
+平台固定 ykt、xuetang、zhs、chaoxing；zhs 内含 share/hike；雨课堂 standard/KG 分树解析器；Chaoxing 仅包含账号密码登录、Cookie 导入/核验和 `chaoxing-mooc` 视频/进度/学习链路。不做靠换域名工作的万能 BasePlatform 或动态插件系统。
 
 IDs 为字符串；courseId、classroomId、skuId、树节点 ID 不互相代替。定位由 scope 和完整 native locator 组成；同一视频在两处出现仍是两条资源。未知用 null，不用 0 伪造缺失 ID（已验证 smallLessonId="0" 例外）。摘要与 DTO 按 SDK/contracts 计算。
 
@@ -143,7 +143,7 @@ PDF/字体/特殊课件页面在 SDK `/render-node` 中实现同一 HeavyRendere
 
 ## 11. 保留的功能与验证边界
 
-仍包括三平台登录/多账号/课程树、既定学习任务、雨课堂与学堂的资源/课件/作业/允许查看的考试结果、学堂讨论与考试分步动作、雨课堂实时能力、草稿/反馈导入、答案匹配及可选模型建议。PLATFORMS 的平台支持矩阵保持，不新增原仓库没有的能力。
+仍包括三平台登录/多账号/课程树、既定学习任务、雨课堂与学堂的资源/课件/作业/允许查看的考试结果、学堂讨论与考试分步动作、雨课堂实时能力、草稿/反馈导入、答案匹配及可选模型建议。Chaoxing 只包括用户追加的账号密码登录、本地 Cookie 导入/在线核验、课程 URL 解析、视频大纲/进度读取和 1× 视频学习，不新增其他能力。PLATFORMS 的平台支持矩阵保持，不新增原仓库没有的能力。
 
 AI 默认生成建议；没有模型 Key 仍可查询、下载、手工草稿和用户提供的答案。未知答案不取第一项、不穷举；风控暂停人工处理。未验证写形态保留明确状态，真实写入测试逐项授权。
 

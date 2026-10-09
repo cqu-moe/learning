@@ -1,53 +1,15 @@
 import { md5Hex } from './md5.js';
+import { AesCipher as SharedAesCipher } from '../../crypto/aes.js';
 
 export const IV = '1g3qqdh4jvbskb9x';
 export const HOME_KEY = '7q9oko0vqb3la20r';
 export const VIDEO_KEY = 'azp53h0kft7qi78q';
 export const HIKE_SALT = 'o6xpt3b#Qy$Z';
 
-function toBytes(text: string): Uint8Array {
-  return new TextEncoder().encode(text);
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary);
-}
-
-function fromBase64(text: string): Uint8Array {
-  const binary = atob(text);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-async function aesKey(key: string) {
-  return crypto.subtle.importKey('raw', toBytes(key), { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
-}
-
-/** AES-128-CBC + PKCS7 (WebCrypto pads natively) + base64 — zhihuishu secretStr. */
-export class AesCipher {
-  constructor(private readonly key: string, private readonly iv: string = IV) {}
-
-  async encrypt(plain: string): Promise<string> {
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-CBC', iv: toBytes(this.iv) },
-      await aesKey(this.key),
-      toBytes(plain),
-    );
-    return toBase64(new Uint8Array(ciphertext));
-  }
-
-  async decrypt(sealed: string): Promise<string> {
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-CBC', iv: toBytes(this.iv) },
-      await aesKey(this.key),
-      fromBase64(sealed),
-    );
-    return new TextDecoder().decode(plaintext);
+// AES-CBC/PKCS7 + base64 is shared with other platform protocol forms.
+export class AesCipher extends SharedAesCipher {
+  constructor(key: string, iv: string = IV) {
+    super(key, iv);
   }
 }
 

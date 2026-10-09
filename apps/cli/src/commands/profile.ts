@@ -15,11 +15,11 @@ export function registerProfileCommands(program: Command): void {
   const add = profile
     .command('add [name]')
     .description('添加本地平台账号')
-    .option('--platform <platform>', '平台：ykt、xuetang 或 zhs');
+    .option('--platform <platform>', '平台：ykt、xuetang、zhs 或 chaoxing');
   add.action(async (inputName?: string) => {
     const { name, platform } = await fillMissing(z.object({ name: z.string().refine(validName), platform: PlatformSchema }), { ...(inputName === undefined ? {} : { name: inputName }), ...add.opts() }, [
       { name: 'name', message: '账号名称' },
-      { name: 'platform', message: '选择平台', options: [{ value: 'ykt', label: '雨课堂' }, { value: 'xuetang', label: '学堂在线' }, { value: 'zhs', label: '智慧树' }] },
+      { name: 'platform', message: '选择平台', options: [{ value: 'ykt', label: '雨课堂' }, { value: 'xuetang', label: '学堂在线' }, { value: 'zhs', label: '智慧树' }, { value: 'chaoxing', label: '超星学习通' }] },
     ], createPrompts(getOutput(program).mode));
     add.processedArgs[0] = name;
     add.setOptionValueWithSource('platform', platform, add.getOptionValueSource('platform') ?? 'prompt');
