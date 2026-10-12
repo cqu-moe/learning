@@ -5,7 +5,7 @@ import { JsonSchema, QuestionSchema, JobSchema, LearningError } from '@learning/
 import type { Command } from 'commander';
 import type { Writable } from 'node:stream';
 import { stripVTControlCharacters, styleText } from 'node:util';
-import { createProgressDisplay, type ProgressRow } from './progress.js';
+import type { createProgressDisplay, ProgressRow } from './progress.js';
 
 export const OutputModeSchema = z.object({ format: z.enum(['pretty', 'plain', 'json', 'jsonl']), interactive: z.boolean(), quiet: z.boolean(), color: z.boolean(), debug: z.boolean() });
 export type OutputMode = z.infer<typeof OutputModeSchema>;
@@ -101,16 +101,18 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   let home: string | undefined;
   let indicator: ReturnType<typeof spinner> | null = null;
   let display: ReturnType<typeof createProgressDisplay> | null = null;
+  let createDisplay: typeof createProgressDisplay | null = null;
   let live: { value: ProgressData; study: StudyDisplay | undefined; startedAt: number; observedAt: number } | null = null;
   let lastProgressAt = 0;
   let lastPhase = '';
   let indicatorText = '';
   let promptDepth = 0;
   const pause = () => { const current = display; display = null; current?.clear(); indicator?.clear(); indicator = null; };
-  const showProgress = () => {
+  const showProgress = async () => {
+    createDisplay ??= (await import('./progress.js')).createProgressDisplay;
     if (!live || promptDepth > 0 || finished || work.signal.aborted) return;
     if (display) display.draw();
-    else display = createProgressDisplay(streams.stderr, () => live ? progressRows(live.value, live.study, live.startedAt, live.observedAt) : [], mode.color);
+    else display = createDisplay(streams.stderr, () => live ? progressRows(live.value, live.study, live.startedAt, live.observedAt) : [], mode.color);
   };
   progressPauses.set(mode, pause);
   const warnings: Array<z.infer<typeof WarningSchema>> = [];
@@ -158,7 +160,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       if (restore !== null && !finished && !work.signal.aborted) {
         indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(restore);
       }
-      if (restoreProgress) showProgress();
+      if (restoreProgress) await showProgress();
     });
     // Return the rejection to this caller while keeping later flushes usable.
     warningFlush = next.catch(() => {});
@@ -195,7 +197,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
         const startedAt = live !== null && live.value.jobId === value.jobId ? live.startedAt : Date.now();
         live = { value, study, startedAt, observedAt: study?.observedAtMs ?? Date.now() };
         if (indicator) { indicator.clear(); indicator = null; }
-        showProgress();
+        await showProgress();
         return;
       }
       const phase = `${value.jobId}:${value.status}:${value.resourceKey ?? ''}`;
