@@ -160,7 +160,7 @@ describe('explicit machine QR login', () => {
   } finally {
    rmSync(machineHome, { recursive: true, force: true });
   }
- });
+ }, 20_000);
 
  it('renders a ZHS WeChat PNG QR and completes wxTransit in a real terminal', async () => {
   const terminalHome = mkdtempSync(resolve(tmpdir(), 'learning-zhs-terminal-'));

@@ -146,7 +146,7 @@ describe('zhs default WeChat QR API flow', () => {
     } finally { await client.close(); }
   });
 
-  async function beginTransit(options: { locked?: boolean; hasMobile?: boolean; hasCertify?: boolean; missingPwd?: boolean; isNew?: boolean; schools?: 'same' | 'different'; lostAt?: 'oauth' | 'skipSet' | 'passport' } = {}) {
+  async function beginTransit(options: { locked?: boolean; hasMobile?: boolean; hasCertify?: boolean; missingPwd?: boolean; isNew?: boolean; schools?: 'same' | 'different'; oversizedAt?: 'cache' | 'skipSet'; lostAt?: 'oauth' | 'skipSet' | 'passport' } = {}) {
     const responseLossPath = options.lostAt === 'oauth' ? '/zhsuser/oauth/weixin/wxLogin' : options.lostAt === 'skipSet' ? '/zhsuser/login/code/skipSet/CACHE1' : options.lostAt === 'passport' ? '/login' : undefined;
     return beginWechat("window.wx_errcode=405;window.wx_code='CODE1';", 'CODE1', false, (fixture, service) => {
       const transitUrl = new URL('https://login.zhihuishu.com/wxTransit/0');
@@ -178,6 +178,11 @@ describe('zhs default WeChat QR API flow', () => {
       fixture.interactions.push({ request: { method: 'GET', host: 'onlineservice-api.zhihuishu.com', path: '/gateway/f/v1/login/gologin',
         query: { fromurl: 'https://onlineweb.zhihuishu.com/onlinestuh5', ticket: 'fixture-ticket' },
         headers: { cookie: 'CASLOGC=%7B%22uuid%22%3A%22u1%22%7D' }, body: '' }, response: { status: 200, body: {} } });
+      if (options.oversizedAt !== undefined) {
+        const path = options.oversizedAt === 'cache' ? '/zhsuser/user/cache/CACHE1' : '/zhsuser/login/code/skipSet/CACHE1';
+        const row = fixture.interactions.find(item => item.request.path === path)!;
+        row.response.body = { ...(row.response.body as Record<string, unknown>), padding: 'x'.repeat(1024 * 1024) };
+      }
     }, responseLossPath);
   }
 
@@ -215,6 +220,16 @@ describe('zhs default WeChat QR API flow', () => {
       expect(transport.calls.some(call => new URL(call.url).hostname === 'passport.zhihuishu.com')).toBe(false);
       expect(await readSession(runtime.state, runtime.masterKey, scope)).toBeNull();
       transport.assertNoExtraScripts();
+    } finally { await client.close(); }
+  });
+
+  it.each(['cache', 'skipSet'] as const)('rejects an oversized %s envelope before saving or continuing credentials', async oversizedAt => {
+    const { client, flow, runtime, transport } = await beginTransit({ oversizedAt });
+    try {
+      await expect(flow.result).rejects.toMatchObject({ data: { code: 'BUDGET' } });
+      expect(transport.calls.filter(call => new URL(call.url).pathname === '/zhsuser/login/code/skipSet/CACHE1')).toHaveLength(oversizedAt === 'cache' ? 0 : 1);
+      expect(transport.calls.some(call => new URL(call.url).hostname === 'passport.zhihuishu.com')).toBe(false);
+      expect(await readSession(runtime.state, runtime.masterKey, scope)).toBeNull();
     } finally { await client.close(); }
   });
 

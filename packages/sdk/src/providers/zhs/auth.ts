@@ -144,7 +144,11 @@ const IsNewWechatUserSchema = z.object({ status: z.literal(200), rt: z.boolean()
 const WechatOncePasswordSchema = z.object({ status: z.literal(1), rt: z.object({ pwd: z.string().min(1) }) });
 
 async function readWechatEnvelope<S extends z.ZodType>(result: HttpResult, schema: S): Promise<z.infer<S>> {
-  const parsed = schema.safeParse(await result.json().catch(() => null));
+  const bytes = await result.bytes(256 * 1024);
+  let payload: unknown;
+  try { payload = JSON.parse(new TextDecoder().decode(bytes)); }
+  catch { throw protocolError('invalid WeChat transit response'); }
+  const parsed = schema.safeParse(payload);
   if (result.status !== 200 || !parsed.success) throw protocolError('invalid WeChat transit response');
   return parsed.data;
 }
