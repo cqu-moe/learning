@@ -618,4 +618,11 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 实际环境 Node v24.11.1 / pnpm 11.19.0：`pnpm install --offline --frozen-lockfile --ignore-scripts` → exit 0（供应链元数据检查访问镜像并重试连接错误）；CLI build、CLI tsconfig 类型检查、根 ESLint、boundaries、source-lock、git diff --check → exit 0。CLI `node node_modules/vitest/vitest.mjs run --maxWorkers=2` → 15 files / 127 tests，exit 0；`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，含真实 tarball 独立消费者冻结离线安装。
 - 独立审查复现库内定时器绕过背压防护：1 秒内缓冲从 585 增至 6365 字节；无错误关闭终端后，真实子进程因定时器未释放而超时。对应回归先失败，再添加整帧写入缓冲：背压时丢弃完整旧帧，drain 时恢复，close/finish 时停止库并释放内部流，清理序列按需保留。未知值改为“等待进度”，不再显示确定的 0% 空条。修后 progress/output/output-format 23/23，exit 0。
 - 最终修复之后：同环境 CLI 全套 15 files / 129 tests、打包 E2E 7/7，均 exit 0；ESLint、CLI 类型检查、git diff --check 均 exit 0。独立复核确认背压时输出缓冲不再增长，drain 后继续刷新，无错误关闭的子进程自然退出，未知条不输出数值进度图形。
-- 未运行：SDK 全套测试（SDK 源码未改）、平台真实登录/学习/答题/发帖/交卷、推送与云部署。下一事项为启用到本机命令；不执行其他 PLAN 项或延期 Web。
+- 未运行：SDK 全套测试（SDK 源码未改）、平台真实登录/学习/答题/发帖/交卷、推送与云部署。不执行其他 PLAN 项或延期 Web。
+
+### 2026-10-13 · cli-progress 已启用到本机（done）
+
+- 使用现有 Git 身份创建本地提交 `a613316`，主目录 main 干净时 `git merge --ff-only codex/cli-study-ux` → exit 0。Node v24.11.1 / pnpm 11.19.0 下，主目录 `pnpm install --offline --frozen-lockfile --ignore-scripts`、`pnpm build` → exit 0。
+- 主目录 `pnpm --filter @learning/cli exec vitest run tests/progress.test.ts --maxWorkers=1` → 11/11，exit 0，包含真实 32/80 列终端、24 列 resize、背压和无错误关闭自然退出。
+- CLI 116 个和 SDK 236 个构建文件 SHA256 均与最终验证 worktree 一致。现有 `/Users/uu/.local/bin/learning` 仍指向主目录构建，`learning --version` → 0.2.0、exit 0；版本号未变，不作为启用的唯一证据。
+- 下次启动命令即使用库版双进度条。没有修改账号数据、命令链接或推送远端；本次请求完成，等待用户实际使用反馈。
