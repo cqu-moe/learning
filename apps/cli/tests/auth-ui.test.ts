@@ -25,7 +25,7 @@ function digest(value: string): string {
  return createHash('sha256').update(value).digest('hex');
 }
 
-function decodeTerminalQr(screen: string): string {
+function terminalQrMatrix(screen: string): boolean[][] {
  const lines = stripVTControlCharacters(screen)
   .split(/\r\n|\r|\n/)
   .filter(line => line.length >= 21 && [...line].every(char => char === ' ' || char === '█' || char === '▀' || char === '▄'));
@@ -50,6 +50,11 @@ function decodeTerminalQr(screen: string): string {
   }
   matrix.push(top, bottom);
  }
+ return matrix;
+}
+
+function decodeTerminalQr(screen: string): string {
+ const matrix = terminalQrMatrix(screen);
  const scale = 2;
  const width = matrix[0]!.length * scale;
  const height = matrix.length * scale;
@@ -226,9 +231,11 @@ describe('explicit machine QR login', () => {
     .filter(line => line.includes('\x1b[47m\x1b[30m'))
     .map(line => stripVTControlCharacters(line));
    expect(frame.length).toBeGreaterThan(14);
-   expect(frame.slice(0, 2).every(row => row.trim() === '')).toBe(true);
-   expect(frame.slice(-2).every(row => row.trim() === '')).toBe(true);
-   expect(frame.every(row => row.startsWith('    ') && row.endsWith('    '))).toBe(true);
+   const matrix = terminalQrMatrix(terminal.screen);
+   expect(matrix[0]!.every(dark => !dark)).toBe(true);
+   expect(matrix.at(-1)!.every(dark => !dark)).toBe(true);
+   expect(matrix[1]![1]).toBe(true);
+   expect(frame.every(row => row.startsWith(' ') && row.endsWith(' '))).toBe(true);
   } finally {
    rmSync(terminalHome, { recursive: true, force: true });
   }

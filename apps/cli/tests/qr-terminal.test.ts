@@ -68,13 +68,13 @@ function isQrSize(size: number): boolean {
 
 function expectTerminalQr(rendered: string): void {
   let rows = rebuildRenderedModules(rendered);
-  if (rows.length > 29 && !isQrSize(rows.length - 8) && rows.at(-1)!.every(dark => !dark)) rows = rows.slice(0, -1);
-  const size = rows.length - 8;
+  if (rows.length > 23 && !isQrSize(rows.length - 2) && rows.at(-1)!.every(dark => !dark)) rows = rows.slice(0, -1);
+  const size = rows.length - 2;
   expect(isQrSize(size)).toBe(true);
-  expect(rows.slice(0, 4).every(row => row.every(dark => !dark))).toBe(true);
-  expect(rows.slice(-4).every(row => row.every(dark => !dark))).toBe(true);
-  expect(rows.every(row => row.slice(0, 4).every(dark => !dark))).toBe(true);
-  expect(rows.every(row => row.slice(-4).every(dark => !dark))).toBe(true);
+  expect(rows.slice(0, 1).every(row => row.every(dark => !dark))).toBe(true);
+  expect(rows.slice(-1).every(row => row.every(dark => !dark))).toBe(true);
+  expect(rows.every(row => row.slice(0, 1).every(dark => !dark))).toBe(true);
+  expect(rows.every(row => row.slice(-1).every(dark => !dark))).toBe(true);
 
   const finder = [
     [true, true, true, true, true, true, true],
@@ -85,7 +85,7 @@ function expectTerminalQr(rendered: string): void {
     [true, false, false, false, false, false, true],
     [true, true, true, true, true, true, true],
   ];
-  for (const [x, y] of [[4, 4], [size - 3, 4], [4, size - 3]] as const) {
+  for (const [x, y] of [[1, 1], [size - 6, 1], [1, size - 6]] as const) {
     for (let offsetY = 0; offsetY < 7; offsetY++) {
       expect(rows[y + offsetY]!.slice(x, x + 7)).toEqual(finder[offsetY]);
     }

@@ -5,7 +5,7 @@ import qrcode from 'qrcode';
 
 const MAX_QR_PIXELS = 4 * 1024 * 1024;
 const MAX_QR_IMAGE_BYTES = 1024 * 1024;
-const QUIET_ZONE_MODULES = 4;
+const QUIET_ZONE_MODULES = 1;
 const PNG_SIGNATURE = Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10);
 
 type RawImage = {
