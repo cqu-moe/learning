@@ -41,6 +41,6 @@ learning --profile school operations reconcile <operation-id>
 
 学习默认选择整门课程。启动前显示课程名称、账号、资源数量、倍速和目标进度，确认后才开始。单个资源可通过命令参数指定，使用 `learning run --help` 查看。需要资源 key 时运行 `learning outline <course-key>`，或读取 JSON 输出。
 
-交互终端固定显示课程、已完成资源数、当前视频、播放时间和平台确认进度，每 100 毫秒刷新。`本地估计` 只用于显示等待期间的计时，最多推算到下一次计划更新；平台确认进度始终来自读回。平台未提供的时长或进度保持未知。普通文本输出按阶段和间隔记录，JSON/JSONL 保留机器协议；`--quiet` 关闭日常进度。
+交互终端使用 `cli-progress` 固定显示整课和当前视频两条进度条，每 100 毫秒刷新。课程名加粗，整课条显示已完成资源数，视频条显示播放比例；下方保留播放时间、平台确认进度和已用时间。颜色分别为绿色与青色，`--no-color` 或 `NO_COLOR` 关闭配色，窄终端自动缩短进度条和标题。`本地估计` 只用于显示等待期间的计时，最多推算到下一次计划更新；平台确认进度始终来自读回。平台未提供的时长或进度保持未知。普通文本输出按阶段和间隔记录，JSON/JSONL 保留机器协议；`--quiet` 关闭日常进度。
 
 默认账号和下载目录仅显式保存：`learning config set default-profile school`、`learning config set download-dir ./downloads`。`--output-dir` 覆盖本次导出目录，`--quiet` 隐藏日常进度但不跳过确认。

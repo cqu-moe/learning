@@ -608,3 +608,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`；CLI 116 个、SDK 236 个构建文件的 SHA256 与已验证 worktree 全部一致。`learning --version` → 0.2.0，exit 0；未把未变的版本号作为启用证据。
 - 主目录 `pnpm --filter @learning/cli exec vitest run tests/progress.test.ts tests/wake.test.ts tests/profile.test.ts --maxWorkers=2` → 14/14，exit 0，包含真实 PTY、暂停恢复、估计进度及账号缓存删除。
 - 账号数据和命令链接未改动，未推送远端。新界面在下次启动命令时生效；本次请求完成，等待用户实际使用反馈，不自动执行平台操作或其他 PLAN 任务。
+
+### 2026-10-13 · 用 cli-progress 替换手写进度条（用户指定优化）
+
+- 复用本任务的隔离 worktree `/Users/uu/.codex/worktrees/cli-study-ux/learning`，在干净分支上快进到 main `82df149`。仅替换 CLI 展示层，SDK 协议、学习时序和账号数据未改。
+- 使用 `cli-progress` MultiBar 接管条形绘制、100 毫秒重绘、光标与自动换行恢复；删除手写 ANSI 光标操作、进度字符计算和 Unicode 宽度算法。课程名加粗，绿色整课条显示完成资源数，青色视频条显示播放比例；保留账号、倍速、目标、当前视频、播放时间、平台确认值及暂停提示。`cli-truncate` / `string-width` 负责颜色与中文、emoji 的列宽适配；未知值明确显示未知，不伪造完成进度。
+- 文件：`apps/cli/src/{progress,output}.ts`、`tests/progress.test.ts`、CLI package.json、pnpm-lock.yaml、USAGE、toolchain 和本记录。新增精确版本 cli-progress 3.12.0、cli-truncate 6.1.1、string-width 8.3.0、开发类型 @types/cli-progress 3.11.6。pnpm 添加依赖时顺带解析到的 source-map-js 1.2.2 已恢复原锁定 1.2.1；没有升级原有依赖。
+- 正常/异常测试先红后绿：双条标签、样式与未知值/窄终端配色测试在旧实现上 4 项预期失败（exit 1）。真实 Node 进程另暴露 CommonJS `Format` 不能用 ESM 命名导入，改为默认导入后启动正常。最终专项 progress/output/output-format 21/21，含 32/80 列真实 PTY、Ctrl+C、警告、prompt、流错误、估计时间上限和静态机器输出；后续全套包含 24 列 resize 与双色/无色断言。
+- 实际环境 Node v24.11.1 / pnpm 11.19.0：`pnpm install --offline --frozen-lockfile --ignore-scripts` → exit 0（供应链元数据检查访问镜像并重试连接错误）；CLI build、CLI tsconfig 类型检查、根 ESLint、boundaries、source-lock、git diff --check → exit 0。CLI `node node_modules/vitest/vitest.mjs run --maxWorkers=2` → 15 files / 127 tests，exit 0；`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，含真实 tarball 独立消费者冻结离线安装。
+- 独立审查复现库内定时器绕过背压防护：1 秒内缓冲从 585 增至 6365 字节；无错误关闭终端后，真实子进程因定时器未释放而超时。对应回归先失败，再添加整帧写入缓冲：背压时丢弃完整旧帧，drain 时恢复，close/finish 时停止库并释放内部流，清理序列按需保留。未知值改为“等待进度”，不再显示确定的 0% 空条。修后 progress/output/output-format 23/23，exit 0。
+- 最终修复之后：同环境 CLI 全套 15 files / 129 tests、打包 E2E 7/7，均 exit 0；ESLint、CLI 类型检查、git diff --check 均 exit 0。独立复核确认背压时输出缓冲不再增长，drain 后继续刷新，无错误关闭的子进程自然退出，未知条不输出数值进度图形。
+- 未运行：SDK 全套测试（SDK 源码未改）、平台真实登录/学习/答题/发帖/交卷、推送与云部署。下一事项为启用到本机命令；不执行其他 PLAN 项或延期 Web。

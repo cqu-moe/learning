@@ -49,3 +49,8 @@
 ## 2026-10-12 · 微信 JPEG 二维码
 
 - CLI 新增精确固定 `jpeg-js` 0.4.4 和 `jsqr` 1.4.0，分别解码 JPEG RGBA 和读取二维码内容；PNG 仍由既有 pngjs 5.0.0 解码，再由既有 qrcode 1.5.4 重建二维码矩阵。只用于 CLI 本机展示，不引入 SDK/root/public 的 Node 依赖，不升级既有工具链。
+
+## 2026-10-13 · 双进度条
+
+- CLI 使用 `cli-progress` 3.12.0 的 MultiBar 管理进度条、重绘和终端状态恢复，`@types/cli-progress` 3.11.6 只用于类型检查。Node ESM 使用默认导入读取该 CommonJS 包。
+- `cli-truncate` 6.1.1 和 `string-width` 8.3.0 负责带颜色的中文、emoji 截断和列宽计算，替换手写算法。新增依赖仅用于 CLI，已有依赖与工具链版本保持锁定。

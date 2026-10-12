@@ -5,7 +5,7 @@ import { JsonSchema, QuestionSchema, JobSchema, LearningError } from '@learning/
 import type { Command } from 'commander';
 import type { Writable } from 'node:stream';
 import { stripVTControlCharacters, styleText } from 'node:util';
-import { createProgressDisplay } from './progress.js';
+import { createProgressDisplay, type ProgressRow } from './progress.js';
 
 export const OutputModeSchema = z.object({ format: z.enum(['pretty', 'plain', 'json', 'jsonl']), interactive: z.boolean(), quiet: z.boolean(), color: z.boolean(), debug: z.boolean() });
 export type OutputMode = z.infer<typeof OutputModeSchema>;
@@ -29,38 +29,29 @@ export interface StudyDisplay { courseTitle: string; profileName: string; speed:
 export const jobStates: Record<string, string> = { queued: '准备中', running: '进行中', waiting: '学习中', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
 const activeJob = (status: string) => ['queued', 'running', 'waiting'].includes(status);
 const singleLine = (text: string) => cleanText(text).replace(/\s+/g, ' ').trim();
-function progressBar(fraction: number | null, width: number, now: number): string {
-  const size = Math.max(4, Math.min(32, width - 10));
-  if (fraction === null) {
-    const position = Math.floor(now / 100) % size;
-    return '─'.repeat(position) + '━' + '─'.repeat(size - position - 1);
-  }
-  const filled = Math.round(Math.max(0, Math.min(1, fraction)) * size);
-  return '━'.repeat(filled) + '─'.repeat(size - filled) + ` ${(fraction * 100).toFixed(1)}%`;
-}
-function progressLines(value: ProgressData, study: StudyDisplay | undefined, startedAt: number, observedAt: number, width: number): string[] {
+function progressRows(value: ProgressData, study: StudyDisplay | undefined, startedAt: number, observedAt: number): ProgressRow[] {
   const now = Date.now();
   const total = value.total;
-  const lines = [study ? singleLine(study.courseTitle) : '任务进度'];
-  if (study) lines.push(`${singleLine(study.profileName)} · ${study.speed}× · 目标 ${study.targetFraction * 100}%`);
-  lines.push(`已完成 ${value.completed}/${total ?? '?'} 个资源`, progressBar(total === null || total === 0 ? null : value.completed / total, width, now));
+  const lines: ProgressRow[] = [{ text: study ? singleLine(study.courseTitle) : '任务进度', tone: 'bold' }];
+  if (study) lines.push({ text: `${singleLine(study.profileName)} · ${study.speed}× · 目标 ${study.targetFraction * 100}%`, tone: 'dim' });
+  lines.push({ label: study ? '整课' : '任务', fraction: total === null || total === 0 ? null : value.completed / total, detail: `${value.completed}/${total ?? '?'}`, tone: 'green' });
   if (value.resourceKey !== null || value.title !== null) {
-    lines.push(`当前 ${singleLine(value.title ?? '') || '学习资源'}`);
+    lines.push({ text: `当前 ${singleLine(value.title ?? '') || '学习资源'}`, tone: 'bold' });
     const duration = value.durationSeconds;
     const until = study?.nextRunAtMs;
     const elapsed = study && activeJob(value.status) && until != null ? Math.max(0, (Math.min(now, until) - observedAt) / 1000) * study.speed : 0;
     const baseline = value.serverSeconds ?? (value.serverFraction !== null && duration !== null ? value.serverFraction * duration : null);
     const seconds = baseline === null || duration === null ? null : Math.min(duration * (study?.targetFraction ?? 1), baseline + elapsed);
     const fraction = seconds !== null && duration !== null && duration > 0 ? seconds / duration : value.serverFraction;
-    lines.push(progressBar(fraction, width, now));
+    lines.push({ label: study ? '视频' : '当前', fraction, detail: fraction === null ? '进度未知' : `${(fraction * 100).toFixed(1)}%`, tone: 'cyan' });
     if (duration !== null && duration > 0 && seconds !== null) {
-      lines.push(`${elapsed > 0 || value.serverSeconds === null ? '本地估计' : '播放进度'} ${formatClock(seconds)}/${formatClock(duration)}`);
-    } else if (duration !== null && duration > 0) lines.push(`视频时长 ${formatClock(duration)}`);
-    lines.push(value.serverFraction === null ? '平台进度暂不可用' : `平台已确认 ${(value.serverFraction * 100).toFixed(1)}%`);
+      lines.push({ text: `${elapsed > 0 || value.serverSeconds === null ? '本地估计' : '播放进度'} ${formatClock(seconds)}/${formatClock(duration)}` });
+    } else if (duration !== null && duration > 0) lines.push({ text: `视频时长 ${formatClock(duration)}` });
+    lines.push({ text: value.serverFraction === null ? '平台进度暂不可用' : `平台已确认 ${(value.serverFraction * 100).toFixed(1)}%`, tone: 'dim' });
   }
   const state = value.status === 'waiting' && !study ? '等待继续' : jobStates[value.status] ?? value.status;
-  lines.push(`${state} · 已用 ${formatClock(Math.max(0, now - startedAt) / 1000)}`);
-  if (activeJob(value.status)) lines.push('Ctrl+C 暂停并保存');
+  lines.push({ text: `${state} · 已用 ${formatClock(Math.max(0, now - startedAt) / 1000)}` });
+  if (activeJob(value.status)) lines.push({ text: 'Ctrl+C 暂停并保存', tone: 'dim' });
   return lines;
 }
 export type EventInput = CliEvent extends infer E ? E extends CliEvent ? Pick<E, 'type' | 'data'> : never : never;
@@ -118,7 +109,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   const showProgress = () => {
     if (!live || promptDepth > 0 || finished || work.signal.aborted) return;
     if (display) display.draw();
-    else display = createProgressDisplay(streams.stderr, width => live ? progressLines(live.value, live.study, live.startedAt, live.observedAt, width) : []);
+    else display = createProgressDisplay(streams.stderr, () => live ? progressRows(live.value, live.study, live.startedAt, live.observedAt) : [], mode.color);
   };
   progressPauses.set(mode, pause);
   const warnings: Array<z.infer<typeof WarningSchema>> = [];
