@@ -14,7 +14,7 @@
 | T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
-| T10 | 智慧树编码与登录 | done | 默认微信 JPEG/wxTransit/原生 QR fixture；已授权扫码回调真机复现及旧会话在线 UUID 核验 | 修后全链仍待新扫码 |
+| T10 | 智慧树编码与登录 | done | 默认微信 JPEG/wxTransit/原生 QR fixture；已授权扫码回调真机复现及旧会话在线 UUID 核验 | 用户已确认微信扫码登录；原生 QR 尚无真机验收 |
 | T11 | 智慧树两类课程树和权威进度 | done | share/hike fixture；已授权真机 2 门共享课、1 门校内课及共享课视频进度读回 | 校内课为考试，按用户要求未操作其学习 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | SDK 模型建议过滤未解码/未选内容、Node 假模型与学堂讨论草稿 fixture；全套见最新记录 | 真实付费模型未授权调用 |
@@ -548,3 +548,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 主目录 Node v24.11.1 / pnpm 11.19.0 实际执行 `pnpm install --offline --frozen-lockfile --ignore-scripts`、`pnpm build` → exit 0，新增两个解码依赖使用本机缓存，未升级既有包。`/Users/uu/.local/bin/learning --version` → 0.2.0，exit 0；realpath 确认仍使用主目录 `apps/cli/dist/index.js`，SDK auth.js / CLI qr-terminal.js 的 SHA256 与已验证 worktree 相同，dist 不含 diagnostics。
 - 合入后主目录针对性回归：`pnpm --filter @learning/sdk exec vitest run tests/zhs-auth-crypto.test.ts tests/auth-flow.test.ts` → 48/48，exit 0；`pnpm --filter @learning/cli exec vitest run tests/qr-terminal.test.ts tests/auth-ui.test.ts` → 8/8，exit 0，包含 JPEG/PNG + wxTransit 的真实 PTY 进程链。
 - 用户账号数据与命令链接未改动，未推送远端。离线独立 packed consumer 元数据缺失和修后真实完整扫码验收仍是上一记录中的缺口；本轮没有重复无变化的 E2E 检查。下一当前事项：人工重新启动 `learning login --profile uu-zhs` 完成新的扫码确认，再验收 CLI 登录结果；没有自动生成待扫二维码或执行平台学习写入。
+
+
+### 2026-10-12 · 文本/图片二维码统一为一格窄边，已启用本地
+
+- 用户明确反馈智慧树可以登录，截图显示 CLI 登录成功；这是用户提供的实际验收，不等同于本代理新增在线身份 probe。此次仅调整二维码终端展示。
+- 原因：text QR 使用 qrcode 的 terminal small 渲染，JPEG/PNG 使用独立矩阵渲染，两者白边不同。提交 `1e433ab` 将 UTF-8 文本与图片解出的原始字节共用 byte segment 编码和半块字符渲染。用户随后明确不喜欢厚白边，提交 `1d52aa9` 将统一留白从四格缩为一格；颜色、字符比例及左右边缘一致，格子数仍由各自内容决定，不强行拉伸。
+- 实际文件：apps/cli/src/{commands/login.ts,qr-terminal.ts}、tests/{auth-ui.test.ts,qr-terminal.test.ts}、本进度记录。没有修改 SDK 登录协议、依赖或用户账号数据。
+- 回归先红后绿：扩展既有真实 PTY 用例，分别走雨课堂 text / 智慧树 JPEG 登录 fixture，同一包含中文的公开内容，验证扫码回读、窄边和颜色、不输出 QR/交换凭据。初次统一测试 text 因留白不一致失败（exit 1）；窄边契约在四格版本上两例均失败（exit 1）。最终 auth-ui + qr-terminal 9/9（exit 0），包含文本、PNG、缩放带 logo JPEG、非 UTF-8 原始字节和图片预算异常分支；未删断言或禁用测试。
+- Node v24.11.1 / pnpm 11.19.0：worktree CLI build、最终 pnpm typecheck、pnpm lint、git diff --check → exit 0。沿既有本地启用授权，main 干净时分别快进合入两项修复并重建；主目录 auth-ui + qr-terminal 在统一版本 9/9，最终窄边版本以 `-t 'shared terminal style'` 运行 2/2（其余 4 项由过滤器未选中），均 exit 0。
+- realpath 确认现有 learning 使用主目录 apps/cli/dist/index.js，login.js / qr-terminal.js 的 SHA256 与已验证 worktree 一致。下一次启动登录命令即使用窄边样式；没有推送远端或修改命令链接。
+- 未运行：本轮平台真机扫码、SDK 全套、CLI 全套、独立消费者 E2E；展示专项检查已覆盖实际 CLI 路径，之前独立安装的离线镜像元数据缺失未重复检查。下一当前事项：用户查看统一窄边样式；不自动执行其他 PLAN 项或平台业务操作。
