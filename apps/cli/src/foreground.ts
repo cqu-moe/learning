@@ -1,28 +1,52 @@
 import { CliError } from './output.js';
+import type { StudyDisplay } from './output.js';
 import { getJobOutputRoot } from './preferences.js';
+import { listProfiles } from './profiles.js';
 import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { LearningClient } from '@learning/sdk';
+import { ActionInputSchema, CourseSchema } from '@learning/sdk/public';
 import type { Job, JobEvent } from '@learning/sdk/public';
 import type { CliRuntime } from './context.js';
 
-export async function runJobForeground(client: LearningClient, runtime: CliRuntime, id: string, callbacks: { onEvent?: (event: JobEvent) => void | Promise<void>; onState?: (job: Job) => void | Promise<void>; signal?: AbortSignal } = {}): Promise<Job> {
+export async function runJobForeground(client: LearningClient, runtime: CliRuntime, id: string, callbacks: { onEvent?: (event: JobEvent) => void | Promise<void>; onState?: (job: Job) => void | Promise<void>; signal?: AbortSignal; study?: StudyDisplay } = {}): Promise<Job> {
+  let study = callbacks.study;
+  if (!study && (await client.jobs.get(id)).kind === 'study') {
+    const stored = await runtime.state.get(`job-input:${id}`);
+    if (stored !== null) {
+      const input = ActionInputSchema.parse(stored.value);
+      if (input.kind === 'study') {
+        const course = input.resources[0]?.course;
+        const cached = course ? await runtime.state.get(`cli:course:${course.key}`) : null;
+        const profile = (await listProfiles(runtime.state)).find(profile => profile.scope.profileId === client.scope.profileId);
+        study = { courseTitle: cached ? CourseSchema.parse(cached.value).title : '学习任务', profileName: profile?.name ?? '当前账号', speed: input.settings.speed, targetFraction: input.settings.targetFraction };
+      }
+    }
+  }
   const abort = new AbortController();
   const onSignal = () => abort.abort();
   const signals = [callbacks.signal, runtime.output?.signal].filter((signal): signal is AbortSignal => signal !== undefined);
   for (const signal of signals) { signal.addEventListener('abort', onSignal, { once: true }); if (signal.aborted) onSignal(); }
   let afterSequence = 0;
   let lastState = '';
+  let latestProgress: Extract<JobEvent, { type: 'progress' }> | null = null;
+  let observedAtMs = runtime.clock.nowMs();
   const warnings = new Set<string>();
   const report = async (job: Job, event?: Extract<JobEvent, { type: 'progress' | 'state' }>) => {
     for (const warning of job.warnings) { const key = JSON.stringify(warning); if (!warnings.has(key)) { warnings.add(key); await runtime.output?.warning(warning.code, warning.message); } }
-    const signature = JSON.stringify([job.id, job.status, job.completed, job.total]);
+    if (event?.type === 'progress') {
+      const cachedTitle = event.title ? null : await runtime.state.get(`cli:resource-title:${event.resourceKey}`);
+      latestProgress = { ...event, title: event.title || (typeof cachedTitle?.value === 'string' ? cachedTitle.value : null) };
+      observedAtMs = runtime.clock.nowMs();
+    }
+    if (latestProgress !== null && job.items.some(item => item.key === latestProgress?.resourceKey && ['succeeded', 'skipped'].includes(item.state))) latestProgress = null;
+    const signature = JSON.stringify([job.id, job.status, job.completed, job.total, job.nextRunAtMs, latestProgress?.sequence]);
     if (event?.type !== 'progress' && signature === lastState) return;
     lastState = signature;
     await callbacks.onState?.(job);
-    const live = event?.type === 'progress' ? event : null;
-    await runtime.output?.progress({ jobId: id, resourceKey: live?.resourceKey ?? null, status: job.status, completed: job.completed, total: job.total, serverFraction: live?.serverFraction ?? null, estimatedSeconds: live?.estimatedSeconds ?? null, title: live?.title ?? null, durationSeconds: live?.durationSeconds ?? null, serverSeconds: live?.serverSeconds ?? null, sourceSequence: event?.sequence ?? null });
+    const live = latestProgress;
+    await runtime.output?.progress({ jobId: id, resourceKey: live?.resourceKey ?? null, status: job.status, completed: job.completed, total: job.total, serverFraction: live?.serverFraction ?? null, estimatedSeconds: live?.estimatedSeconds ?? null, title: live?.title ?? null, durationSeconds: live?.durationSeconds ?? null, serverSeconds: live?.serverSeconds ?? null, sourceSequence: event?.sequence ?? null }, study ? { ...study, nextRunAtMs: job.nextRunAtMs, observedAtMs } : undefined);
   };
   const flushEvents = async (job: Job) => {
     if (!runtime.output && !callbacks.onEvent) return;

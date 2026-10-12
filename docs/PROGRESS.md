@@ -589,3 +589,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 主目录针对性回归：`pnpm --filter @learning/sdk exec vitest run tests/ykt-catalog.test.ts tests/auth-flow.test.ts` → 31/31，exit 0；`pnpm --filter @learning/cli exec vitest run tests/catalog.test.ts -t 'handles whole-course selection'` → 4/4，exit 0（27 项未被过滤器选中，不计本轮通过）。真实 PTY 同时覆盖正常课程选择及登录过期提示，所有流量仍为离线 fixture。
 - 现有 `learning --version` → 0.2.0，exit 0；realpath 确认 `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`。SDK catalog.js / schemas.js 与 CLI output.js 的 SHA256 均与已通过完整测试的 worktree 相同，未以未变的版本号作为修复启用证据。
 - 未修改账号数据或命令链接，未推送远端。重新扫码与修后真实课程读回仍未运行；下一事项由用户执行 `learning login --profile uu-ykt`，扫码完成后再运行 `learning run`。本次指定修复及本地启用完成，不自动学习或推进延期 Web。
+
+### 2026-10-13 · 整课学习 CLI 交互与实时进度（用户指定优化，离线完成）
+
+- 从干净 main `af11250` 创建隔离 worktree `/Users/uu/.codex/worktrees/cli-study-ux/learning`，分支 `codex/cli-study-ux`。仅处理本次 CLI 体验请求，不推进其他 PLAN 项或 Web。
+- 默认 `run` 直接选课程，删除操作范围提问。单资源仍可传位置参数，也可用高级 `--resource <key>`；两种写法都按缓存的归属推断账号，显式账号冲突仍拒绝。确认页显示课程、账号、范围、视频/图文数量、跳过数量及设置，不再罗列资源哈希。旧缓存缺少类型或名称时明确显示未知，不阻断原有学习调用。结束摘要使用中文状态并保留任务 ID。
+- TTY 使用固定区域的两条进度条，每 100 毫秒刷新，显示课程、账号、倍速、目标、资源完成数、当前视频、播放时间、平台确认进度和已用时间。本地计时或由比例推算的秒数标为“本地估计”，最多推进到下一次计划更新；不修改平台确认值、JSONL 事件、请求频率或实际学习时序。未知数据不伪造为已完成。32/80 列真实 PTY 覆盖重绘、警告插入、Ctrl+C 和光标恢复，标题净化、窄屏截断、流错误、prompt 和退出均有生命周期回归。
+- 前台任务保留最近的视频信息，等待和人工处理状态不再丢失标题；恢复时从任务输入和课程缓存恢复展示上下文。课程目录同时缓存资源标题，删除账号时一并清理。SDK 给学堂在线与智慧树 share/hike 补上已有权威读回的进度事件；没有新增平台请求。当前分支不含超星提供者，没有合入其他任务的超星工作区。
+- 文件：CLI `commands/{run,catalog,profile}.ts`、`foreground.ts`、`output.ts`、新增 `progress.ts`，以及对应 catalog/profile/wake/progress 回归；SDK xuetang resources/study、zhs study、jobs 和对应 fixture 测试；APPS、USAGE、contracts 与本记录。未新增或升级依赖。
+- 先红后绿：默认整课/高级资源参数初次 6 项失败；动态显示初次 3/4 失败；恢复标题初次 1 项失败。审查追加的比例估时、账号删除清理、多账号资源推断、空白标题和人工处理标题丢失均先复现后修复。新确认页测试曾因 fixture 有时长却断言跳过而失败，已将该视频输入改为未知时长，保留全部断言；旧无 kind 缓存仍有成功执行回归。
+- 环境 Node v24.11.1 / pnpm 11.19.0，复用主目录已安装的锁定依赖。实际命令均使用固定 Node：两包 `node node_modules/typescript/bin/tsc -p <package>/tsconfig.build.json` 和 `tsconfig.json`、`node node_modules/eslint/bin/eslint.js .` → exit 0。SDK `node node_modules/vitest/vitest.mjs run --maxWorkers=2` → 31 files / 268 tests，exit 0。CLI 最终同命令 → 15 files / 125 tests，exit 0；`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，包含独立 tarball 消费者 frozen/offline 安装。source-lock、boundaries、`git diff --check` → exit 0。
+- 两路独立评审后已修复标题缓存清理、只给比例的平台估时、异常状态视频信息丢失、空白标题回退，并保留原 state 事件回调语义。最后一轮全套 CLI 和 E2E 在这些修复之后执行。
+- 未运行：平台真实登录/学习/答题/发帖/交卷、付费模型、推送和云部署。数据全部使用离线合成 fixture；课程名未缓存且平台解析只返回定位信息时显示“课程名称暂不可用”。下一事项仅本机启用此版本并由用户查看实际终端效果，不自动发起平台操作。

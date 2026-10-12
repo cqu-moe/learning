@@ -234,7 +234,7 @@ export class JobRunner {
     if (!ok) throw error('CONFLICT', 'job events changed concurrently', id);
   }
 
-  async emitProgress(id: string, resourceKey: string, serverFraction: number, details: { title?: string | null; durationSeconds?: number | null; serverSeconds?: number | null } = {}): Promise<void> {
+  async emitProgress(id: string, resourceKey: string, serverFraction: number | null, details: { title?: string | null; durationSeconds?: number | null; serverSeconds?: number | null } = {}): Promise<void> {
     await this.appendEvent(id, { type: 'progress', sequence: 0, jobId: id, resourceKey, estimatedSeconds: null, serverFraction, ...details }, true);
   }
 

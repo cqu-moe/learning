@@ -1,6 +1,6 @@
 # learning 本机 CLI 用法
 
-CLI 0.2 支持一次性向导与完整参数调用。直接运行 `learning`，或运行 `learning download --profile school` 补齐缺少的课程选择。脚本使用 `--no-interactive`、`--json` 或 `--output-format jsonl`。升级变化见 [迁移说明](CLI-MIGRATION.md)。
+直接运行 `learning` 进入菜单，每次操作后返回首页；也可用 `learning run --profile school` 选择课程并启动学习。脚本使用 `--no-interactive`、`--json` 或 `--output-format jsonl`。升级变化见 [迁移说明](CLI-MIGRATION.md)。
 
 构建后在仓库根目录运行 `node apps/cli/dist/index.js`，或将构建后的 CLI 以本机链接方式暴露为 `learning`。下例省略 `node apps/cli/dist/index.js` 前缀。
 
@@ -38,5 +38,9 @@ learning --profile school operations reconcile <operation-id>
 学堂讨论用 `discuss draft <resource-key> -o draft.json` 创建可编辑文件；本机配置模型后可显式加 `--ai` 生成建议，缺 key 时手工草稿仍可用。`discuss post draft.json --dry-run` 预览，`--yes` 才发送。试卷可用 `exam export <resource-key>` 只读导出、`exam draft <resource-key> -o draft.yaml` 建草稿；`exam start <resource-key> --yes` 可能启动计时，`exam save draft.yaml --yes` 只缓存已验证的选择/判断答案。`exam submit` 即使带 `--yes --final` 也因 E05 验证闸门拒绝。`live <lesson-url> --yes` 在当前终端监听；当前题的手工答案会再次要求逐题确认，`jobs resume <id> --yes` 会重新签到并标记离线 gap。真实平台操作需单独授权；本轮仅在离线合成响应中运行这些写链。
 
 任务默认在当前终端运行，Ctrl+C 请求暂停并释放本机写锁。响应丢失造成的 `uncertain` 任务不能直接 resume；先用 `jobs reconcile <job-id>` 只读核对。确认原 PID 已退出后才可 `profile unlock` 清理遗留锁。升级前备份整个 `LEARNING_HOME`，尤其是 `master.key`、SQLite 状态库和 `artifacts`。
+
+学习默认选择整门课程。启动前显示课程名称、账号、资源数量、倍速和目标进度，确认后才开始。单个资源可通过命令参数指定，使用 `learning run --help` 查看。需要资源 key 时运行 `learning outline <course-key>`，或读取 JSON 输出。
+
+交互终端固定显示课程、已完成资源数、当前视频、播放时间和平台确认进度，每 100 毫秒刷新。`本地估计` 只用于显示等待期间的计时，最多推算到下一次计划更新；平台确认进度始终来自读回。平台未提供的时长或进度保持未知。普通文本输出按阶段和间隔记录，JSON/JSONL 保留机器协议；`--quiet` 关闭日常进度。
 
 默认账号和下载目录仅显式保存：`learning config set default-profile school`、`learning config set download-dir ./downloads`。`--output-dir` 覆盖本次导出目录，`--quiet` 隐藏日常进度但不跳过确认。

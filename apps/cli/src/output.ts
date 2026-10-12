@@ -5,6 +5,7 @@ import { JsonSchema, QuestionSchema, JobSchema, LearningError } from '@learning/
 import type { Command } from 'commander';
 import type { Writable } from 'node:stream';
 import { stripVTControlCharacters, styleText } from 'node:util';
+import { createProgressDisplay } from './progress.js';
 
 export const OutputModeSchema = z.object({ format: z.enum(['pretty', 'plain', 'json', 'jsonl']), interactive: z.boolean(), quiet: z.boolean(), color: z.boolean(), debug: z.boolean() });
 export type OutputMode = z.infer<typeof OutputModeSchema>;
@@ -23,6 +24,45 @@ export const CliEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('gap'), data: z.object({ jobId: z.string(), message: z.string(), sourceSequence: z.number() }) }),
 ]);
 export type CliEvent = z.infer<typeof CliEventSchema>;
+type ProgressData = Extract<CliEvent, { type: 'progress' }>['data'];
+export interface StudyDisplay { courseTitle: string; profileName: string; speed: number; targetFraction: number; nextRunAtMs?: number | null; observedAtMs?: number }
+export const jobStates: Record<string, string> = { queued: '准备中', running: '进行中', waiting: '学习中', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
+const activeJob = (status: string) => ['queued', 'running', 'waiting'].includes(status);
+const singleLine = (text: string) => cleanText(text).replace(/\s+/g, ' ').trim();
+function progressBar(fraction: number | null, width: number, now: number): string {
+  const size = Math.max(4, Math.min(32, width - 10));
+  if (fraction === null) {
+    const position = Math.floor(now / 100) % size;
+    return '─'.repeat(position) + '━' + '─'.repeat(size - position - 1);
+  }
+  const filled = Math.round(Math.max(0, Math.min(1, fraction)) * size);
+  return '━'.repeat(filled) + '─'.repeat(size - filled) + ` ${(fraction * 100).toFixed(1)}%`;
+}
+function progressLines(value: ProgressData, study: StudyDisplay | undefined, startedAt: number, observedAt: number, width: number): string[] {
+  const now = Date.now();
+  const total = value.total;
+  const lines = [study ? singleLine(study.courseTitle) : '任务进度'];
+  if (study) lines.push(`${singleLine(study.profileName)} · ${study.speed}× · 目标 ${study.targetFraction * 100}%`);
+  lines.push(`已完成 ${value.completed}/${total ?? '?'} 个资源`, progressBar(total === null || total === 0 ? null : value.completed / total, width, now));
+  if (value.resourceKey !== null || value.title !== null) {
+    lines.push(`当前 ${singleLine(value.title ?? '') || '学习资源'}`);
+    const duration = value.durationSeconds;
+    const until = study?.nextRunAtMs;
+    const elapsed = study && activeJob(value.status) && until != null ? Math.max(0, (Math.min(now, until) - observedAt) / 1000) * study.speed : 0;
+    const baseline = value.serverSeconds ?? (value.serverFraction !== null && duration !== null ? value.serverFraction * duration : null);
+    const seconds = baseline === null || duration === null ? null : Math.min(duration * (study?.targetFraction ?? 1), baseline + elapsed);
+    const fraction = seconds !== null && duration !== null && duration > 0 ? seconds / duration : value.serverFraction;
+    lines.push(progressBar(fraction, width, now));
+    if (duration !== null && duration > 0 && seconds !== null) {
+      lines.push(`${elapsed > 0 || value.serverSeconds === null ? '本地估计' : '播放进度'} ${formatClock(seconds)}/${formatClock(duration)}`);
+    } else if (duration !== null && duration > 0) lines.push(`视频时长 ${formatClock(duration)}`);
+    lines.push(value.serverFraction === null ? '平台进度暂不可用' : `平台已确认 ${(value.serverFraction * 100).toFixed(1)}%`);
+  }
+  const state = value.status === 'waiting' && !study ? '等待继续' : jobStates[value.status] ?? value.status;
+  lines.push(`${state} · 已用 ${formatClock(Math.max(0, now - startedAt) / 1000)}`);
+  if (activeJob(value.status)) lines.push('Ctrl+C 暂停并保存');
+  return lines;
+}
 export type EventInput = CliEvent extends infer E ? E extends CliEvent ? Pick<E, 'type' | 'data'> : never : never;
 export class CliError extends Error {
   constructor(public code: string, message: string, public exitCode = 2, public fields: string[] = [], public hint: string[] = [], public operationId: string | null = null) { super(message); }
@@ -68,11 +108,18 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   let canceled = false;
   let home: string | undefined;
   let indicator: ReturnType<typeof spinner> | null = null;
+  let display: ReturnType<typeof createProgressDisplay> | null = null;
+  let live: { value: ProgressData; study: StudyDisplay | undefined; startedAt: number; observedAt: number } | null = null;
   let lastProgressAt = 0;
   let lastPhase = '';
   let indicatorText = '';
   let promptDepth = 0;
-  const pause = () => { indicator?.clear(); indicator = null; };
+  const pause = () => { const current = display; display = null; current?.clear(); indicator?.clear(); indicator = null; };
+  const showProgress = () => {
+    if (!live || promptDepth > 0 || finished || work.signal.aborted) return;
+    if (display) display.draw();
+    else display = createProgressDisplay(streams.stderr, width => live ? progressLines(live.value, live.study, live.startedAt, live.observedAt, width) : []);
+  };
   progressPauses.set(mode, pause);
   const warnings: Array<z.infer<typeof WarningSchema>> = [];
   const pendingWarnings: Array<z.infer<typeof WarningSchema>> = [];
@@ -80,7 +127,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   const abort = new AbortController();
   const work = new AbortController();
   commandSignals.set(mode, work.signal);
-  const cancel = () => { canceled = true; work.abort(); if (Number(process.exitCode ?? 0) !== 5) process.exitCode = 3; };
+  const cancel = () => { canceled = true; work.abort(); pause(); if (Number(process.exitCode ?? 0) !== 5) process.exitCode = 3; };
   const onError = () => { abort.abort(); cancel(); };
   streams.stdout.on('error', onError);
   streams.stderr.on('error', onError);
@@ -109,6 +156,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     const next = warningFlush.then(async () => {
       if (promptDepth > 0 || pendingWarnings.length === 0) return;
       const restore = indicator !== null ? indicatorText : null;
+      const restoreProgress = display !== null;
       pause();
       while (pendingWarnings.length > 0) {
         const warning = pendingWarnings.shift()!;
@@ -118,6 +166,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       if (restore !== null && !finished && !work.signal.aborted) {
         indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(restore);
       }
+      if (restoreProgress) showProgress();
     });
     // Return the rejection to this caller while keeping later flushes usable.
     warningFlush = next.catch(() => {});
@@ -141,28 +190,33 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     pauseProgress: pause,
     activity(message: string) {
       if (mode.format !== 'pretty' || mode.quiet) return;
+      if (display) pause();
       indicatorText = cleanText(message);
       if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(cleanText(message)); }
       else indicator.message(cleanText(message));
     },
-    async progress(value: Extract<CliEvent, { type: 'progress' }>['data']) {
+    async progress(value: ProgressData, study?: StudyDisplay) {
       await flushWarnings();
       await event({ type: 'progress', data: value });
       if (machine || mode.quiet) return;
+      if (mode.format === 'pretty' && activeJob(value.status)) {
+        const startedAt = live !== null && live.value.jobId === value.jobId ? live.startedAt : Date.now();
+        live = { value, study, startedAt, observedAt: study?.observedAtMs ?? Date.now() };
+        if (indicator) { indicator.clear(); indicator = null; }
+        showProgress();
+        return;
+      }
       const phase = `${value.jobId}:${value.status}:${value.resourceKey ?? ''}`;
-      const interval = mode.format === 'pretty' ? 100 : 5000;
+      const interval = 5000;
       if (phase === lastPhase && Date.now() - lastProgressAt < interval) return;
       lastPhase = phase; lastProgressAt = Date.now();
-      const states: Record<string, string> = { queued: '已排队', running: '进行中', waiting: '等待下一阶段', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
-      const label = value.resourceKey === null && value.title === null ? '' : ` · ${value.title ?? value.resourceKey}`;
+      const label = value.title === null ? '' : ` · ${singleLine(value.title)}`;
       const clock = value.durationSeconds !== null && value.durationSeconds > 0 && value.serverSeconds !== null ? ` · ${formatClock(value.serverSeconds)}/${formatClock(value.durationSeconds)}` : '';
-      const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${label}${clock}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
-      indicatorText = text;
-      if (mode.format === 'pretty' && ['queued','running','waiting'].includes(value.status)) {
-        if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(text); } else indicator.message(text);
-      } else { pause(); await write(streams.stderr, cleanText(text) + '\n'); }
+      const state = value.status === 'waiting' && !study ? '等待继续' : jobStates[value.status] ?? value.status;
+      const text = `${study ? singleLine(study.courseTitle) + ' · ' : ''}${state} · ${value.completed}/${value.total ?? '?'} 个资源${label}${clock}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
+      pause(); await write(streams.stderr, cleanText(text) + '\n');
     },
-    async message(text: string, essential = false) { await flushWarnings(); if (!machine && (!mode.quiet || essential)) await write(streams.stderr, cleanText(text) + '\n'); },
+    async message(text: string, essential = false) { await flushWarnings(); if (!machine && (!mode.quiet || essential)) { pause(); await write(streams.stderr, cleanText(text) + '\n'); } },
     async warning(code: string, message: string) { recordWarning(code, message); await flushWarnings(); },
     async finish(error?: unknown) {
       if (finished) return;

@@ -65,7 +65,7 @@ describe('local profiles', () => {
     const records: [string, Json][] = [
       ['job:job-owned', job], ['job-meta:job-owned', { inputDigest: 'x', generation: 1, cursor: null, pendingOperationId: null, running: false }],
       ['job-input:job-owned', { type: 'media', resources: [resource], quality: 'best', subtitles: false }], ['job-events:job-owned', []],
-      ['cli:course:course', course], ['cli:resource:resource', resource], ['cli:resource-kind:resource', 'video'],
+      ['cli:course:course', course], ['cli:resource:resource', resource], ['cli:resource-kind:resource', 'video'], ['cli:resource-title:resource', '第一讲'],
     ];
     expect(await state.commit({ expected: records.map(([key]) => ({ key, revision: null })), changes: records.map(([key, value]) => ({ key, value })) })).toBe(true);
     state.close();

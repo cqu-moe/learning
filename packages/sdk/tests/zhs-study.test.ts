@@ -91,10 +91,11 @@ describe('zhs study (T21, A211/A212)', () => {
     const runner = new JobRunner(new MemoryStateStore(), clock);
     const job = await runner.create(scope, 'study', { total: 1, payload: action, generation: 1 });
     const http = createSessionHttp({ transport, clock, jar: new SessionCookieJar(), allowHosts: ['zhihuishu.com'] });
-    const progress = { request: { method: 'GET', host: 'studyresources.zhihuishu.com', path: '/studyResources/stuResouce/queryResourceMenuTree', query: { courseId: '77', _: String(clock.nowMs()) } }, response: { status: 200, body: { rt: [{ id: 'f2', dataType: 3, studyTime: 0, totalTime: 10, childList: [] }] } } };
+    const progress = { request: { method: 'GET', host: 'studyresources.zhihuishu.com', path: '/studyResources/stuResouce/queryResourceMenuTree', query: { courseId: '77', _: String(clock.nowMs()) } }, response: { status: 200, body: { rt: [{ id: 'f2', name: '第一讲', dataType: 3, studyTime: 0, totalTime: 10, childList: [] }] } } };
     transport.scriptInteractions([progress]);
     const waiting = await advanceHikeStudy({ job, action, runner, http, clock, uuid: 'u-fixture' });
     expect(waiting.status).toBe('waiting');
+    expect((await runner.events(job.id, 0)).some((event) => event.type === 'progress' && event.title === '第一讲' && event.durationSeconds === 10 && event.serverFraction === 0 && event.serverSeconds === 0)).toBe(true);
     transport.assertNoExtraScripts();
     const startDate = clock.nowMs();
     clock.setNow(startDate + 1000);
@@ -105,6 +106,23 @@ describe('zhs study (T21, A211/A212)', () => {
     const done = await advanceHikeStudy({ job: waiting, action, runner, http, clock, uuid: 'u-fixture' });
     expect(done.status).toBe('succeeded');
     expect(done.items[0]).toMatchObject({ key: 'video', state: 'succeeded' });
+    transport.assertNoExtraScripts();
+  });
+
+  it('keeps hike progress null when server duration is unknown and stops without writing', async () => {
+    const scope = { userId: 'local', profileId: 'p-unknown-duration', platform: 'zhs' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'zhs-hike' as const, courseId: '77' } }, key: 'video', native: { kind: 'zhs-hike' as const, fileId: 'f2' } };
+    const action = { kind: 'study' as const, resources: [resource], settings: { speed: 1, targetFraction: 0.1, questionMode: 'pause' as const, maxDurationSeconds: 60 } };
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const runner = new JobRunner(new MemoryStateStore(), clock);
+    const job = await runner.create(scope, 'study', { total: 1, payload: action, generation: 1 });
+    const http = createSessionHttp({ transport, clock, jar: new SessionCookieJar(), allowHosts: ['zhihuishu.com'] });
+    transport.scriptInteractions([{ request: { method: 'GET', host: 'studyresources.zhihuishu.com', path: '/studyResources/stuResouce/queryResourceMenuTree', query: { courseId: '77', _: String(clock.nowMs()) } }, response: { status: 200, body: { rt: [{ id: 'f2', name: '未知时长视频', dataType: 3, studyTime: 0, totalTime: 0, childList: [] }] } } }]);
+    const stopped = await advanceHikeStudy({ job, action, runner, http, clock, uuid: 'u-fixture' });
+    expect(stopped).toMatchObject({ status: 'needs-input', items: [{ key: 'video', state: 'needs-input' }] });
+    expect((await runner.events(job.id, 0)).some((event) => event.type === 'progress' && event.title === '未知时长视频' && event.durationSeconds === null && event.serverFraction === null && event.serverSeconds === 0)).toBe(true);
+    expect(transport.calls).toHaveLength(1);
     transport.assertNoExtraScripts();
   });
 
@@ -194,7 +212,7 @@ describe('zhs study (T21, A211/A212)', () => {
     const readState = (seconds: number): FixtureInteraction[] => [
       { request: { method: 'GET', host: 'studyservice-api.zhihuishu.com', path: '/login/gologin', query: { fromurl: 'https://studyvideoh5.zhihuishu.com/stuStudy?recruitAndCourseId=R1' } }, response: { status: 200, body: {} } },
       post('/learning/queryCourse', { recruitAndCourseId: 'R1' }, { code: 0, data: { recruitId: 9, courseInfo: { courseId: 44 } } }),
-      post('/learning/videolist', { recruitAndCourseId: 'R1' }, { code: 0, data: { courseId: 55, videoChapterDtos: [{ id: 1, name: '章', videoLessons: [{ id: 10, name: '节', videoId: 'V1', videoSec: 10 }] }] } }),
+      post('/learning/videolist', { recruitAndCourseId: 'R1' }, { code: 0, data: { courseId: 55, videoChapterDtos: [{ id: 1, name: '章', videoLessons: [{ id: 10, name: '第一讲', videoId: 'V1', videoSec: 10 }] }] } }),
       post('/learning/queryStuyInfo', { lessonIds: [10], lessonVideoIds: [], recruitId: 9 }, { code: 0, data: { lv: {}, lesson: { '10': { watchState: 0, studyTotalTime: seconds } } } }),
     ];
     const client = createLearningClient({ scope, runtime });
@@ -208,6 +226,7 @@ describe('zhs study (T21, A211/A212)', () => {
       post('/learning/prelearningNote', { ccCourseId: '55', chapterId: '1', isApply: 1, lessonId: '10', lessonVideoId: '0', recruitId: '9', videoId: 'V1' }, { code: 0, data: { studiedLessonDto: { id: 77 } } }),
     ]);
     expect((await client.jobs.advance(execution.job.id)).status).toBe('waiting');
+    expect((await client.jobs.events(execution.job.id, 0)).some((event) => event.type === 'progress' && event.title === '第一讲' && event.durationSeconds === 10 && event.serverFraction === 0 && event.serverSeconds === 0)).toBe(true);
     transport.assertNoExtraScripts();
     clock.setNow(clock.nowMs() + 1000);
     const wp = new WatchPoint(); wp.add(1);

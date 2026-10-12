@@ -10,12 +10,13 @@ import type { JobRunner } from '../../services/jobs.js';
 
 export interface XtxStudyIdentity { courseId: string; userId: string; skuId: string; videoId: string; ccid: string; duration: number; exerciseId: string | null }
 
-export async function xtxReadStudyIdentity(http: SessionHttp, resource: ResourceRef): Promise<XtxStudyIdentity> {
+export async function xtxReadStudyIdentity(http: SessionHttp, resource: ResourceRef): Promise<XtxStudyIdentity & { title: string | null }> {
   if (resource.native.kind !== 'xuetang' || resource.course.native.kind !== 'xuetang') throw new LearningError({ code: 'INVALID_INPUT', message: 'Xuetang study needs a Xuetang video ref', retryAfterMs: null, operationId: null });
   const leaf = await xtxLeafInfo(http, resource);
   const ccid = leaf.content_info?.media?.ccid ?? '';
   let duration = leaf.content_info?.media?.duration ?? 0;
   if (duration <= 0 && ccid !== '') duration = (await xtxMedia(http, resource)).variants.find((variant) => variant.durationSeconds !== null)?.durationSeconds ?? 0;
+  const leafTitle = leaf.name;
   const identity: XtxStudyIdentity = { courseId: String(leaf.course_id ?? ''), userId: String(leaf.user_id ?? ''), skuId: String(leaf.sku_id ?? ''), videoId: String(leaf.id ?? resource.native.leafId), ccid, duration,
     exerciseId: leaf.content_info?.media?.exercise_id ? String(leaf.content_info.media.exercise_id) : null };
   if ([identity.courseId, identity.userId, identity.skuId, identity.videoId, identity.ccid].some((value) => value === '' || value === '0') ||
@@ -23,7 +24,7 @@ export async function xtxReadStudyIdentity(http: SessionHttp, resource: Resource
     !Number.isFinite(duration) || duration <= 0) {
     throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'Xuetang leaf lacks study identifiers or duration', retryAfterMs: null, operationId: null });
   }
-  return identity;
+  return { ...identity, title: typeof leafTitle === 'string' && leafTitle !== '' ? leafTitle : null };
 }
 
 export function buildXtxStudyRow(identity: XtxStudyIdentity, input: { event: 'loadstart' | 'loadeddata' | 'play' | 'ratechange' | 'heartbeat' | 'videoend'; cp: number; speed: number; sq: number; tsMs: number; classroomId: string; pg: string }) {
@@ -69,12 +70,13 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
       await runner.setCursor(job.id, JSON.stringify({ ...cursor, awaitingSinceMs: since, stalls: cursor.stalls + 1 }));
       return { completed: false, status: 'waiting' as const, nextRunAtMs: now + 5000 };
     }
-    let identity: XtxStudyIdentity;
+    let identity: XtxStudyIdentity & { title: string | null };
     try { identity = await xtxReadStudyIdentity(http, next); }
     catch (cause) {
       if (cause instanceof LearningError && cause.data.code === 'INTERACTION_REQUIRED') return finish('needs-input', cause.message);
       throw cause;
     }
+    await runner.emitProgress(job.id, next.key, before.serverFraction, { title: identity.title, durationSeconds: identity.duration, serverSeconds: before.serverSeconds });
     if (identity.exerciseId !== null && action.settings.questionMode === 'pause') return finish('needs-input', 'embedded question requires review');
     const phase = cursor?.phase ?? 'start';
     const cp = cursor?.cp ?? (before.serverFraction ?? 0) * identity.duration;
