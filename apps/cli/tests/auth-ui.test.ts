@@ -191,16 +191,22 @@ describe('explicit machine QR login', () => {
   }
  }, 20_000);
 
- it('renders a resized logo-bearing ZHS JPEG QR and completes wxTransit in a real terminal', async () => {
+ it.each([{ platform: 'zhs', kind: 'JPEG' }, { platform: 'ykt', kind: 'text' }])('renders $kind QR in the shared terminal style and completes $platform login', async ({ platform }) => {
   const terminalHome = mkdtempSync(resolve(tmpdir(), 'learning-zhs-jpeg-terminal-'));
   const driver = resolve(import.meta.dirname, 'helpers/terminal-driver.py');
   try {
    const prepare = (args: string[]) => spawnSync(process.execPath, [resolve(import.meta.dirname, '../dist/index.js'), '--home', terminalHome, ...args], { encoding: 'utf8' });
    expect(prepare(['init']).status).toBe(0);
-   expect(prepare(['profile', 'add', 'alpha', '--platform', 'zhs']).status).toBe(0);
-   const value = 'https://example.com/zhs-terminal-jpeg';
-   const image = realisticByteQrJpeg(new TextEncoder().encode(value));
-   const fixture = writeWeChatFixture(resolve(terminalHome, 'wechat-terminal-jpeg.json'), image, 'image/jpeg');
+   expect(prepare(['profile', 'add', 'alpha', '--platform', platform]).status).toBe(0);
+   const value = 'https://example.com/unified-terminal-qr/你好?token=fixture';
+   const fixture = resolve(terminalHome, 'terminal-qr.json');
+   if (platform === 'zhs') {
+    writeWeChatFixture(fixture, realisticByteQrJpeg(new TextEncoder().encode(value)), 'image/jpeg');
+   } else {
+    const source = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../packages/sdk/tests/fixtures/ykt/qr-login.json'), 'utf8')) as { interactions: Array<{ response: { body: { data: { qrContent: string } } } }> };
+    source.interactions[0]!.response.body.data.qrContent = value;
+    writeFileSync(fixture, JSON.stringify(source));
+   }
 
    const terminalEnv = { ...process.env };
    delete terminalEnv.NO_COLOR;
@@ -216,6 +222,13 @@ describe('explicit machine QR login', () => {
    expect(terminal.screen).not.toContain(value);
    expect(terminal.screen).not.toMatch(/CACHE1|ONCE1|fixture-ticket|%7B%22uuid|CODE1/);
    expect(digest(decodeTerminalQr(terminal.screen))).toBe(digest(value));
+   const frame = terminal.screen.split(/\r\n|\r|\n/)
+    .filter(line => line.includes('\x1b[47m\x1b[30m'))
+    .map(line => stripVTControlCharacters(line));
+   expect(frame.length).toBeGreaterThan(14);
+   expect(frame.slice(0, 2).every(row => row.trim() === '')).toBe(true);
+   expect(frame.slice(-2).every(row => row.trim() === '')).toBe(true);
+   expect(frame.every(row => row.startsWith('    ') && row.endsWith('    '))).toBe(true);
   } finally {
    rmSync(terminalHome, { recursive: true, force: true });
   }

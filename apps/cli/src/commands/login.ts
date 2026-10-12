@@ -78,9 +78,10 @@ export function registerLoginCommands(program: Command): void {
               let terminal: string | null = null;
               if (descriptor === null && output.mode.format === 'pretty' && output.mode.color && output.mode.interactive) {
                 try {
+                  const renderer = await import('../qr-terminal.js');
                   terminal = event.qr.type === 'text'
-                    ? await qr.default.toString(event.qr.value, { type: 'terminal', small: true })
-                    : (await import('../qr-terminal.js')).renderImageQrTerminal(Buffer.from(event.qr.base64, 'base64'));
+                    ? renderer.renderTextQrTerminal(event.qr.value)
+                    : renderer.renderImageQrTerminal(Buffer.from(event.qr.base64, 'base64'));
                 } catch {
                   terminal = null;
                 }

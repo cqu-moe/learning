@@ -58,8 +58,12 @@ function decodeQrModules(image: RawImage): QrModules {
 
   const decoded = jsQR(new Uint8ClampedArray(image.data), image.width, image.height, { inversionAttempts: 'attemptBoth' });
   if (decoded === null) throw new Error('QR image could not be decoded locally');
+  return encodeQrModules(Uint8Array.from(decoded.binaryData));
+}
+
+function encodeQrModules(content: Uint8Array): QrModules {
   try {
-    const segment = { data: Uint8Array.from(decoded.binaryData), mode: 'byte' as const };
+    const segment = { data: content, mode: 'byte' as const };
     return qrcode.create([segment], { errorCorrectionLevel: 'M' }).modules;
   } catch {
     throw new Error('decoded QR content cannot be rendered in the terminal');
@@ -74,7 +78,15 @@ function terminalCharacter(top: boolean, bottom: boolean): string {
 }
 
 export function renderImageQrTerminal(bytes: Uint8Array): string {
-  const modules = decodeQrModules(decodeImage(bytes));
+  return renderQrModules(decodeQrModules(decodeImage(bytes)));
+}
+
+export function renderTextQrTerminal(value: string): string {
+  if (value === '') throw new Error('QR content is empty');
+  return renderQrModules(encodeQrModules(new TextEncoder().encode(value)));
+}
+
+function renderQrModules(modules: QrModules): string {
   const size = modules.size + QUIET_ZONE_MODULES * 2;
   const rows: string[] = [];
   for (let y = 0; y < size; y += 2) {
