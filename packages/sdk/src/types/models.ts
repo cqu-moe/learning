@@ -275,6 +275,7 @@ export type Probe = z.infer<typeof ProbeSchema>;
 export const QrDisplaySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), value: z.string() }),
   z.object({ type: z.literal('png'), base64: z.string() }),
+  z.object({ type: z.literal('jpeg'), base64: z.string() }),
 ]);
 export type QrDisplay = z.infer<typeof QrDisplaySchema>;
 

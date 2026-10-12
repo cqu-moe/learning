@@ -53,7 +53,7 @@ export interface DiscussionDraft { id: string; ref: ThreadRef; text: string; sou
 export interface Capability { id: string; system: System | null; state: 'ready' | 'unverified' | 'unimplemented' | 'unsupported' | 'missing-runtime'; reason: string | null }
 export interface SessionView { scope: Scope; generation: number; displayName: string | null; platformUserId: string | null; identityVerified: boolean; checkedAtMs: number }
 export type Probe = { state: 'valid'; session: SessionView } | { state: 'expired' } | { state: 'indeterminate'; error: ErrorData };
-export type QrDisplay = { type: 'text'; value: string } | { type: 'png'; base64: string };
+export type QrDisplay = { type: 'text'; value: string } | { type: 'png'; base64: string } | { type: 'jpeg'; base64: string };
 export type AuthEvent =
   | { type: 'qr'; generation: number; qr: QrDisplay; expiresAtMs: number }
   | { type: 'waiting' | 'scanned' | 'exchanging'; generation: number }

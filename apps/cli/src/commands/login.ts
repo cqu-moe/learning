@@ -78,18 +78,19 @@ export function registerLoginCommands(program: Command): void {
               let terminal: string | null = null;
               if (descriptor === null && output.mode.format === 'pretty' && output.mode.color && output.mode.interactive) {
                 try {
-                  terminal = event.qr.type === 'png'
-                    ? (await import('../qr-terminal.js')).renderPngQrTerminal(Buffer.from(event.qr.base64, 'base64'))
-                    : await qr.default.toString(event.qr.value, { type: 'terminal', small: true });
+                  terminal = event.qr.type === 'text'
+                    ? await qr.default.toString(event.qr.value, { type: 'terminal', small: true })
+                    : (await import('../qr-terminal.js')).renderImageQrTerminal(Buffer.from(event.qr.base64, 'base64'));
                 } catch {
                   terminal = null;
                 }
               }
               if (terminal !== null) process.stderr.write(terminal);
               else {
-                if (descriptor === null) openQr(resolve(dataDir, `login-qr-${randomUUID()}.png`));
+                const extension = event.qr.type === 'text' ? 'png' : event.qr.type;
+                if (descriptor === null) openQr(resolve(dataDir, `login-qr-${randomUUID()}.${extension}`));
                 if (descriptor !== null) {
-                  const bytes = event.qr.type === 'png' ? Buffer.from(event.qr.base64, 'base64') : await qr.default.toBuffer(event.qr.value, { type: 'png' });
+                  const bytes = event.qr.type === 'text' ? await qr.default.toBuffer(event.qr.value, { type: 'png' }) : Buffer.from(event.qr.base64, 'base64');
                   let offset = 0;
                   while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset, bytes.length - offset, offset);
                   ftruncateSync(descriptor, bytes.length);

@@ -14,7 +14,7 @@
 | T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
-| T10 | 智慧树编码与登录 | done | 默认微信 QR/原生 QR fixture；已授权旧会话在线 UUID 核验通过 | 全新 QR 扫码未做真机 |
+| T10 | 智慧树编码与登录 | done | 默认微信 JPEG/wxTransit/原生 QR fixture；已授权扫码回调真机复现及旧会话在线 UUID 核验 | 修后全链仍待新扫码 |
 | T11 | 智慧树两类课程树和权威进度 | done | share/hike fixture；已授权真机 2 门共享课、1 门校内课及共享课视频进度读回 | 校内课为考试，按用户要求未操作其学习 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | SDK 模型建议过滤未解码/未选内容、Node 假模型与学堂讨论草稿 fixture；全套见最新记录 | 真实付费模型未授权调用 |
@@ -525,3 +525,18 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 主仓实际回归：`pnpm --filter @learning/sdk exec vitest run tests/zhs-auth-crypto.test.ts` → 19/19、exit 0；`pnpm --filter @learning/cli exec vitest run tests/auth-ui.test.ts tests/qr-terminal.test.ts` → 4/4、exit 0，含真实 PTY PNG 二维码展示与机器输出隔离。
 - 未运行/缺口：未替用户进行真实扫码、平台登录或读写，未改动账号数据或命令链接，未推送远端；前次 E2E 独立无锁文件安装所缺 pdf-lib 缓存元数据仍是未通过项，本轮没有重复该无变化检查。
 - 下一当前任务：用户使用现有 `learning` 命令进行真机测试；收到反馈后仅处理相关问题，不自动执行其他 PLAN 项或延期 Web。
+
+
+### 2026-10-12 · 微信实际 JPEG 与 wxTransit 凭据交换（用户指定修复，离线完成）
+
+- 用户第二次截图仍显示文件并报 `WeChat exchange did not set CASLOGC`。用户明确授权一次真实二维码诊断并扫码确认，随后要求继续研究。复用了隔离 worktree `/Users/uu/.codex/worktrees/zhs-login-qr/learning`、分支 `codex/zhs-login-qr`，未修改用户账号数据。子代理负责 CLI 图片展示，因使用额度限制中止后由主代理完成审查及整合。
+- 当次实测：二维码实际为 JPEG（470×470、47,045 bytes）；OAuth 回调 302 → wxTransit/0 页面 200，没有 CASLOGC。user 域仅出现 acw_tc/INGRESSCOOKIE/JSESSIONID/SERVERID；Cookie 值、cacheId/code/pwd 均未保存到源码/文档或公开日志。隔离诊断到同一错误后停止，不把“手机确认”称为 CLI 登录完成。
+- 修复：SDK 按文件魔数发布 png/jpeg DTO，contracts 同步。按当前官网公开脚本补齐 user/cache → 必要时 isNewUser → POST code/skipSet → passport/login → onlineservice 重定向；CookieJar 保留域/路径。锁定、新账号需绑定、缺认证或跨学校需选择均保持人工闸门，不随意选身份；状态或 pwd 缺失严格失败。OAuth code/skipSet/once-password 请求均按单次消费处理，响应丢失只报 UNCERTAIN、不自动重发。CASLOGC 保留于加密会话，公开 SessionView 只提供解析出的 UUID 或 null，在线身份仍须 probe。
+- CLI 修复：jpeg-js 0.4.4 / jsqr 1.4.0 精确固定；PNG/JPEG 在 CLI 解码为 RGBA，再把二维码原始字节作为 qrcode 的 byte segment 编码为终端矩阵，保留 4-module quiet zone、固定黑白半块字符。JSON/非交互/显式 qr-file 延续文件元数据及清理规则，fallback 后缀与真实格式一致。图片 bytes/pixels/JPEG 解码内存有界，不导入 SDK/root/public。
+- 文件：SDK providers/zhs/auth.ts、types/models.ts、tests/zhs-auth-crypto.test.ts、tests/helpers/replay.ts、合成 wechat-qr fixture；CLI commands/login.ts、qr-terminal.ts、图片库声明、auth-ui/qr-terminal 测试及公开 QR 图片生成 helper；CLI package.json/pnpm-lock.yaml；docs/contracts.d.ts、protocol-evidence.md、toolchain.md、PROGRESS.md。真实二维码没有作为测试 fixture 入库。
+- 先红后绿：`vitest run tests/zhs-auth-crypto.test.ts` 初次 transit 测试 5/24 失败（exit 1），正例复现同一 CASLOGC 错误；随后 JPEG 类型断言也按预期失败。修复后的 zhs-auth + auth-flow 48/48（exit 0），覆盖正常单学校、无手机号旧账号、新账号绑定、锁定、缺认证、同校多角色、跨学校、缺 pwd，以及三个凭据消费端响应丢失不重放。SDK 完整 31 files / 258 tests 通过（exit 0）。
+- 终端验证：公开合成 JPEG 有缩放、非整数 module pitch 和中心 logo；真实 PTY 走 JPEG/PNG + 当前 wxTransit 完整重定向链，验证成功结束、无需文件、扫码内容一致及 JSONL 不泄露 QR/code/pwd/cookie。非 UTF-8 二进制 QR 逐字节回读断言通过。初次 CLI 全套两条新增测试错误比较了文本字段（108/110，exit 1），已改为 binaryData 逐字节比较；坐标元组声明修正后严格类型通过，未删断言/skip/放宽 schema。
+- 已授权真实 JPEG 在本机一次性 harness 中回读：终端宽 45 列、内容与原 JPEG 的 binaryData 相同，exit 0，只输出尺寸/布尔值；真实图片、诊断 harness 和官网临时脚本已清理，dist 无诊断材料，打包不携带登录二维码。
+- 实际环境 Node v24.11.1 / pnpm 11.19.0。命令均显式前置固定 Node PATH：`pnpm install --offline --frozen-lockfile --ignore-scripts` → exit 0；`pnpm --filter @learning/sdk test` → 258/258，exit 0；CLI test 中 SDK/CLI 构建 → exit 0；最终 `pnpm --filter @learning/cli exec vitest run` → 110/110，exit 0；最终 `pnpm typecheck` / `pnpm lint` / boundaries / source-lock / `git diff --check` → exit 0。
+- 尚未通过：`pnpm test:e2e` → 6/7，exit 1；无 lockfile 的独立 packed consumer 在离线依赖解析阶段缺本机 npmmirror 的 `@clack/prompts@1.8.1` 元数据。它与固定锁文件的工作区安装不同，未跳过或伪称通过。官方公开源码说明后半链，不是修复后真机 CASLOGC 已获取；用户已休息，未再生成新二维码要求扫码，也没有平台学习/答题/发帖/交卷操作。
+- 下一当前事项：沿用户既有授权启用本地修复版，然后等待人工新扫码验收智慧树完整登录。没有推进其他 PLAN 任务或 Web。

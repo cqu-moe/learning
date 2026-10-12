@@ -1,6 +1,7 @@
 declare module 'qrcode' {
+  type QrByteSegment = { data: string | Uint8Array; mode: 'byte' };
   const qrcode: {
-    create(value: string, options?: { errorCorrectionLevel?: 'L' | 'M' | 'Q' | 'H' }): {
+    create(value: string | QrByteSegment[], options?: { errorCorrectionLevel?: 'L' | 'M' | 'Q' | 'H' }): {
       modules: { size: number; data: Uint8Array };
     };
     toBuffer(value: string, options: { type: 'png'; margin?: number; scale?: number }): Promise<Buffer>;

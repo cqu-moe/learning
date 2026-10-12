@@ -79,7 +79,7 @@ describe('zhs native qr login (T10, Z02)', () => {
 });
 
 describe('zhs default WeChat QR API flow', () => {
-  async function beginWechat(body: string, code: string | null, includeWaiting = false) {
+  async function beginWechat(body: string, code: string | null, includeWaiting = false, configure?: (fixture: ReturnType<typeof loadFixture>, service: string) => void, responseLossPath?: string) {
     const fixture = loadFixture('zhs/wechat-qr');
     const service = 'https://onlineservice-api.zhihuishu.com/gateway/f/v1/login/gologin?fromurl=https://onlineweb.zhihuishu.com/onlinestuh5';
     const redirect = `https://user.zhihuishu.com/zhsuser/oauth/weixin/wxLogin?service=${encodeURIComponent(service)}`;
@@ -88,11 +88,19 @@ describe('zhs default WeChat QR API flow', () => {
     for (const [index, row] of fixture.interactions.slice(2, 5).entries()) row.request.query = { uuid: 'WXUUID1', _: String(1728000000000 + index * 2000) };
     fixture.interactions[4]!.response.body = body;
     fixture.interactions[5]!.request.query = { service, code: code ?? '', state: 'https://login.zhihuishu.com/wxTransit/0' };
+    configure?.(fixture, service);
     if (!includeWaiting) {
       fixture.interactions.splice(2, 2);
       fixture.interactions[2]!.request.query = { uuid: 'WXUUID1', _: '1728000000000' };
     }
-    const transport = new FakeTransport();
+    class ResponseLossTransport extends FakeTransport {
+      override async fetch(request: Request): Promise<Response> {
+        const response = await super.fetch(request);
+        if (new URL(request.url).pathname === responseLossPath) throw new TypeError('fixture response lost');
+        return response;
+      }
+    }
+    const transport = new ResponseLossTransport();
     transport.scriptInteractions(code === null ? fixture.interactions.slice(0, -1) : fixture.interactions);
     const clock = new FakeClock();
     const runtime: Runtime = { transport, clock, state: new MemoryStateStore(), masterKey: new Uint8Array(32).fill(9),
@@ -116,14 +124,112 @@ describe('zhs default WeChat QR API flow', () => {
       const events = [];
       for await (const event of flow.events) events.push(event);
       expect(view.identityVerified).toBe(false);
-      expect(view.platformUserId).toContain('uuid');
+      expect(view.platformUserId).toBe('u1');
       expect(events.map(event => event.type)).toEqual(includeWaiting ? ['qr', 'waiting', 'scanned', 'exchanging', 'authenticated'] : ['qr', 'waiting', 'exchanging', 'authenticated']);
       expect(JSON.stringify(events)).not.toContain(code);
+      expect(JSON.stringify(events)).not.toContain('%7B%22uuid');
       expect(await readSession(runtime.state, runtime.masterKey, scope)).toMatchObject({ generation: view.generation });
       transport.assertNoExtraScripts();
     } finally {
       await client.close();
     }
+  });
+
+  it('publishes the actual JPEG image format from the WeChat endpoint', async () => {
+    const { client, flow, transport } = await beginWechat("window.wx_errcode=405;window.wx_code='CODE1';", 'CODE1');
+    try {
+      await flow.result;
+      const events = [];
+      for await (const event of flow.events) events.push(event);
+      expect(events[0]).toMatchObject({ type: 'qr', qr: { type: 'jpeg' } });
+      transport.assertNoExtraScripts();
+    } finally { await client.close(); }
+  });
+
+  async function beginTransit(options: { locked?: boolean; hasMobile?: boolean; hasCertify?: boolean; missingPwd?: boolean; isNew?: boolean; schools?: 'same' | 'different'; lostAt?: 'oauth' | 'skipSet' | 'passport' } = {}) {
+    const responseLossPath = options.lostAt === 'oauth' ? '/zhsuser/oauth/weixin/wxLogin' : options.lostAt === 'skipSet' ? '/zhsuser/login/code/skipSet/CACHE1' : options.lostAt === 'passport' ? '/login' : undefined;
+    return beginWechat("window.wx_errcode=405;window.wx_code='CODE1';", 'CODE1', false, (fixture, service) => {
+      const transitUrl = new URL('https://login.zhihuishu.com/wxTransit/0');
+      transitUrl.searchParams.set('cacheId', 'CACHE1');
+      transitUrl.searchParams.set('isLock', options.locked ? '1' : '0');
+      transitUrl.searchParams.set('service', service);
+      fixture.interactions.at(-1)!.response = { status: 302, headers: {
+        location: transitUrl.toString(), 'set-cookie': ['JSESSIONID=fixture-session; Path=/zhsuser; HttpOnly'] }, body: '' };
+      if (options.lostAt === 'oauth') return;
+      fixture.interactions.push({ request: { method: 'GET', host: 'login.zhihuishu.com', path: '/wxTransit/0',
+        query: { cacheId: 'CACHE1', isLock: options.locked ? '1' : '0', service }, body: '' }, response: { status: 200, body: '<html><title>登录中心</title></html>' } });
+      if (options.locked) return;
+      const headers = { origin: 'https://login.zhihuishu.com', referer: 'https://login.zhihuishu.com/',
+        'content-type': 'application/json;charset=UTF-8', cookie: 'JSESSIONID=fixture-session' };
+      fixture.interactions.push({ request: { method: 'GET', host: 'user.zhihuishu.com', path: '/zhsuser/user/cache/CACHE1', headers, body: '' },
+        response: { status: 200, body: { status: 200, rt: { mobile: options.hasMobile === false ? null : 'fixture-mobile',
+          certifyList: options.hasCertify === false ? [] : options.schools ? [{ schoolId: 'fixture-school', role: 1 }, { schoolId: options.schools === 'same' ? 'fixture-school' : 'other-school', role: 2 }] : [{ schoolId: 'fixture-school', role: 1 }] } } } });
+      if (options.hasMobile === false) fixture.interactions.push({ request: { method: 'GET', host: 'user.zhihuishu.com', path: '/zhsuser/login/isNewUser/CACHE1', headers, body: '' },
+        response: { status: 200, body: { status: 200, rt: options.isNew ?? false } } });
+      if (options.hasCertify === false || options.isNew || options.schools === 'different') return;
+      fixture.interactions.push({ request: { method: 'POST', host: 'user.zhihuishu.com', path: '/zhsuser/login/code/skipSet/CACHE1', headers, body: '' },
+        response: { status: 200, body: { status: 1, rt: options.missingPwd ? {} : { pwd: 'ONCE1' } } } });
+      if (options.missingPwd || options.lostAt === 'skipSet') return;
+      fixture.interactions.push({ request: { method: 'GET', host: 'passport.zhihuishu.com', path: '/login',
+        query: { pwd: 'ONCE1', service }, headers: { referer: 'https://login.zhihuishu.com/' }, body: '' }, response: { status: 302,
+        headers: { 'set-cookie': ['CASLOGC=%7B%22uuid%22%3A%22u1%22%7D; Domain=zhihuishu.com; Path=/; Secure'],
+          location: `${service}&ticket=fixture-ticket` }, body: '' } });
+      if (options.lostAt === 'passport') return;
+      fixture.interactions.push({ request: { method: 'GET', host: 'onlineservice-api.zhihuishu.com', path: '/gateway/f/v1/login/gologin',
+        query: { fromurl: 'https://onlineweb.zhihuishu.com/onlinestuh5', ticket: 'fixture-ticket' },
+        headers: { cookie: 'CASLOGC=%7B%22uuid%22%3A%22u1%22%7D' }, body: '' }, response: { status: 200, body: {} } });
+    }, responseLossPath);
+  }
+
+  it.each([true, false])('completes wxTransit cache → one-time password → passport with hasMobile=%s', async hasMobile => {
+    const { client, flow, runtime, transport } = await beginTransit({ hasMobile });
+    try {
+      expect(await flow.result).toMatchObject({ platformUserId: 'u1', identityVerified: false });
+      const events = [];
+      for await (const event of flow.events) events.push(event);
+      expect(JSON.stringify(events)).not.toMatch(/CACHE1|ONCE1|fixture-ticket|CASLOGC|CODE1/);
+      expect(await readSession(runtime.state, runtime.masterKey, scope)).not.toBeNull();
+      expect(transport.calls.find(call => new URL(call.url).hostname === 'login.zhihuishu.com')?.headers.cookie).toBeUndefined();
+      transport.assertNoExtraScripts();
+    } finally { await client.close(); }
+  });
+
+  it('accepts multiple roles at one school without inventing a school selection', async () => {
+    const { client, flow, transport } = await beginTransit({ schools: 'same' });
+    try {
+      expect(await flow.result).toMatchObject({ platformUserId: 'u1', identityVerified: false });
+      transport.assertNoExtraScripts();
+    } finally { await client.close(); }
+  });
+
+  it.each([
+    { options: { locked: true }, code: 'INTERACTION_REQUIRED' },
+    { options: { hasCertify: false }, code: 'INTERACTION_REQUIRED' },
+    { options: { hasMobile: false, isNew: true }, code: 'INTERACTION_REQUIRED' },
+    { options: { schools: 'different' as const }, code: 'INTERACTION_REQUIRED' },
+    { options: { missingPwd: true }, code: 'PROTOCOL' },
+  ])('stops incomplete wxTransit $options without publishing or saving credentials', async ({ options, code }) => {
+    const { client, flow, runtime, transport } = await beginTransit(options);
+    try {
+      await expect(flow.result).rejects.toMatchObject({ data: { code } });
+      expect(transport.calls.some(call => new URL(call.url).hostname === 'passport.zhihuishu.com')).toBe(false);
+      expect(await readSession(runtime.state, runtime.masterKey, scope)).toBeNull();
+      transport.assertNoExtraScripts();
+    } finally { await client.close(); }
+  });
+
+  it.each(['oauth', 'skipSet', 'passport'] as const)('does not replay a consumed %s credential after response loss', async lostAt => {
+    const { client, flow, runtime, transport } = await beginTransit({ lostAt });
+    try {
+      await expect(flow.result).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+      const path = lostAt === 'oauth' ? '/zhsuser/oauth/weixin/wxLogin' : lostAt === 'skipSet' ? '/zhsuser/login/code/skipSet/CACHE1' : '/login';
+      expect(transport.calls.filter(call => new URL(call.url).pathname === path)).toHaveLength(1);
+      expect(await readSession(runtime.state, runtime.masterKey, scope)).toBeNull();
+      const events = [];
+      for await (const event of flow.events) events.push(event);
+      expect(JSON.stringify(events)).not.toMatch(/CACHE1|ONCE1|fixture-ticket|CASLOGC|CODE1/);
+      transport.assertNoExtraScripts();
+    } finally { await client.close(); }
   });
 
   it.each([

@@ -10,6 +10,7 @@ export interface ScriptedResponse {
   status: number;
   headers?: Record<string, string | string[]>;
   body?: Json | string;
+  base64?: string;
 }
 
 export interface FixtureInteraction {
@@ -138,11 +139,13 @@ export class FakeTransport implements Transport {
     }
     const scriptedHeaders = headersInit(response.headers);
     return new Response(
-      response.body === undefined
-        ? null
-        : typeof response.body === 'string'
-          ? response.body
-          : JSON.stringify(response.body),
+      response.base64 !== undefined
+        ? Buffer.from(response.base64, 'base64')
+        : response.body === undefined
+          ? null
+          : typeof response.body === 'string'
+            ? response.body
+            : JSON.stringify(response.body),
       scriptedHeaders === undefined ? { status: response.status } : { status: response.status, headers: scriptedHeaders },
     );
   }

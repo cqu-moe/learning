@@ -77,3 +77,25 @@ E01（ykt 考试 fixtures）、E02（学堂分页终止）、E03（ykt lesson �
 ### 2026-10-12 · 智慧树微信确认响应的有限文本解析（离线回归）
 
 截图中的 `WeChat confirmed without a safe code` 由 SDK 在读取 `wx_errcode=405` 后未匹配 `wx_code` 时主动抛出；不表示用户需要输入验证码。固定参考 `.reference/zhs-cli/src/client.py::wx_qr_poll` 与原 SDK 均仅接受单引号及 `[A-Za-z0-9]+`。合成 fixture 经 SDK `auth.begin` 实际重放：仅将 code 改为含 `-`、`_` 或双引号便能复现同一错误；赋值空白另触发 unexpected status。已改为有限赋值语法，兼容单双引号、赋值空白与 `[A-Za-z0-9_-]+`，仍拒绝空值、不配对引号、非法字符及字符串拼接表达式；不执行响应脚本，不将 code 放入公开事件。缺少用户当次微信轮询响应，不能断言具体是哪一种格式，也未做真实扫码、Cookie 交换或登录验收。
+
+### 2026-10-12 · 已授权微信扫码诊断：JPEG 与 wxTransit 登录链
+
+用户明确授权生成一次真实二维码并自行扫码，只记录图片格式、HTTP 状态和 Cookie 名称/域/路径，不记录值。隔离 CookieJar 的诊断复现了第二张截图的 `AUTH_REQUIRED WeChat exchange did not set CASLOGC`：
+
+- 微信二维码响应 HTTP 200，Content-Type `image/jpeg`，47,045 bytes，JPEG 魔数 `FF D8 FF`。旧实现将它标为 PNG，PNG-only 终端渲染失败后回退为文件。这是当次“仍给文件”的实际原因。
+- 用户确认后，OAuth `wxLogin` 返回 302；user.zhihuishu.com 的 Set-Cookie 仅见 `acw_tc`、`INGRESSCOOKIE`、`JSESSIONID`、`SERVERID`。其中 JSESSIONID 为 `/zhsuser`，其余为 `/`，均 hostOnly。重定向到 `https://login.zhihuishu.com/wxTransit/0`，query 只有名称 `cacheId/isLock/service` 被记录；页面返回 200 text/html，未设置 CASLOGC。
+- 在 user/login/passport/onlineservice 四个源查 Cookie 名称，均未见 CASLOGC，因此不是仅仅从错误域读 Cookie。诊断失败后停止，没有写入用户 profiles/session，也没有进行课程操作。
+
+匿名只读下载当前官网公开 HTML 和脚本，静态分析调用链（不执行第三方脚本）：
+
+| 官方脚本 | SHA256 |
+|---|---|
+| `https://login.zhihuishu.com/assets/index-CiBUKrg9.js` | `13ab2f2d1afc0ff711457d86cc281ecbd40ad1a397fa46ec41702649096f1a32` |
+| `https://login.zhihuishu.com/assets/wx-BHV9bcKG.js` | `e3221fe3a90c7325622e80bd260496d15fd3965ac4532fbcdc55ea5bf3afefeb` |
+| `https://login.zhihuishu.com/js/pre-login.js` | `fe626d915bf78c0220387ed2c3ec790de99f464e4232a0638157a6b17ecc8359` |
+
+`/wxTransit/:scene` 的 LOGIN(0) 读取 cacheId/isLock。wx 模块 `f` 调用主模块 `xx`（GET `/zhsuser/user/cache/{cacheId}`），只接受 status 200 + rt；`U` 在 mobile 非空或 `WR`（GET `/zhsuser/login/isNewUser/{cacheId}`，status 200 + boolean rt）返回 false 时继续。certifyList 为空转人工认证；同账号跨学校先 agencyChoose，SDK 保留人工闸门，不自动选第一个。正常单学校走 `vx`（POST `/zhsuser/login/code/skipSet/{cacheId}`，null body），status 1 时取得 rt.pwd，再由 UserStore `goOnceLogin → LoginDirectly` 跳转 `//passport.zhihuishu.com/login?pwd=...&service=...`。
+
+主模块的 `He/OA` 分别为 axios post/get；实例 `Xg` 使用 `Content-Type: application/json;charset=UTF-8` 与 withCredentials。skipSet 的 null body 不触发数据加密分支。SDK 沿用既定 onlineservice canonical service，通过完整 CookieJar 保留 user 域 `/zhsuser` 会话、passport/domain Cookie 和服务端重定向；没有迁移官网的埋点或其他产品跳转。
+
+REA 静态分析完成但首个结果超工具传输上限，改读 retained-evidence 摘要确认 2 个 JS 均已解析、无语法失败；语义覆盖为 PARTIAL（节点上限），故具体网络方法/路径/状态分支又通过本地 TypeScript AST 和精确源码片段复核。该证据是当前官方公开源码，不是修复后整条认证的真机成功记录。修复后的后半链需要下一次人工扫码验收；不把严格合成 fixture 的通过当成真实 CASLOGC 已获取。
