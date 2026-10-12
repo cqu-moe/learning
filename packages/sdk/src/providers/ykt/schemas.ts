@@ -34,8 +34,11 @@ export const UserinfoWire = z.object({
   ]).optional(),
 });
 
-export const CourseListWire = z.object({
+export const CourseListEnvelopeWire = z.object({
   errcode: z.number(),
+});
+
+export const CourseListWire = CourseListEnvelopeWire.extend({
   data: z.object({
     list: z.array(
       z.object({

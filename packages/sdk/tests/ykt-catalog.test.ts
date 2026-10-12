@@ -3,7 +3,7 @@ import { createLearningClient } from '../src/index.js';
 import { keyOfCourse } from '../src/types/refs.js';
 import { parseKgChapterPayload } from '../src/providers/ykt/catalog.js';
 import { MemoryStateStore } from './helpers/memory.js';
-import { FakeClock, replay } from './helpers/replay.js';
+import { FakeClock, FakeTransport, replay } from './helpers/replay.js';
 import type { Runtime } from '../src/runtime/types.js';
 import type { AuthEvent, Outline, OutlineNode, Resource, Scope } from '../src/public.js';
 
@@ -102,6 +102,27 @@ describe('ykt catalog (T06)', () => {
     });
     expect(page.items[0]?.ref.native).toEqual({ kind: 'ykt', classroomId: '28930736' });
     expect(page.items[0]?.ref.key).toBe(keyOfCourse({ scope, key: 'x', native: { kind: 'ykt', classroomId: '28930736' } }));
+  });
+
+  it.each([
+    { status: 401, body: 'authentication required', code: 'AUTH_EXPIRED' },
+    { status: 200, body: { errcode: 401002 }, code: 'AUTH_EXPIRED' },
+    { status: 200, body: { errcode: 700 }, code: 'PROTOCOL' },
+    { status: 200, body: { errcode: 0 }, code: 'PROTOCOL' },
+    { status: 200, body: { errcode: '0', data: { list: [] } }, code: 'PROTOCOL' },
+    { status: 403, body: { errcode: 0, data: { list: [] } }, code: 'PROTOCOL' },
+  ])('rejects course-list HTTP $status / $body as $code', async ({ status, body, code }) => {
+    const transport = new FakeTransport();
+    transport.scriptInteractions([{
+      request: { method: 'GET', host: 'www.yuketang.cn', path: '/v2/api/web/courses/list', query: { identity: '2' } },
+      response: { status, body },
+    }]);
+    const client = createLearningClient({ scope, runtime: createRuntime(transport) });
+    try {
+      await expect(client.catalog.courses()).rejects.toMatchObject({ data: { code } });
+      expect(transport.requests).toHaveLength(1);
+      transport.assertNoExtraScripts();
+    } finally { await client.close(); }
   });
 
   it('resolveCourse parses studentLog URLs', async () => {

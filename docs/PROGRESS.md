@@ -570,3 +570,15 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 本轮文件：packages/sdk/src/providers/zhs/auth.ts、tests/zhs-auth-crypto.test.ts；apps/cli/tests/{auth-ui,e2e}.test.ts；本进度记录。后续增量审查针对预算和打包验收修正；最终 PR 状态以关联 PR 为准。
 - 实际 Node v24.11.1 / pnpm 11.19.0，worktree 执行 pnpm install --offline --frozen-lockfile --ignore-scripts、source-lock、boundaries、pnpm lint、pnpm typecheck、pnpm test、pnpm build、pnpm test:e2e、git diff --check 全部 exit 0：SDK 260/260、CLI 111/111、E2E 7/7。原独立安装证据缺口已解决，未跳过测试；聚焦命令未选中的用例不计通过。
 - 未运行项：新的平台扫码、在线身份 probe、学习/答题/发帖/交卷、Web/云部署。Cookie、真实二维码及临时协议材料未纳入提交。后续仅按用户授权在远端检查通过时合并并同步本地命令；合并后无新增开发任务，不推进延期 Web 或其他 PLAN 项。
+
+### 2026-10-12 · run 整门课程误报 INVALID_INPUT（用户指定修复，离线完成）
+
+- 工作区：主目录 main `d02167f` 干净时新建 `.worktrees/run-input`，分支 `codex/fix-run-input`。此次只修复雨课堂课程查询的错误分类与 CLI 恢复提示，没有推进其他 PLAN 项。
+- 根因证据：用户明确授权一次只读课程列表诊断。现有加密会话复制至 0700 临时目录，文件保持 0600，仅允许 GET `/v2/api/web/courses/list?identity=2`；响应 HTTP 401、errcode 401002，没有 data。旧 SDK 先校验成功响应，ZodError 被 CLI 误报为 INVALID_INPUT。另一次纯离线检查确认本机会话中保存的 sessionid 已过期，实际 URL 的 CookieJar 输出不再包含 sessionid；没有打印 Cookie 值、个人原始数据或密钥，所有临时快照和诊断脚本均自动清理，原账号数据未修改。
+- 实施：`packages/sdk/src/providers/ykt/{catalog,schemas}.ts` 在成功数据校验之前识别 HTTP 401 与业务 401002，返回 AUTH_EXPIRED。其他错误 envelope、非成功 HTTP 和缺损成功数据返回 PROTOCOL；课程成功 schema 继续严格校验。`apps/cli/src/output.ts` 的过期提示给出 `learning login --profile <账号>`，不自动注销、重放请求或发起扫码。
+- 回归：`apps/cli/tests/catalog.test.ts` 用真实 PTY 重放账号选择 → 整门课程，覆盖 pretty/plain 的正常课程选择与认证失效提示，验证取消/失败不创建学习任务；请求方法、URL、query、Cookie、空 body 和未登记请求均由严格 fixture 检查。`packages/sdk/tests/ykt-catalog.test.ts` 补充非 JSON 401、HTTP 200 认证错误、其他业务错误、错误字段类型、缺少成功数据和非成功 HTTP 的边界。
+- 先红后绿：`node node_modules/vitest/vitest.mjs run tests/catalog.test.ts -t 'handles whole-course selection'` 修前 2/4（exit 1），两条失效会话用例复现截图同一 INVALID_INPUT；修后 4/4（exit 0）。SDK `vitest run tests/ykt-catalog.test.ts -t 'rejects course-list'` 修前 0/6（exit 1），修后 ykt-catalog + auth-flow 31/31（exit 0）。初稿 PTY 等待单账号自动选择、Cookie 测试使用错误的 hostOnly 域，均已修正测试输入后才建立上述有效红测，未将夹具错误计为根因。
+- 环境：所有产品命令使用 `/Users/uu/.nvm/versions/node/v24.11.1/bin/node`，pnpm 11.19.0，依赖版本未变。新 worktree 的 `pnpm install --offline --frozen-lockfile --ignore-scripts` 因本机 store 缺 eslint tarball exit 1；在已有目录上覆盖拷贝依赖又遇到符号链接冲突，pnpm 自动依赖检查 exit 1。随后仅重建本次新 worktree 的忽略依赖目录，完整复制主目录已安装的锁定依赖，并以直接 Node 调用执行真实构建/检查；未删除主目录依赖或放宽 lockfile。
+- 最终实际检查：两包 `node node_modules/typescript/bin/tsc -p <包>/tsconfig.build.json` 构建、`tsc -p <包>/tsconfig.json` 类型检查、`node node_modules/eslint/bin/eslint.js .` → exit 0。SDK `node node_modules/vitest/vitest.mjs run` → 31 files / 266 tests，exit 0；CLI 首次默认并发全套 113/115，两条既有进程测试超过 5 秒（exit 1），未修改断言或 timeout；`vitest run --maxWorkers=2` → 14 files / 115 tests，exit 0。`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，含独立 tarball 消费者 frozen/offline 安装。source-lock、boundaries、`git diff --check` → exit 0。
+- 未运行项：重新扫码登录、修后真实课程读回、学习/答题/发帖/交卷、付费模型、推送与云部署。当前已确认旧会话过期，代码修复不能替代人工扫码；下一事项是启用修复到本机命令，再由用户执行 `learning login --profile uu-ykt`。不自动推进 T27–T30 或 Web。
+- 本地交付授权：首次自动审批以缺少明确提交授权为由拒绝 Git 提交，命令未执行。用户随后明确选择“允许本地提交并启用”，授权本地提交、快进合入 main 与重建现有命令；不推送远端。实际启用结果另记于下方。

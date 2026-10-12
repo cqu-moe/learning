@@ -8,6 +8,7 @@ import { JobRunner } from '../../../packages/sdk/src/services/jobs.js';
 import { writeSession } from '../../../packages/sdk/src/session/store.js';
 import { SessionCookieJar } from '../../../packages/sdk/src/http/client.js';
 import { sha256Hex } from '../../../packages/sdk/src/types/sha256.js';
+import type { Fixture } from '../../../packages/sdk/tests/helpers/replay.js';
 
 const cli = resolve(import.meta.dirname, '../dist/index.js');
 const preload = resolve(import.meta.dirname, 'fixture-fetch.mjs');
@@ -85,6 +86,47 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(outline.code).toBe(0);
     expect(JSON.parse(outline.stdout).data.value.roots.length).toBeGreaterThan(0);
   });
+
+  it.each([
+    { format: 'pretty', expired: false },
+    { format: 'plain', expired: false },
+    { format: 'pretty', expired: true },
+    { format: 'plain', expired: true },
+  ])('handles whole-course selection with format=$format expired=$expired', ({ format, expired }) => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'beta', '--platform', 'zhs']).code).toBe(0);
+    const cookieFile = resolve(dir, 'cookies.json');
+    writeFileSync(cookieFile, JSON.stringify([{ name: 'sessionid', value: 'fixture-session', domain: 'www.yuketang.cn' }]));
+    expect(run(dir, ['login', '--profile', 'alpha', '--import', cookieFile]).code).toBe(0);
+    const fixture = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/courses-list.json'), 'utf8')) as Fixture;
+    if (expired) fixture.interactions[0]!.response = { status: 401, body: { errcode: 401002 } };
+    const fixtureFile = resolve(dir, 'course-selection.json');
+    writeFileSync(fixtureFile, JSON.stringify(fixture));
+    const result = spawnSync('python3', [resolve(import.meta.dirname, 'helpers/terminal-driver.py'), JSON.stringify({
+      argv: [process.execPath, '--import', preload, cli, '--home', dir, 'run', '--output-format', format],
+      env: { LEARNING_FIXTURE_FILE: fixtureFile, LEARNING_ASSERT_COOKIE: 'sessionid=fixture-session' },
+      steps: [
+        { wait: '选择账号', send: format === 'pretty' ? '\r' : '1\n' },
+        { wait: '选择操作范围', send: format === 'pretty' ? '\r' : '1\n' },
+        ...(expired ? [] : [{ wait: '学术写作', send: '\u0003' }]),
+      ],
+    })], { encoding: 'utf8', timeout: 15_000 });
+    expect(result.status, result.stderr).toBe(0);
+    const data = JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
+    expect(data.screen).not.toContain('INVALID_INPUT');
+    if (expired) {
+      expect(data.screen).toContain('AUTH_EXPIRED');
+      expect(data.screen).toContain('learning login --profile');
+      expect(data.steps).toBe(2);
+    } else {
+      expect(data.screen).toContain('学术写作');
+      expect(data.steps).toBe(3);
+    }
+    expect(data.code).toBe(3);
+    expect(JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs).toEqual([]);
+  }, 20_000);
 
   it('runs default ZHS WeChat QR entirely through allowlisted API requests', () => {
     const dir = home();
