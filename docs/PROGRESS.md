@@ -601,3 +601,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 环境 Node v24.11.1 / pnpm 11.19.0，复用主目录已安装的锁定依赖。实际命令均使用固定 Node：两包 `node node_modules/typescript/bin/tsc -p <package>/tsconfig.build.json` 和 `tsconfig.json`、`node node_modules/eslint/bin/eslint.js .` → exit 0。SDK `node node_modules/vitest/vitest.mjs run --maxWorkers=2` → 31 files / 268 tests，exit 0。CLI 最终同命令 → 15 files / 125 tests，exit 0；`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，包含独立 tarball 消费者 frozen/offline 安装。source-lock、boundaries、`git diff --check` → exit 0。
 - 两路独立评审后已修复标题缓存清理、只给比例的平台估时、异常状态视频信息丢失、空白标题回退，并保留原 state 事件回调语义。最后一轮全套 CLI 和 E2E 在这些修复之后执行。
 - 未运行：平台真实登录/学习/答题/发帖/交卷、付费模型、推送和云部署。数据全部使用离线合成 fixture；课程名未缓存且平台解析只返回定位信息时显示“课程名称暂不可用”。下一事项仅本机启用此版本并由用户查看实际终端效果，不自动发起平台操作。
+
+### 2026-10-13 · CLI 实时进度已启用到本机
+
+- 以现有 Git 身份创建本地提交 `1ecb5b3`；主目录 main 干净时快进合入 `codex/cli-study-ux`。固定 Node v24.11.1 / pnpm 11.19.0 下，主目录 `pnpm build` → exit 0。
+- `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`；CLI 116 个、SDK 236 个构建文件的 SHA256 与已验证 worktree 全部一致。`learning --version` → 0.2.0，exit 0；未把未变的版本号作为启用证据。
+- 主目录 `pnpm --filter @learning/cli exec vitest run tests/progress.test.ts tests/wake.test.ts tests/profile.test.ts --maxWorkers=2` → 14/14，exit 0，包含真实 PTY、暂停恢复、估计进度及账号缓存删除。
+- 账号数据和命令链接未改动，未推送远端。新界面在下次启动命令时生效；本次请求完成，等待用户实际使用反馈，不自动执行平台操作或其他 PLAN 任务。
