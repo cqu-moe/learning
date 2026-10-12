@@ -2,7 +2,8 @@ import { LearningError } from '../../types/errors.js';
 import type { ActionInput, ItemResult, Job, Progress, Receipt } from '../../types/models.js';
 import type { ResourceRef } from '../../types/refs.js';
 import type { SessionHttp } from '../../http/client.js';
-import type { Clock } from '../../runtime/types.js';
+import type { Clock, Options } from '../../runtime/types.js';
+import type { YktDurationResolver } from './duration.js';
 import { fetchLeafInfo } from './resources.js';
 import { fetchClassroomContext } from './catalog.js';
 import { fetchEmbeddedList } from './homework-write.js';
@@ -12,8 +13,8 @@ import type { JobRunner } from '../../services/jobs.js';
 export interface YktStudyIdentity { courseId: string; userId: string; skuId: string; ccid: string; exerciseId: string | null }
 type YktObserved = { kind: 'article'; title: string | null; progress: Progress; skuId: string | null } | { kind: 'video'; title: string | null; progress: Progress; identity: YktStudyIdentity };
 
-/** Read the platform's watch state; missing IDs/duration stay unknown. */
-export async function yktReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef): Promise<YktObserved> {
+/** Read watch state; a media probe can supply duration without changing server progress. */
+export async function yktReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef, resolveDuration?: YktDurationResolver, options?: Options): Promise<YktObserved> {
   if (resource.native.kind !== 'ykt' || resource.course.native.kind !== 'ykt') throw new LearningError({ code: 'INVALID_INPUT', message: 'Yuketang progress needs a Yuketang video ref', retryAfterMs: null, operationId: null });
   const classroomId = resource.course.native.classroomId;
   const videoId = resource.native.leafId;
@@ -34,7 +35,8 @@ export async function yktReadProgress(http: SessionHttp, clock: Clock, resource:
   const observed = parseWatchProgress(payload, videoId);
   if (![observed.rate, observed.videoLength, observed.lastPoint].every((value) => Number.isFinite(value) && value >= 0) || observed.rate > 1) throw new LearningError({ code: 'PROTOCOL', message: 'watch progress numbers are invalid', retryAfterMs: null, operationId: null });
   const leafDuration = Number(leaf?.content_info?.media?.duration ?? 0);
-  const durationSeconds = observed.videoLength > 0 ? observed.videoLength : leafDuration > 0 ? leafDuration : null;
+  let durationSeconds = observed.videoLength > 0 ? observed.videoLength : Number.isFinite(leafDuration) && leafDuration > 0 ? leafDuration : null;
+  if (durationSeconds === null && !observed.completed && resolveDuration) durationSeconds = await resolveDuration(http, identity.ccid, options);
   const title = typeof leaf?.name === 'string' && leaf.name !== '' ? leaf.name : null;
   return { kind: 'video', title, identity, progress: { resource, serverCompleted: observed.completed, serverFraction: observed.rate, serverSeconds: observed.lastPoint, durationSeconds, observedAtMs: clock.nowMs() } };
 }
@@ -50,7 +52,7 @@ function parseCursor(value: string | null): StudyCursor | null {
 }
 
 /** One wall-clock heartbeat at most per advance; never backfills time spent offline. */
-export async function advanceYktStudy(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; clock: Clock }): Promise<Job> {
+export async function advanceYktStudy(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; clock: Clock; resolveDuration?: YktDurationResolver; options?: Options }): Promise<Job> {
   const { job, action, runner, http, clock } = input;
   const next = action.resources.find((resource) => !job.items.some((item) => item.key === resource.key));
   if (next === undefined) return runner.advance(job.id, async () => ({ completed: true }));
@@ -61,7 +63,16 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
       return { completed: items.length === action.resources.length, items, ...(state === 'needs-input' ? { status: 'needs-input' as const } : {}) };
     };
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'study duration budget expired');
-    const observed = await yktReadProgress(http, clock, next);
+    let observed: YktObserved;
+    try { observed = await yktReadProgress(http, clock, next, input.resolveDuration, input.options); }
+    catch (error) {
+      if (input.options?.signal?.aborted) await runner.pause(job.id);
+      throw error;
+    }
+    if (input.options?.signal?.aborted) {
+      await runner.pause(job.id);
+      return { completed: false };
+    }
     const { progress } = observed;
     if (observed.kind === 'article') {
       if (progress.serverCompleted) return finish('succeeded', 'server completed');
@@ -127,7 +138,7 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
       if (parsed.success === false) throw new LearningError({ code: 'UNCERTAIN', message: 'heartbeat was rejected', retryAfterMs: null, operationId: `heartbeat:${job.id}:${next.key}:${row.sq}` });
     }
     await runner.setPendingOperation(job.id, null);
-    const after = (await yktReadProgress(http, clock, next)).progress;
+    const after = (await yktReadProgress(http, clock, next, input.resolveDuration, input.options)).progress;
     if (after.serverCompleted || (after.serverFraction ?? 0) >= action.settings.targetFraction) return finish('succeeded', after.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
     await runner.emitProgress(job.id, next.key, after.serverFraction ?? 0, { title: observed.title, durationSeconds: after.durationSeconds, serverSeconds: after.serverSeconds });
     await runner.setCursor(job.id, JSON.stringify({ ...sending, awaiting: (after.serverFraction ?? 0) <= baseline, baseline: Math.max(baseline, after.serverFraction ?? 0) }));

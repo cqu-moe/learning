@@ -39,6 +39,7 @@ import { advanceExport } from './services/export-runner.js';
 import { ActionStore } from './services/actions.js';
 import { submitHomeworkProblem, submitEmbeddedAnswer } from './providers/ykt/homework-write.js';
 import { advanceYktStudy, reconcileYktHeartbeat, yktReadProgress } from './providers/ykt/study.js';
+import { createYktDurationResolver } from './providers/ykt/duration.js';
 import { advanceXtxStudy, reconcileXtxHeartbeat, xtxReadProgress, xtxReadStudyIdentity } from './providers/xuetang/study.js';
 import { fetchDiscussionComments, fetchUnitDiscussion, postComment, submitXtxProblem } from './providers/xuetang/homework-write.js';
 import { sha256Hex } from './types/sha256.js';
@@ -146,6 +147,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     return { lessonToken: payload.data.lessonToken, jwt: response.headers.get('set-auth') ?? '' };
   };
   const platform = scope.platform;
+  const resolveYktDuration = createYktDurationResolver(runtime.probeMediaDuration);
   const client: LearningClient = {
     scope,
     capabilities: () => capabilitiesFor(platform),
@@ -255,9 +257,9 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         }
         return asyncUnsupported(platform, `catalog.outline(${course.key})`);
       },
-      progress: async (resource) => {
+      progress: async (resource, options) => {
         if (!ownsScope(resource.course.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
-        if (platform === 'ykt') return { value: (await yktReadProgress(await httpBound(), runtime.clock, resource)).progress, warnings: [] };
+        if (platform === 'ykt') return { value: (await yktReadProgress(await httpBound(), runtime.clock, resource, resolveYktDuration, options)).progress, warnings: [] };
         if (platform === 'xuetang') return { value: await xtxReadProgress(await httpBound(), runtime.clock, resource), warnings: [] };
         if (platform === 'zhs' && resource.native.kind === 'zhs-hike') return { value: await zhsHikeReadProgress(await httpBound(), runtime.clock, resource), warnings: [] };
         if (platform === 'zhs' && resource.native.kind === 'zhs-share') return { value: await zhsShareReadProgress(await httpBound(), runtime.clock, resource), warnings: [] };
@@ -376,7 +378,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       },
     },
     actions: {
-      prepare: async (actionInput) => {
+      prepare: async (actionInput, options) => {
         if (actionInput.kind === 'live.answer' && platform === 'ykt') {
           const job = await assertOwnedJob(actionInput.liveJobId);
           if (job.kind !== 'live' || !['running', 'waiting'].includes(job.status)) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'live job is not active', retryAfterMs: null, operationId: null });
@@ -491,12 +493,12 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           const session = await readSession(runtime.state, runtime.masterKey, scope);
           if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login is required before study', retryAfterMs: null, operationId: null });
           const planResources: typeof actionInput.resources = [];
-          const skipped: string[] = [];
+          const skipped: { key: string; title: string }[] = [];
           for (const resource of actionInput.resources) {
             if (platform === 'ykt') {
-              const observed = await yktReadProgress(await httpBound(), runtime.clock, resource);
+              const observed = await yktReadProgress(await httpBound(), runtime.clock, resource, resolveYktDuration, options);
               if (observed.kind === 'article' && !observed.progress.serverCompleted && observed.skuId === null) throw new LearningError({ code: 'PROTOCOL', message: 'article sku is missing', retryAfterMs: null, operationId: null });
-              if (observed.kind === 'video' && observed.progress.durationSeconds === null && !observed.progress.serverCompleted) { skipped.push(resource.key); continue; }
+              if (observed.kind === 'video' && observed.progress.durationSeconds === null && !observed.progress.serverCompleted) { skipped.push({ key: resource.key, title: observed.title ?? '未命名视频' }); continue; }
               planResources.push(resource);
             } else {
               await xtxReadProgress(await httpBound(), runtime.clock, resource);
@@ -504,11 +506,11 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
               planResources.push(resource);
             }
           }
-          if (skipped.length === actionInput.resources.length) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: `video duration is unknown for ${skipped.join(', ')}; study cannot be planned`, retryAfterMs: null, operationId: null });
+          if (skipped.length === actionInput.resources.length) throw new LearningError({ code: 'INTERACTION_REQUIRED', message: `未能读取 ${skipped.length} 个视频的时长，无法开始：${skipped.slice(0, 5).map(item => item.title).join('、')}${skipped.length > 5 ? '等' : ''}。请在官方网页播放后重试；未将这些视频标记为完成。`, retryAfterMs: null, operationId: null });
           const input = { ...actionInput, resources: planResources };
-          const warnings = skipped.map((key) => ({ code: 'SKIPPED_UNKNOWN_DURATION', message: 'video duration is unknown; play it once in the official web player, then retry', resourceKey: key }));
+          const warnings = skipped.map(({ key }) => ({ code: 'SKIPPED_UNKNOWN_DURATION', message: '未能读取视频时长，本次暂不处理；请在官方网页播放后重试。', resourceKey: key }));
           return actionStore.prepare(input, session.generation, async () => {
-            const job = await jobRunner.create(scope, 'study', { total: input.resources.length, payload: input, generation: session.generation });
+            const job = await jobRunner.create(scope, 'study', { total: input.resources.length, payload: input, generation: session.generation, warnings });
             return { operationId: 'ack', state: 'confirmed', message: 'study job created', result: { jobId: job.id } };
           }, { warnings });
         }
@@ -628,7 +630,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       get: (jobId) => assertOwnedJob(jobId),
       list: (input) => jobRunner.list(input, scope),
       events: async (jobId, afterSequence) => { await assertOwnedJob(jobId); return jobRunner.events(jobId, afterSequence); },
-      advance: async (jobId) => {
+      advance: async (jobId, options) => {
         const job = await assertOwnedJob(jobId);
         if (job.kind === 'live' && platform === 'ykt') {
           const live = liveSessions.get(jobId);
@@ -658,7 +660,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           const saved = ActionInputSchema.parse(await jobRunner.input(jobId));
           if (saved.kind !== 'study') throw new LearningError({ code: 'INTEGRITY', message: 'study job has invalid input', retryAfterMs: null, operationId: jobId });
           const http = await httpBound();
-          return advanceYktStudy({ job, action: saved, runner: jobRunner, http, clock: runtime.clock });
+          return advanceYktStudy({ job, action: saved, runner: jobRunner, http, clock: runtime.clock, resolveDuration: resolveYktDuration, ...(options ? { options } : {}) });
         }
         if (job.kind === 'study' && platform === 'xuetang') {
           const session = await readSession(runtime.state, runtime.masterKey, scope);

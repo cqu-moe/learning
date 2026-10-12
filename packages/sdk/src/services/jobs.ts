@@ -58,10 +58,10 @@ export class JobRunner {
     return next.job;
   }
 
-  async create(scope: Scope, kind: Job['kind'], input: { total: number | null; inputDigest?: string; payload?: Json; generation?: number }): Promise<Job> {
+  async create(scope: Scope, kind: Job['kind'], input: { total: number | null; inputDigest?: string; payload?: Json; generation?: number; warnings?: Job['warnings'] }): Promise<Job> {
     const id = `job-${crypto.randomUUID()}`;
     const now = this.clock.nowMs();
-    const job: Job = { id, scope, kind, status: 'queued', createdAtMs: now, updatedAtMs: now, nextRunAtMs: now, completed: 0, total: input.total, items: [], warnings: [] };
+    const job: Job = { id, scope, kind, status: 'queued', createdAtMs: now, updatedAtMs: now, nextRunAtMs: now, completed: 0, total: input.total, items: [], warnings: input.warnings ?? [] };
     const meta: Meta = { inputDigest: input.inputDigest ?? sha256Hex(JSON.stringify([scope, kind, input.total])), cursor: null, generation: input.generation ?? 1, pendingOperationId: null, running: false };
     const ok = await this.state.commit({
       expected: [this.key(id), this.metaKey(id), this.eventsKey(id), ...(input.payload === undefined ? [] : [this.inputKey(id)])].map((key) => ({ key, revision: null })),

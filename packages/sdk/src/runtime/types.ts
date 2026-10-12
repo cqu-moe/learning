@@ -72,6 +72,7 @@ export interface Runtime {
   masterKey: Uint8Array;
   heavy: HeavyRenderer | null;
   model: ModelClient | null;
+  probeMediaDuration?: (url: string, options?: Options) => Promise<number | null>;
   log(event: { level: 'debug' | 'info' | 'warn' | 'error'; message: string; fields: Record<string, string | number | boolean | null> }): void;
   wake(): Promise<void>;
 }

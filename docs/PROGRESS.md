@@ -626,3 +626,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 主目录 `pnpm --filter @learning/cli exec vitest run tests/progress.test.ts --maxWorkers=1` → 11/11，exit 0，包含真实 32/80 列终端、24 列 resize、背压和无错误关闭自然退出。
 - CLI 116 个和 SDK 236 个构建文件 SHA256 均与最终验证 worktree 一致。现有 `/Users/uu/.local/bin/learning` 仍指向主目录构建，`learning --version` → 0.2.0、exit 0；版本号未变，不作为启用的唯一证据。
 - 下次启动命令即使用库版双进度条。没有修改账号数据、命令链接或推送远端；本次请求完成，等待用户实际使用反馈。
+
+### 2026-10-13 · 雨课堂缺失时长兜底与待处理提示（用户指定修复）
+
+- 用户反馈“无时长跳过：3 个”，并明确授权将已有 UI 优化与本次修复合入本地、推送并合并远端。继续使用隔离 worktree `cli-study-ux` / `codex/cli-study-ux`，从本地 main `b7fa56d` 快进；发布审查基线固定为远端 main `d02167f`，不包含另一条超星 PR。
+- 原因：SDK 在 watch_progress.video_length 和 leaf_info.media.duration 均缺失时直接排除未完成视频。只读参考源码 `ykt-cli/src/run/ai_course.py::_probe_video_duration` 已有签名 MP4 的 ffprobe 兜底，本仓库此前未迁入。截图的 3 个资源没有做真实账号查询，因此这里只确认代码分支及其遗漏，不声称已在线修复那 3 个视频。
+- SDK 新增可选中立 `Runtime.probeMediaDuration`，Node 子路径用 ffprobe 实读 MP4 时长；CLI 负责装配。优先使用平台时长，仅缺失时请求现有 playurl；只接受有限正数，在当前 client 缓存真实时长，不缓存签名 URL，不改变服务端进度或完成状态。域名沿现有 yuketang.cn / xuetangx.com 白名单；ffprobe 无 shell、仅 HTTP(S)/mov、禁止重定向、最多 10 秒、输出限 64 KiB，缺工具/读取失败保留未知。
+- CLI 改为“本次可处理”和“暂不处理（未能读取时长）”，显示最多 5 个待处理视频名称和官方网页播放后重试的说明。警告中文化并随 Job 保存；`run --yes` 与 `jobs resume` 都保留警告和资源 key，有排除视频时即使计划完成也返回 partial / exit 4。取消只读探测保存为 paused，可恢复；实际写入的不确定结果处理不变。
+- 先红后绿：SDK 新视频时长用例修前 4 项失败，正常场景被 INTERACTION_REQUIRED 拒绝；真实 PTY 预览修前缺少可处理数与名称而失败。进一步回归复现只读取消误记 uncertain、Job 丢失预览警告，均先 exit 1 后修复。最终 YKT study 专项 20/20；新增 Node 子进程专项 4/4（成功、坏输出、缺工具、取消与截止时间），均 exit 0。
+- 实际环境 Node v24.11.1 / pnpm 11.19.0：最终 SDK 全套 32 files / 278 tests、CLI 全套 15 files / 129 tests，exit 0；pnpm build、pnpm lint、pnpm typecheck、source-lock、boundaries、git diff --check，exit 0。最后仅追加 ffprobe 禁重定向参数，重新执行适配器专项 4/4 与 ESLint，exit 0。真实本机 ffprobe + 回环 HTTP：生成 1 秒 MP4，读出 1.000 秒；302 返回 null 且重定向目标收到 0 次请求，exit 0。
+- 检查过程的非产品失败：CLI 首次测试受 worktree 写权限 EPERM 阻挡，授权隔离目录执行后才记录有效红测；一次从根目录调用不存在的 Vitest 链接 exit 1，改从 SDK workspace 运行后 4/4。JSON 回归最初错误假定只有一种 warning，改为同时保留 SQLite ExperimentalWarning 与业务 warning，没有屏蔽警告。未把这些失败计为产品修复证据。
+- 并行适配器实现与 Spec 审查使用用户授权的 zhipu/glm-5.3 / max；Standards 与后续复审因 5 小时额度限制无法完成，主代理接手逐项审查和最终参数修正。已处理警告持久化、恢复退出码、媒体域名与重定向约束；未据合成 HLS fixture 改写旧媒体类型协议。
+- 最终 `pnpm build && pnpm test:e2e` → exit 0，7/7，包含真实 tarball 的独立消费者冻结离线安装。本地与远端交付结果续记。
+- 未运行：真实平台登录/学习/答题/发帖/交卷、付费模型或云部署。本次仅处理用户指定 UI 与时长问题，不推进其他 PLAN 项或延期 Web。

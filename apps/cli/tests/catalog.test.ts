@@ -149,7 +149,8 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const videoProgress = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate: 0, completed: 0, video_length: 0, last_point: 0 } } } } };
     const articleLeaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/504/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 3, sku_id: 901, finish: false } } } };
     const fixtureFile = resolve(dir, 'run-confirm.json');
-    writeFileSync(fixtureFile, JSON.stringify({ interactions: [...courses.interactions, ...outline.interactions, articleLeaf, videoLeaf, videoProgress] }));
+    const playUrl = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/api/open/audiovideo/playurl', query: { video_id: 'CC1', provider: 'cc', file_type: '1', is_single: '0', domain: 'www.yuketang.cn' } }, response: { status: 200, body: { data: { playurl: { sources: {} } } } } };
+    writeFileSync(fixtureFile, JSON.stringify({ interactions: [...courses.interactions, ...outline.interactions, articleLeaf, videoLeaf, videoProgress, playUrl] }));
     const result = spawnSync('python3', [resolve(import.meta.dirname, 'helpers/terminal-driver.py'), JSON.stringify({
       argv: [process.execPath, '--import', preload, cli, '--home', dir, 'run', '--profile', 'alpha', '--speed', '1', '--target', '0.5'],
       env: { LEARNING_FIXTURE_FILE: fixtureFile, LEARNING_ASSERT_COOKIE: 'sessionid=sess-fixture' },
@@ -167,7 +168,11 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(summary).toContain('账号：alpha');
     expect(summary).toContain('视频：1 个');
     expect(summary).toContain('图文：1 个');
-    expect(summary).toContain('无时长跳过：1 个');
+    expect(summary).toContain('本次可处理：1 / 2 个资源');
+    expect(summary).toContain('暂不处理：1 个视频（未能读取时长）');
+    expect(summary).toContain('小节视频');
+    expect(summary).toContain('官方网页播放后重试');
+    expect(data.screen).not.toContain('video duration is unknown');
     expect(summary).toContain('倍速：1×');
     expect(summary).toContain('目标进度：50%');
     expect(data.code).toBe(3);
@@ -177,6 +182,15 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
       const cached = await state.list('cli:resource:', null, 100);
       for (const row of cached.items) expect(summary).not.toContain(String((row.record.value as { key: string }).key));
     } finally { state.close(); }
+    const courseKey = JSON.parse(run(dir, ['courses', '--profile', 'alpha', '--json'], 'ykt/courses-list').stdout).data.items[0].ref.key as string;
+    articleLeaf.response.body.data.finish = true;
+    writeFileSync(fixtureFile, JSON.stringify({ interactions: [...outline.interactions, articleLeaf, videoLeaf, videoProgress, playUrl, articleLeaf] }));
+    const executed = run(dir, ['run', courseKey, '--profile', 'alpha', '--yes', '--json'], fixtureFile);
+    expect(executed.code, executed.stderr).toBe(4);
+    expect(JSON.parse(executed.stdout)).toMatchObject({ status: 'partial', warnings: expect.arrayContaining([expect.objectContaining({ code: 'SKIPPED_UNKNOWN_DURATION' })]), data: { status: 'succeeded', completed: 1, total: 1 } });
+    const resumed = run(dir, ['jobs', 'resume', JSON.parse(executed.stdout).data.id as string, '--profile', 'alpha', '--json']);
+    expect(resumed.code, resumed.stderr).toBe(4);
+    expect(JSON.parse(resumed.stdout)).toMatchObject({ status: 'partial', data: { job: { warnings: [expect.objectContaining({ code: 'SKIPPED_UNKNOWN_DURATION', resourceKey: expect.any(String) })] } } });
   }, 20_000);
 
   it('runs default ZHS WeChat QR entirely through allowlisted API requests', () => {

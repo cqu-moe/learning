@@ -6,15 +6,15 @@ import type { Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { CourseRef, OutlineNode, ResourceKind, ResourceRef } from '@learning/sdk/public';
 import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction, inferTargetScope } from '../context.js';
-import { courseCacheKey, resourceCacheKey, resourceKindCacheKey, chooseCourse, cacheResources } from './catalog.js';
+import { courseCacheKey, resourceCacheKey, resourceKindCacheKey, resourceTitleCacheKey, chooseCourse, cacheResources } from './catalog.js';
 import { runJobForeground } from '../foreground.js';
 import type { CliRuntime } from '../context.js';
 
-type StudyResource = { kind: ResourceKind; ref: ResourceRef };
+type StudyResource = { kind: ResourceKind; ref: ResourceRef; title: string };
 
 function studyResources(nodes: OutlineNode[], includeDocuments: boolean): StudyResource[] {
   return nodes.flatMap((node) => [
-    ...node.resources.filter((resource) => resource.kind === 'video' || includeDocuments && resource.kind === 'document').map((resource) => ({ kind: resource.kind, ref: resource.ref })),
+    ...node.resources.filter((resource) => resource.kind === 'video' || includeDocuments && resource.kind === 'document').map((resource) => ({ kind: resource.kind, ref: resource.ref, title: resource.title })),
     ...studyResources(node.children, includeDocuments),
   ]);
 }
@@ -35,7 +35,8 @@ async function cachedStudyResource(runtime: CliRuntime, key: string, profileId: 
   const savedKind = (await runtime.state.get(resourceKindCacheKey(key)))?.value;
   if (savedKind === 'homework' || savedKind === 'exam' || savedKind === 'discussion') throw new LearningError({ code: 'INVALID_INPUT', message: 'resource kind cannot be studied', retryAfterMs: null, operationId: null });
   const kind: ResourceKind = savedKind === 'video' || savedKind === 'document' ? savedKind : 'unknown';
-  return { kind, ref };
+  const savedTitle = (await runtime.state.get(resourceTitleCacheKey(key)))?.value;
+  return { kind, ref, title: typeof savedTitle === 'string' ? savedTitle : '未命名视频' };
 }
 
 export function registerRunCommands(program: Command): void {
@@ -117,8 +118,15 @@ export function registerRunCommands(program: Command): void {
         const documentCount = resources.filter(resource => resource.kind === 'document').length;
         const otherCount = resources.length - videoCount - documentCount;
         getOutput(program).activity(`正在核对 ${resources.length} 个资源的学习进度…`);
-        const preview = await client.actions.prepare({ kind: 'study', resources: resources.map(resource => resource.ref), settings: { speed, targetFraction, questionMode: 'pause', maxDurationSeconds: 24 * 60 * 60 } });
-        const skippedUnknownDuration = preview.warnings.filter(warning => warning.code === 'SKIPPED_UNKNOWN_DURATION').length;
+        const preview = await client.actions.prepare({ kind: 'study', resources: resources.map(resource => resource.ref), settings: { speed, targetFraction, questionMode: 'pause', maxDurationSeconds: 24 * 60 * 60 } }, { signal: getOutput(program).signal });
+        const skippedKeys = new Set(preview.warnings.filter(warning => warning.code === 'SKIPPED_UNKNOWN_DURATION').map(warning => warning.resourceKey));
+        const skippedResources = resources.filter(resource => skippedKeys.has(resource.ref.key));
+        const pendingSummary = skippedResources.length === 0 ? [] : [
+          `暂不处理：${skippedResources.length} 个视频（未能读取时长）`,
+          ...skippedResources.slice(0, 5).map(resource => `  · ${resource.title}`),
+          ...(skippedResources.length > 5 ? [`  …另有 ${skippedResources.length - 5} 个`] : []),
+          '请在官方网页播放后重试；这些视频尚未完成。',
+        ];
         const summary = [
           `课程：${title}`,
           `账号：${profile.name}`,
@@ -126,24 +134,26 @@ export function registerRunCommands(program: Command): void {
           ...(videoCount > 0 ? [`视频：${videoCount} 个`] : []),
           ...(documentCount > 0 ? [`图文：${documentCount} 个`] : []),
           ...(otherCount > 0 ? [`其他资源：${otherCount} 个`] : []),
-          ...(skippedUnknownDuration > 0 ? [`无时长跳过：${skippedUnknownDuration} 个`] : []),
+          `本次可处理：${resources.length - skippedResources.length} / ${resources.length} 个资源`,
+          ...pendingSummary,
           `倍速：${speed}×`,
           `目标进度：${Number((targetFraction * 100).toFixed(1))}%`,
         ].join('\n');
         if (options.dryRun) { getOutput(program).set(preview, summary, 'preview'); return; }
-        if (!options.yes) getOutput(program).set(preview, '', 'preview');
+        getOutput(program).set(preview, '', 'preview');
         await confirmAction(program, summary, options.yes);
         const execution = await executeAction(getOutput(program), client, preview.id);
         if (execution.type !== 'job') throw new LearningError({ code: 'INTEGRITY', message: 'study action did not create a job', retryAfterMs: null, operationId: null });
         const job = await runJobForeground(client, runtime, execution.job.id, { study: { courseTitle: title, profileName: profile.name, speed, targetFraction } });
         if (job.status === 'uncertain') process.exitCode = 5;
-        else if (job.status === 'partial') process.exitCode = 4;
+        else if (job.status === 'partial' || job.status === 'succeeded' && skippedResources.length > 0) process.exitCode = 4;
         else if (job.status !== 'succeeded') process.exitCode = 3;
         const reasons = [...new Set(job.items.flatMap((item) => item.state === 'needs-input' && item.message !== null ? [item.message] : []))];
         printResult(program, job, [
           `课程：${title}`,
           `状态：${jobStates[job.status] ?? job.status}（${job.completed}/${job.total ?? '?'}）`,
           `任务 ID：${job.id}`,
+          ...pendingSummary,
           ...reasons,
         ].join('\n'));
       } finally { await client.close(); }

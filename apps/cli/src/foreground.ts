@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { LearningClient } from '@learning/sdk';
+import { LearningError } from '@learning/sdk';
 import { ActionInputSchema, CourseSchema } from '@learning/sdk/public';
 import type { Job, JobEvent } from '@learning/sdk/public';
 import type { CliRuntime } from './context.js';
@@ -81,10 +82,10 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
         catch (error) { if (!abort.signal.aborted) throw error; }
         continue;
       }
-      await client.jobs.advance(id);
+      await client.jobs.advance(id, { signal: abort.signal });
     }
   } catch (error) {
-    if (error instanceof CliError && error.code === 'CANCELED' || error instanceof DOMException && error.name === 'AbortError' && abort.signal.aborted) return await pause();
+    if (error instanceof CliError && error.code === 'CANCELED' || abort.signal.aborted && (error instanceof DOMException && error.name === 'AbortError' || error instanceof LearningError && error.data.code === 'CANCELED')) return await pause();
     throw error;
   } finally {
     runtime.output?.pauseProgress();

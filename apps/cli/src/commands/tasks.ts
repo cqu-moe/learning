@@ -102,7 +102,7 @@ export function registerJobsCommands(program: Command): void {
           const job = await runJobForeground(client, runtime, jobId);
           getOutput(program).set({ job, files: [] }, '');
           const files = job.kind === 'export' ? await publishJobArtifacts(runtime, job, dataDir) : [];
-          if (job.status === 'partial') process.exitCode = 4;
+          if (job.status === 'partial' || job.status === 'succeeded' && job.warnings.some(warning => warning.code === 'SKIPPED_UNKNOWN_DURATION')) process.exitCode = 4;
           else if (job.status === 'uncertain') process.exitCode = 5;
           else if (job.status !== 'succeeded') process.exitCode = 3;
           printResult(program, { job, files }, `${job.id}: ${job.status}\n${files.join('\n')}\n${nextStep(program, job)}`);
