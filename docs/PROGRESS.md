@@ -641,3 +641,4 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 未运行：真实平台登录/学习/答题/发帖/交卷、付费模型或云部署。本次仅处理用户指定 UI 与时长问题，不推进其他 PLAN 项或延期 Web。
 - 交付复查补充：初次时长核对期间取消 ffprobe 会抛 DOM AbortError，通用 CLI 输出原先误报 INTERNAL / exit 1。新增输出边界回归先失败，再将其规范化为中文“操作已取消” / CANCELED / exit 3；不改变 UNCERTAIN 的优先级。CLI build、output/output-format 专项 13/13、对应 ESLint、git diff --check，均 exit 0。
 - 远端首轮 CI（run 38283344956）SDK 278/278 通过，CLI 127/129；两条多进程用例分别耗时 5819 ms / 5403 ms，超过默认 5000 ms，没有业务断言失败。复查确认普通机器命令也提前加载进度渲染库；新增 Node 模块加载拦截回归先失败，再改为仅动态进度需要时异步加载，保持取消/警告后的显示生命周期。Node 24 本机输出模块冷启动 4 次从 90–93 ms 降至 65–66 ms；CLI build、progress/output/output-format 25/25、对应 ESLint 通过，未删除断言或放宽测试超时。最终远端结果以随后记录为准。
+- 延迟加载后本地 CLI 全套 131/131、打包 E2E 7/7 通过。远端 run 38284410912 的 SDK 278/278、CLI 130/131，剩下混合学习用例耗时 5315 ms：把独立的非法参数/单资源显示与预览执行拆成两个用例，复用相同严格 fixture 初始化；偏好用例中的下载路径设置/清除也从默认账号场景抽出，避免多次进程启动共用一个 5 秒窗口。所有原有断言、fixture 请求验证、默认 5 秒上限保持不变。学习拆分专项 2/2、偏好专项 6/6、ESLint、CLI 类型检查、git diff --check 通过。

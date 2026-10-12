@@ -49,6 +49,23 @@ function run(dir: string, args: string[], fixture?: string, expectedCookie?: str
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
+async function preparedYktStudy() {
+  const dir = home();
+  expect(run(dir, ['init']).code).toBe(0);
+  expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+  expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
+  expect(run(dir, ['profile', 'add', 'beta', '--platform', 'ykt']).code).toBe(0);
+  const state = new SqliteStateStore(resolve(dir, 'state.db'));
+  const profile = await state.get('cli:profile:alpha');
+  const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+  const ref = { course: { scope, key: 'fixture-course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'study-video', native: { kind: 'ykt', leafId: '502', leafInfoId: null } };
+  expect(await state.commit({ expected: [{ key: 'cli:resource:study-video', revision: null }, { key: 'cli:resource-kind:study-video', revision: null }], changes: [{ key: 'cli:resource:study-video', value: ref }, { key: 'cli:resource-kind:study-video', value: 'video' }] })).toBe(true);
+  state.close();
+  const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
+  const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
+  return { dir, leaf, progress };
+}
+
 afterAll(() => { for (const dir of homes) rmSync(dir, { recursive: true, force: true }); });
 
 describe('CLI auth and catalog against strict offline fixtures', () => {
@@ -469,19 +486,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
   });
 
   it('previews then runs a one-beat Yuketang study job with server confirmation', async () => {
-    const dir = home();
-    expect(run(dir, ['init']).code).toBe(0);
-    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
-    expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
-    expect(run(dir, ['profile', 'add', 'beta', '--platform', 'ykt']).code).toBe(0);
-    const state = new SqliteStateStore(resolve(dir, 'state.db'));
-    const profile = await state.get('cli:profile:alpha');
-    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
-    const ref = { course: { scope, key: 'fixture-course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'study-video', native: { kind: 'ykt', leafId: '502', leafInfoId: null } };
-    expect(await state.commit({ expected: [{ key: 'cli:resource:study-video', revision: null }, { key: 'cli:resource-kind:study-video', revision: null }], changes: [{ key: 'cli:resource:study-video', value: ref }, { key: 'cli:resource-kind:study-video', value: 'video' }] })).toBe(true);
-    state.close();
-    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
-    const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
+    const { dir, leaf, progress } = await preparedYktStudy();
     const dryFixture = resolve(dir, 'study-dry.json');
     writeFileSync(dryFixture, JSON.stringify({ interactions: [leaf, progress(0, 0)] }));
     const dry = run(dir, ['run', '--resource', 'study-video', '--target', '0.5', '--speed', '1', '--dry-run', '--json'], dryFixture);
@@ -489,6 +494,21 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const dryResult = JSON.parse(dry.stdout) as { data: Record<string, unknown> };
     expect(Object.keys(dryResult.data)).toEqual(['id', 'scope', 'kind', 'digest', 'generation', 'expiresAtMs', 'description', 'startsTimer', 'finalSubmission', 'blockers', 'warnings']);
     expect(dryResult.data.kind).toBe('study');
+    const row = { i: 5, et: 'heartbeat', p: 'web', n: 'ali-cdn.xuetangx.com', lob: 'ykt', cp: 5, fp: 0, tp: 10, sp: 1,
+      ts: '__NOW_MS__', u: '424242', uip: '', c: '5184094', v: '502', skuid: '901', classroomid: '28930736', cc: 'CC1', d: 10,
+      pg: '__JOB_PG_502__', sq: 1, t: 'video', cards_id: 0, slide: 0 };
+    const write = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/video-log/heartbeat/', headers: { xtbz: 'ykt', 'classroom-id': '28930736', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' }, body: { heart_data: [row] } }, response: { status: 200, body: {} } };
+    const runFixture = resolve(dir, 'study-run.json');
+    writeFileSync(runFixture, JSON.stringify({ interactions: [leaf, progress(0, 0), leaf, progress(0, 0), write, leaf, progress(0.5, 5)] }));
+    const actual = run(dir, ['run', 'study-video', '--target', '0.5', '--speed', '1', '--yes', '--profile', 'alpha', '--json'], runFixture);
+    expect(actual.code, actual.stderr).toBe(0);
+    expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
+  });
+
+  it('previews one cached resource and rejects a missing resource key', async () => {
+    const { dir, leaf, progress } = await preparedYktStudy();
+    const dryFixture = resolve(dir, 'study-dry.json');
+    writeFileSync(dryFixture, JSON.stringify({ interactions: [leaf, progress(0, 0)] }));
     const missing = run(dir, ['run', '--resource', 'missing-video', '--dry-run', '--profile', 'alpha', '--json'], dryFixture);
     const missingResult = JSON.parse(missing.stdout);
     expect(missingResult.exitCode).toBe(2);
@@ -501,15 +521,6 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(single.stdout).toContain('范围：单个资源');
     expect(single.stdout).toContain('视频：1 个');
     expect(single.stdout).not.toContain('study-video');
-    const row = { i: 5, et: 'heartbeat', p: 'web', n: 'ali-cdn.xuetangx.com', lob: 'ykt', cp: 5, fp: 0, tp: 10, sp: 1,
-      ts: '__NOW_MS__', u: '424242', uip: '', c: '5184094', v: '502', skuid: '901', classroomid: '28930736', cc: 'CC1', d: 10,
-      pg: '__JOB_PG_502__', sq: 1, t: 'video', cards_id: 0, slide: 0 };
-    const write = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/video-log/heartbeat/', headers: { xtbz: 'ykt', 'classroom-id': '28930736', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' }, body: { heart_data: [row] } }, response: { status: 200, body: {} } };
-    const runFixture = resolve(dir, 'study-run.json');
-    writeFileSync(runFixture, JSON.stringify({ interactions: [leaf, progress(0, 0), leaf, progress(0, 0), write, leaf, progress(0.5, 5)] }));
-    const actual = run(dir, ['run', 'study-video', '--target', '0.5', '--speed', '1', '--yes', '--profile', 'alpha', '--json'], runFixture);
-    expect(actual.code, actual.stderr).toBe(0);
-    expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
   });
 
   it('runs a Yuketang study job with the default preset: max speed and full target', async () => {

@@ -15,12 +15,14 @@ describe('explicit local preferences', () => {
   const profile = run(['profile','add','alpha','--platform','ykt']).result.data;
   expect(run(['config','set','default-profile','alpha']).code).toBe(0);
   expect(run(['config','show']).result.data.defaultProfileId).toBe(profile.scope.profileId);
-  expect(run(['config','set','download-dir',home]).code).toBe(0);
-  expect(run(['config','show']).result.data.downloadDir).toBe(home);
   expect(run(['profile','list','--profile','missing']).code).toBe(0);
   expect(run(['config','show']).result.data.defaultProfileId).toBe(profile.scope.profileId);
   expect(run(['profile','remove','alpha','--yes']).code).toBe(0);
   expect(run(['config','show']).result.data.defaultProfileId).toBe(null);
+ });
+ it('persists and clears a download directory', () => {
+  expect(run(['config','set','download-dir',home]).code).toBe(0);
+  expect(run(['config','show']).result.data.downloadDir).toBe(home);
   expect(run(['config','unset','download-dir']).code).toBe(0);
   expect(run(['config','show']).result.data.downloadDir).toBe(null);
  });
