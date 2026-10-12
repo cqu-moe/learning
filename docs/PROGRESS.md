@@ -642,3 +642,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 交付复查补充：初次时长核对期间取消 ffprobe 会抛 DOM AbortError，通用 CLI 输出原先误报 INTERNAL / exit 1。新增输出边界回归先失败，再将其规范化为中文“操作已取消” / CANCELED / exit 3；不改变 UNCERTAIN 的优先级。CLI build、output/output-format 专项 13/13、对应 ESLint、git diff --check，均 exit 0。
 - 远端首轮 CI（run 38283344956）SDK 278/278 通过，CLI 127/129；两条多进程用例分别耗时 5819 ms / 5403 ms，超过默认 5000 ms，没有业务断言失败。复查确认普通机器命令也提前加载进度渲染库；新增 Node 模块加载拦截回归先失败，再改为仅动态进度需要时异步加载，保持取消/警告后的显示生命周期。Node 24 本机输出模块冷启动 4 次从 90–93 ms 降至 65–66 ms；CLI build、progress/output/output-format 25/25、对应 ESLint 通过，未删除断言或放宽测试超时。最终远端结果以随后记录为准。
 - 延迟加载后本地 CLI 全套 131/131、打包 E2E 7/7 通过。远端 run 38284410912 的 SDK 278/278、CLI 130/131，剩下混合学习用例耗时 5315 ms：把独立的非法参数/单资源显示与预览执行拆成两个用例，复用相同严格 fixture 初始化；偏好用例中的下载路径设置/清除也从默认账号场景抽出，避免多次进程启动共用一个 5 秒窗口。所有原有断言、fixture 请求验证、默认 5 秒上限保持不变。学习拆分专项 2/2、偏好专项 6/6、ESLint、CLI 类型检查、git diff --check 通过。
+
+### 2026-10-13 · UI 与缺失时长修复已合入本地和远端（done）
+
+- 最终代码/测试提交 `cfa5131`；本地 CLI 全套 133/133，exit 0。SDK 全套 278/278、打包 E2E 7/7 的通过证据见上；最后仅拆分测试场景，没有再修改产品代码。
+- [PR #3](https://github.com/cqu-moe/learning/pull/3) 的 [CI 38285420417](https://github.com/cqu-moe/learning/actions/runs/38285420417) 全部通过：依赖冻结安装、边界、lint、类型、SDK/CLI 测试、构建、打包 E2E。使用 `gh pr merge --merge --match-head-commit cfa51313bdcfe9b4a2cdb8290bd1d27d8f8441d2` 合并，读回 MERGED，合并提交 `01a58f4`。另一条超星 PR 未合并。
+- 主目录依次快进启用修复并以 Node v24.11.1 / pnpm 11.19.0 重建，SDK 时长/子进程专项 24/24、CLI 预览/恢复专项 1/1、最终主目录进度/输出专项 24/24，均 exit 0。`git fetch origin && git merge --ff-only origin/main` 同步至远端合并提交，exit 0；244 个 SDK 与 116 个 CLI 构建文件的 SHA256 全部匹配已验证 worktree。
+- `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`，版本号维持 0.2.0；实际启用以构建文件一致性为准。没有修改账号数据或发起真实平台学习。截图中 3 个视频的在线结果留待用户下次 `learning run` 读回；本次授权开发与合并完成，不推进其他任务或 Web。
