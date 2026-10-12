@@ -559,3 +559,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - Node v24.11.1 / pnpm 11.19.0：worktree CLI build、最终 pnpm typecheck、pnpm lint、git diff --check → exit 0。沿既有本地启用授权，main 干净时分别快进合入两项修复并重建；主目录 auth-ui + qr-terminal 在统一版本 9/9，最终窄边版本以 `-t 'shared terminal style'` 运行 2/2（其余 4 项由过滤器未选中），均 exit 0。
 - realpath 确认现有 learning 使用主目录 apps/cli/dist/index.js，login.js / qr-terminal.js 的 SHA256 与已验证 worktree 一致。下一次启动登录命令即使用窄边样式；没有推送远端或修改命令链接。
 - 未运行：本轮平台真机扫码、SDK 全套、CLI 全套、独立消费者 E2E；展示专项检查已覆盖实际 CLI 路径，之前独立安装的离线镜像元数据缺失未重复检查。下一当前事项：用户查看统一窄边样式；不自动执行其他 PLAN 项或平台业务操作。
+
+
+### 2026-10-12 · 登录与窄边二维码 PR 交付检查
+
+- 用户明确授权“开 PR，没问题就合”。本次范围是 origin/main 4f31a1e 之后的微信交换码解析、JPEG/PNG 终端展示、wxTransit 登录补全，以及文本/图片统一一格窄边；用户已提供智慧树实际登录成功和最终样式接受，未新增真机平台请求。
+- 两路独立审查：需求审查无问题；规范审查发现新增 wxTransit JSON 无读取预算，已在 457a99b 改用已有流式 bytes(256 KiB) 后解析，缓存/skipSet 两个超大响应回归修前均误登录成功、exit 1，修后 auth+flow 50/50、exit 0；超预算不保存会话、不继续 passport 交换。整体字节限制同时约束字符串和数组大小，不猜平台字段的额外语义上限。
+- 完整测试发现新增机器输出用例启动三个 CLI 进程，在并行负载下超过默认 5 秒；改为与同文件进程验收一致的 20 秒，保留全部断言，专项 6/6、exit 0。
+- 修复既有 packed consumer 验收：本机旧版本 6/7、exit 1（pdf-lib 镜像元数据缺失）；远端 main 的 CI 38191346623 同项选中锁文件外的 tldts 7.4.18，离线缺 tarball。现在读取真实 tarball 清单、比对其依赖版本，复制原锁定生产依赖闭包并为 tarball 计算 SHA512，执行 frozen/offline 真实独立安装。仅派生消费者使用 pnpm 11.19 的 trust-lockfile，复用正常安装已检查的原始 registry 条目；仓库/CI 的正常安装策略未改，完整性校验、可执行文件、全部 exports、QR/课程/导出/Range 恢复断言均保留。复用了 SDK 已固定的 yaml，不增包或升级依赖。
+- 本轮文件：packages/sdk/src/providers/zhs/auth.ts、tests/zhs-auth-crypto.test.ts；apps/cli/tests/{auth-ui,e2e}.test.ts；本进度记录。后续增量审查针对预算和打包验收修正；最终 PR 状态以关联 PR 为准。
+- 实际 Node v24.11.1 / pnpm 11.19.0，worktree 执行 pnpm install --offline --frozen-lockfile --ignore-scripts、source-lock、boundaries、pnpm lint、pnpm typecheck、pnpm test、pnpm build、pnpm test:e2e、git diff --check 全部 exit 0：SDK 260/260、CLI 111/111、E2E 7/7。原独立安装证据缺口已解决，未跳过测试；聚焦命令未选中的用例不计通过。
+- 未运行项：新的平台扫码、在线身份 probe、学习/答题/发帖/交卷、Web/云部署。Cookie、真实二维码及临时协议材料未纳入提交。后续仅按用户授权在远端检查通过时合并并同步本地命令；合并后无新增开发任务，不推进延期 Web 或其他 PLAN 项。

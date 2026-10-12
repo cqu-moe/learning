@@ -1,4 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -7,6 +9,72 @@ import pkg from '../package.json' with { type: 'json' };
 import sdkPkg from '../../../packages/sdk/package.json' with { type: 'json' };
 
 const tempRoots: string[] = [];
+
+type PnpmLockfile = {
+  importers: Record<string, { dependencies: Record<string, { specifier: string; version: string }> }>;
+  packages: Record<string, Record<string, unknown>>;
+  snapshots: Record<string, { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> }>;
+  overrides?: Record<string, string>;
+};
+
+function writeConsumerLockfile(directory: string, sdkRoot: string, sdkTar: string, cliTar: string) {
+  // Resolve YAML where it is already a pinned dependency, without adding a production seam.
+  const yaml = createRequire(resolve(sdkRoot, 'package.json'))('yaml') as {
+    parse(source: string): PnpmLockfile;
+    stringify(value: PnpmLockfile): string;
+  };
+  const lock = yaml.parse(readFileSync(resolve(sdkRoot, '../../pnpm-lock.yaml'), 'utf8'));
+  const sdkFile = `file:${sdkTar}`;
+  const consumerDependencies: Record<string, { specifier: string; version: string }> = {};
+  for (const [tarball, importer] of [[sdkTar, 'packages/sdk'], [cliTar, 'apps/cli']] as const) {
+    const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' })) as {
+      name: string; version: string; dependencies: Record<string, string>; engines?: Record<string, string>; bin?: Record<string, string>;
+    };
+    const file = `file:${tarball}`;
+    const dependencies: Record<string, string> = {};
+    for (const [name, specifier] of Object.entries(manifest.dependencies)) {
+      const locked = lock.importers[importer]!.dependencies[name];
+      expect(locked, `${manifest.name}: missing locked dependency ${name}`).toBeDefined();
+      if (name === '@learning/sdk') {
+        expect(specifier).toBe(sdkPkg.version);
+        dependencies[name] = sdkFile;
+      } else {
+        expect(locked!.specifier, `${manifest.name}: packed dependency ${name}`).toBe(specifier);
+        dependencies[name] = locked!.version;
+      }
+    }
+    const key = `${manifest.name}@${file}`;
+    lock.packages[key] = {
+      name: manifest.name, version: manifest.version,
+      resolution: { integrity: `sha512-${createHash('sha512').update(readFileSync(tarball)).digest('base64')}`, tarball: file },
+      ...(manifest.engines ? { engines: manifest.engines } : {}),
+      ...(manifest.bin ? { hasBin: true } : {}),
+    };
+    lock.snapshots[key] = { dependencies };
+    consumerDependencies[manifest.name] = { specifier: file, version: file };
+  }
+  const packages: PnpmLockfile['packages'] = {};
+  const snapshots: PnpmLockfile['snapshots'] = {};
+  const pending = Object.entries(consumerDependencies).map(([name, dependency]) => `${name}@${dependency.version}`);
+  while (pending.length > 0) {
+    const key = pending.pop()!;
+    if (snapshots[key] !== undefined) continue;
+    const snapshot = lock.snapshots[key];
+    expect(snapshot, `missing locked snapshot ${key}`).toBeDefined();
+    snapshots[key] = snapshot!;
+    const packageKey = key.split('(')[0]!;
+    expect(lock.packages[packageKey], `missing locked package ${packageKey}`).toBeDefined();
+    packages[packageKey] = lock.packages[packageKey]!;
+    for (const [name, version] of Object.entries({ ...snapshot!.dependencies, ...snapshot!.optionalDependencies })) {
+      pending.push(`${name}@${version}`);
+    }
+  }
+  lock.packages = packages;
+  lock.snapshots = snapshots;
+  lock.importers = { '.': { dependencies: consumerDependencies } };
+  lock.overrides = { '@learning/sdk': sdkFile };
+  writeFileSync(resolve(directory, 'pnpm-lock.yaml'), yaml.stringify(lock));
+}
 
 function runPackedCli(args: string[], home = mkdtempSync(resolve(tmpdir(), 'learning-e2e-'))) {
   if (!tempRoots.includes(home)) tempRoots.push(home);
@@ -143,7 +211,10 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     expect(listing.stdout).not.toContain('package/tests/');
     writeFileSync(resolve(directory, 'package.json'), JSON.stringify({ private: true, dependencies: { '@learning/sdk': `file:${sdkTar}`, '@learning/cli': `file:${cliTar}` } }));
     writeFileSync(resolve(directory, 'pnpm-workspace.yaml'), `packages: []\noverrides:\n  '@learning/sdk': ${JSON.stringify(`file:${sdkTar}`)}\n`);
-    const installed = spawnSync('pnpm', ['install', '--offline', '--ignore-scripts'], { cwd: directory, env: { ...process.env, PATH: nodePath }, encoding: 'utf8' });
+    writeConsumerLockfile(directory, sdkRoot, sdkTar, cliTar);
+    // Registry entries come unchanged from the workspace lockfile verified by the normal install gate.
+    // Trust only this derived lockfile so offline installation needs no fresh registry policy metadata.
+    const installed = spawnSync('pnpm', ['install', '--offline', '--frozen-lockfile', '--trust-lockfile', '--ignore-scripts'], { cwd: directory, env: { ...process.env, PATH: nodePath }, encoding: 'utf8' });
     expect(installed.status, installed.stdout + installed.stderr).toBe(0);
     const entry = resolve(directory, 'node_modules/@learning/cli/dist/index.js');
     const bin = resolve(directory, 'node_modules/.bin/learning');
