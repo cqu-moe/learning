@@ -540,3 +540,11 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 实际环境 Node v24.11.1 / pnpm 11.19.0。命令均显式前置固定 Node PATH：`pnpm install --offline --frozen-lockfile --ignore-scripts` → exit 0；`pnpm --filter @learning/sdk test` → 258/258，exit 0；CLI test 中 SDK/CLI 构建 → exit 0；最终 `pnpm --filter @learning/cli exec vitest run` → 110/110，exit 0；最终 `pnpm typecheck` / `pnpm lint` / boundaries / source-lock / `git diff --check` → exit 0。
 - 尚未通过：`pnpm test:e2e` → 6/7，exit 1；无 lockfile 的独立 packed consumer 在离线依赖解析阶段缺本机 npmmirror 的 `@clack/prompts@1.8.1` 元数据。它与固定锁文件的工作区安装不同，未跳过或伪称通过。官方公开源码说明后半链，不是修复后真机 CASLOGC 已获取；用户已休息，未再生成新二维码要求扫码，也没有平台学习/答题/发帖/交卷操作。
 - 下一当前事项：沿用户既有授权启用本地修复版，然后等待人工新扫码验收智慧树完整登录。没有推进其他 PLAN 任务或 Web。
+
+
+### 2026-10-12 · 实际 JPEG / wxTransit 修复已启用到本地命令
+
+- 沿用户“先把本地的用上修复版”既有授权，使用有效 Git 身份提交 `493aeac`（fix(zhs): finish wxTransit login and display JPEG QR）；主目录 main 干净时快进合入该分支。
+- 主目录 Node v24.11.1 / pnpm 11.19.0 实际执行 `pnpm install --offline --frozen-lockfile --ignore-scripts`、`pnpm build` → exit 0，新增两个解码依赖使用本机缓存，未升级既有包。`/Users/uu/.local/bin/learning --version` → 0.2.0，exit 0；realpath 确认仍使用主目录 `apps/cli/dist/index.js`，SDK auth.js / CLI qr-terminal.js 的 SHA256 与已验证 worktree 相同，dist 不含 diagnostics。
+- 合入后主目录针对性回归：`pnpm --filter @learning/sdk exec vitest run tests/zhs-auth-crypto.test.ts tests/auth-flow.test.ts` → 48/48，exit 0；`pnpm --filter @learning/cli exec vitest run tests/qr-terminal.test.ts tests/auth-ui.test.ts` → 8/8，exit 0，包含 JPEG/PNG + wxTransit 的真实 PTY 进程链。
+- 用户账号数据与命令链接未改动，未推送远端。离线独立 packed consumer 元数据缺失和修后真实完整扫码验收仍是上一记录中的缺口；本轮没有重复无变化的 E2E 检查。下一当前事项：人工重新启动 `learning login --profile uu-zhs` 完成新的扫码确认，再验收 CLI 登录结果；没有自动生成待扫二维码或执行平台学习写入。
