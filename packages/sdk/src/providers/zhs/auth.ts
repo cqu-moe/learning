@@ -95,9 +95,9 @@ export function zhsWechatQrLaunch(deps: { http: SessionHttp; jar: SessionCookieJ
       poll.searchParams.set('_', String(deps.clock.nowMs()));
       const result = await deps.http.request({ kind: 'read', method: 'GET', url: poll.toString(), signal: ctx.signal });
       const body = await result.text();
-      const err = /wx_errcode=(\d+)/.exec(body)?.[1];
+      const err = /(?:^|[;\r\n])\s*(?:window\.)?wx_errcode\s*=\s*(\d+)\s*(?:;|$)/.exec(body)?.[1];
       if (err === '405') {
-        code = /wx_code='([A-Za-z0-9]+)'/.exec(body)?.[1] ?? null;
+        code = /(?:^|[;\r\n])\s*(?:window\.)?wx_code\s*=\s*(["'])([A-Za-z0-9_-]+)\1\s*(?:;|$)/.exec(body)?.[2] ?? null;
         if (code === null) { ctx.fail({ code: 'PROTOCOL', message: 'WeChat confirmed without a safe code', retryAfterMs: null, operationId: null }); return; }
       } else if (err === '403') { ctx.fail({ code: 'CANCELED', message: 'WeChat login was canceled', retryAfterMs: null, operationId: null }); return; }
       else if (err === '404' || err === '408') {

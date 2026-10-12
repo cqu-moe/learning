@@ -40,3 +40,7 @@
 - CLI 直接依赖 zod 4.6.5，与 SDK 同版。
 - @clack/prompts 1.8.1（engines >=20.12.0）；Node24.11.1 下 text/autocomplete/confirm 与 stderr 输出已通过真实 PTY 验证。
 - cli-table3 0.6.5，Node24.11.1 下 ESM 导入及 32/80/120 列中文布局测试通过。
+
+## 2026-10-12 · 终端二维码展示
+
+- CLI 将既有 qrcode 的传递依赖 pngjs 5.0.0 显式固定为直接依赖，用于本机解析 SDK 返回的 PNG 并在终端显示；未升级已有工具链或 pngjs 版本。PNG 解码只在 CLI 端使用，不进入 SDK/root/public。

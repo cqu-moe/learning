@@ -73,3 +73,7 @@ E01（ykt 考试 fixtures）、E02（学堂分页终止）、E03（ykt lesson �
 ### P-E07 · 2026-09-23 已授权雨课堂 KG 目录零 ID
 
 只读查看一门 KG 课程的 `student_learn_chapter`：章节目录节点出现 `id:0`，其 `leaf_list` 含多个真实叶子。旧 `RawNode` 共用 schema 要求所有节点 ID >0，导致整棵树 ZodError；现仅允许目录节点 ID 为 0，`toLeaf` 仍拒绝零 ID 资源，避免错误资源 key。没有保存章节原始名称、叶子 ID 或学生数据。本条是协议证据编号 P-E07，**不是** SOURCES 中字体黄金样本缺口 E07。
+
+### 2026-10-12 · 智慧树微信确认响应的有限文本解析（离线回归）
+
+截图中的 `WeChat confirmed without a safe code` 由 SDK 在读取 `wx_errcode=405` 后未匹配 `wx_code` 时主动抛出；不表示用户需要输入验证码。固定参考 `.reference/zhs-cli/src/client.py::wx_qr_poll` 与原 SDK 均仅接受单引号及 `[A-Za-z0-9]+`。合成 fixture 经 SDK `auth.begin` 实际重放：仅将 code 改为含 `-`、`_` 或双引号便能复现同一错误；赋值空白另触发 unexpected status。已改为有限赋值语法，兼容单双引号、赋值空白与 `[A-Za-z0-9_-]+`，仍拒绝空值、不配对引号、非法字符及字符串拼接表达式；不执行响应脚本，不将 code 放入公开事件。缺少用户当次微信轮询响应，不能断言具体是哪一种格式，也未做真实扫码、Cookie 交换或登录验收。

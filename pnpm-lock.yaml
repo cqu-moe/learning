@@ -35,6 +35,9 @@ importers:
       commander:
         specifier: 15.0.0
         version: 15.0.0
+      pngjs:
+        specifier: 5.0.0
+        version: 5.0.0
       qrcode:
         specifier: 1.5.4
         version: 1.5.4

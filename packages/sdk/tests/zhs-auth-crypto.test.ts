@@ -79,25 +79,69 @@ describe('zhs native qr login (T10, Z02)', () => {
 });
 
 describe('zhs default WeChat QR API flow', () => {
-  it('follows the allowlisted page, image, poll and OAuth exchange without a browser', async () => {
+  async function beginWechat(body: string, code: string | null, includeWaiting = false) {
     const fixture = loadFixture('zhs/wechat-qr');
     const service = 'https://onlineservice-api.zhihuishu.com/gateway/f/v1/login/gologin?fromurl=https://onlineweb.zhihuishu.com/onlinestuh5';
     const redirect = `https://user.zhihuishu.com/zhsuser/oauth/weixin/wxLogin?service=${encodeURIComponent(service)}`;
     fixture.interactions[0]!.request.query = { appid: 'wx3f96cd4b1dc1f574', scope: 'snsapi_login', redirect_uri: redirect, state: 'https://login.zhihuishu.com/wxTransit/0', login_type: 'jssdk', self_redirect: 'false' };
+    fixture.interactions[0]!.request.headers = { referer: 'https://login.zhihuishu.com/' };
     for (const [index, row] of fixture.interactions.slice(2, 5).entries()) row.request.query = { uuid: 'WXUUID1', _: String(1728000000000 + index * 2000) };
-    fixture.interactions[5]!.request.query = { service, code: 'CODE1', state: 'https://login.zhihuishu.com/wxTransit/0' };
+    fixture.interactions[4]!.response.body = body;
+    fixture.interactions[5]!.request.query = { service, code: code ?? '', state: 'https://login.zhihuishu.com/wxTransit/0' };
+    if (!includeWaiting) {
+      fixture.interactions.splice(2, 2);
+      fixture.interactions[2]!.request.query = { uuid: 'WXUUID1', _: '1728000000000' };
+    }
     const transport = new FakeTransport();
-    transport.scriptInteractions(fixture.interactions);
+    transport.scriptInteractions(code === null ? fixture.interactions.slice(0, -1) : fixture.interactions);
     const clock = new FakeClock();
     const runtime: Runtime = { transport, clock, state: new MemoryStateStore(), masterKey: new Uint8Array(32).fill(9),
       artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
       heavy: null, model: null, log: () => {}, wake: async () => {} };
     const client = createLearningClient({ scope, runtime });
     const flow = await client.auth.begin({ method: 'qr' });
-    const view = await flow.result;
-    expect(view.identityVerified).toBe(false);
-    expect(view.platformUserId).toContain('uuid');
-    transport.assertNoExtraScripts();
+    return { client, flow, runtime, transport };
+  }
+
+  it.each([
+    { name: 'single-quoted alphanumeric code', body: "window.wx_errcode=405;window.wx_code='CODE1';", code: 'CODE1', includeWaiting: true },
+    { name: 'code containing underscore', body: "window.wx_errcode=405;window.wx_code='CODE_1';", code: 'CODE_1' },
+    { name: 'code containing hyphen', body: "window.wx_errcode=405;window.wx_code='CODE-1';", code: 'CODE-1' },
+    { name: 'double-quoted code', body: 'window.wx_errcode=405;window.wx_code="CODE1";', code: 'CODE1' },
+    { name: 'assignment whitespace', body: "window.wx_errcode = 405;\nwindow.wx_code = 'CODE1';", code: 'CODE1' },
+  ])('exchanges a confirmed $name without exposing the code', async ({ body, code, includeWaiting }) => {
+    const { client, flow, runtime, transport } = await beginWechat(body, code, includeWaiting);
+    try {
+      const view = await flow.result;
+      const events = [];
+      for await (const event of flow.events) events.push(event);
+      expect(view.identityVerified).toBe(false);
+      expect(view.platformUserId).toContain('uuid');
+      expect(events.map(event => event.type)).toEqual(includeWaiting ? ['qr', 'waiting', 'scanned', 'exchanging', 'authenticated'] : ['qr', 'waiting', 'exchanging', 'authenticated']);
+      expect(JSON.stringify(events)).not.toContain(code);
+      expect(await readSession(runtime.state, runtime.masterKey, scope)).toMatchObject({ generation: view.generation });
+      transport.assertNoExtraScripts();
+    } finally {
+      await client.close();
+    }
+  });
+
+  it.each([
+    "window.wx_errcode=405;",
+    "window.wx_errcode=405;window.wx_code='';",
+    'window.wx_errcode=405;window.wx_code=\'CODE1";',
+    "window.wx_errcode=405;window.wx_code='CODE/1';",
+    "window.wx_errcode=405;window.wx_code='CODE1'+suffix;",
+  ])('rejects malformed confirmation without exchanging or saving a session: %s', async body => {
+    const { client, flow, runtime, transport } = await beginWechat(body, null);
+    try {
+      await expect(flow.result).rejects.toMatchObject({ data: { code: 'PROTOCOL' } });
+      expect(transport.calls.some(call => new URL(call.url).hostname === 'user.zhihuishu.com')).toBe(false);
+      expect(await readSession(runtime.state, runtime.masterKey, scope)).toBeNull();
+      transport.assertNoExtraScripts();
+    } finally {
+      await client.close();
+    }
   });
 });
 
