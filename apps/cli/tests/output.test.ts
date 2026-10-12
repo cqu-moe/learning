@@ -56,6 +56,17 @@ describe('machine output contract', () => {
 });
 
 describe('output streams and terminal mode', () => {
+  it('reports an aborted media probe as cancellation in the final machine result', async () => {
+    const { Writable } = await import('node:stream');
+    const { createOutput, resolveOutputMode } = await import('../src/output.js');
+    let text = '';
+    const stream = new Writable({ write(chunk, _encoding, callback) { text += String(chunk); callback(); } });
+    const output = createOutput(resolveOutputMode({ json: true }), { stdout: stream, stderr: stream });
+    try {
+      await output.finish(new DOMException('Media duration probe aborted', 'AbortError'));
+      expect(JSON.parse(text)).toMatchObject({ status: 'canceled', exitCode: 3, error: { code: 'CANCELED', message: '操作已取消。' } });
+    } finally { output.close(); process.exitCode = 0; }
+  });
   it('waits for the writer and handles a broken pipe without rejection', async () => {
     const { Writable } = await import('node:stream');
     const { createOutput, resolveOutputMode } = await import('../src/output.js');

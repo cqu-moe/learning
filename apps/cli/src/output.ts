@@ -73,6 +73,7 @@ export function formatClock(seconds: number): string {
   return `${h > 0 ? `${h}:` : ''}${h > 0 ? String(m).padStart(2, '0') : m}:${String(s).padStart(2, '0')}`;
 }
 export function errorInfo(error: unknown): { error: z.infer<typeof ErrorSchema>; exitCode: number } {
+  if (error instanceof DOMException && error.name === 'AbortError') return errorInfo(new CliError('CANCELED', '操作已取消。', 3));
   if (error instanceof z.ZodError) return errorInfo(new CliError('INVALID_INPUT', '输入数据结构不符合要求。', 2, error.issues.filter(issue => issue.path.length > 0).map(issue => issue.path.map(String).join('.'))));
   if (error instanceof SyntaxError) return errorInfo(new CliError('INVALID_INPUT', '输入内容不是有效的 JSON。'));
   if (!(error instanceof CliError) && error instanceof Error && 'code' in error && ['ENOENT','ENOTDIR','EISDIR'].includes(String(error.code))) return errorInfo(new CliError('INVALID_INPUT', '本地文件路径不存在或类型不正确。'));

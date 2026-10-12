@@ -639,3 +639,4 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 并行适配器实现与 Spec 审查使用用户授权的 zhipu/glm-5.3 / max；Standards 与后续复审因 5 小时额度限制无法完成，主代理接手逐项审查和最终参数修正。已处理警告持久化、恢复退出码、媒体域名与重定向约束；未据合成 HLS fixture 改写旧媒体类型协议。
 - 最终 `pnpm build && pnpm test:e2e` → exit 0，7/7，包含真实 tarball 的独立消费者冻结离线安装。本地与远端交付结果续记。
 - 未运行：真实平台登录/学习/答题/发帖/交卷、付费模型或云部署。本次仅处理用户指定 UI 与时长问题，不推进其他 PLAN 项或延期 Web。
+- 交付复查补充：初次时长核对期间取消 ffprobe 会抛 DOM AbortError，通用 CLI 输出原先误报 INTERNAL / exit 1。新增输出边界回归先失败，再将其规范化为中文“操作已取消” / CANCELED / exit 3；不改变 UNCERTAIN 的优先级。CLI build、output/output-format 专项 13/13、对应 ESLint、git diff --check，均 exit 0。
