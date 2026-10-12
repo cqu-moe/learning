@@ -5,6 +5,7 @@ import { JsonSchema, QuestionSchema, JobSchema, LearningError } from '@learning/
 import type { Command } from 'commander';
 import type { Writable } from 'node:stream';
 import { stripVTControlCharacters, styleText } from 'node:util';
+import type { createProgressDisplay, ProgressRow } from './progress.js';
 
 export const OutputModeSchema = z.object({ format: z.enum(['pretty', 'plain', 'json', 'jsonl']), interactive: z.boolean(), quiet: z.boolean(), color: z.boolean(), debug: z.boolean() });
 export type OutputMode = z.infer<typeof OutputModeSchema>;
@@ -23,6 +24,36 @@ export const CliEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('gap'), data: z.object({ jobId: z.string(), message: z.string(), sourceSequence: z.number() }) }),
 ]);
 export type CliEvent = z.infer<typeof CliEventSchema>;
+type ProgressData = Extract<CliEvent, { type: 'progress' }>['data'];
+export interface StudyDisplay { courseTitle: string; profileName: string; speed: number; targetFraction: number; nextRunAtMs?: number | null; observedAtMs?: number }
+export const jobStates: Record<string, string> = { queued: '准备中', running: '进行中', waiting: '学习中', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
+const activeJob = (status: string) => ['queued', 'running', 'waiting'].includes(status);
+const singleLine = (text: string) => cleanText(text).replace(/\s+/g, ' ').trim();
+function progressRows(value: ProgressData, study: StudyDisplay | undefined, startedAt: number, observedAt: number): ProgressRow[] {
+  const now = Date.now();
+  const total = value.total;
+  const lines: ProgressRow[] = [{ text: study ? singleLine(study.courseTitle) : '任务进度', tone: 'bold' }];
+  if (study) lines.push({ text: `${singleLine(study.profileName)} · ${study.speed}× · 目标 ${study.targetFraction * 100}%`, tone: 'dim' });
+  lines.push({ label: study ? '整课' : '任务', fraction: total === null || total === 0 ? null : value.completed / total, detail: `${value.completed}/${total ?? '?'}`, tone: 'green' });
+  if (value.resourceKey !== null || value.title !== null) {
+    lines.push({ text: `当前 ${singleLine(value.title ?? '') || '学习资源'}`, tone: 'bold' });
+    const duration = value.durationSeconds;
+    const until = study?.nextRunAtMs;
+    const elapsed = study && activeJob(value.status) && until != null ? Math.max(0, (Math.min(now, until) - observedAt) / 1000) * study.speed : 0;
+    const baseline = value.serverSeconds ?? (value.serverFraction !== null && duration !== null ? value.serverFraction * duration : null);
+    const seconds = baseline === null || duration === null ? null : Math.min(duration * (study?.targetFraction ?? 1), baseline + elapsed);
+    const fraction = seconds !== null && duration !== null && duration > 0 ? seconds / duration : value.serverFraction;
+    lines.push({ label: study ? '视频' : '当前', fraction, detail: fraction === null ? '进度未知' : `${(fraction * 100).toFixed(1)}%`, tone: 'cyan' });
+    if (duration !== null && duration > 0 && seconds !== null) {
+      lines.push({ text: `${elapsed > 0 || value.serverSeconds === null ? '本地估计' : '播放进度'} ${formatClock(seconds)}/${formatClock(duration)}` });
+    } else if (duration !== null && duration > 0) lines.push({ text: `视频时长 ${formatClock(duration)}` });
+    lines.push({ text: value.serverFraction === null ? '平台进度暂不可用' : `平台已确认 ${(value.serverFraction * 100).toFixed(1)}%`, tone: 'dim' });
+  }
+  const state = value.status === 'waiting' && !study ? '等待继续' : jobStates[value.status] ?? value.status;
+  lines.push({ text: `${state} · 已用 ${formatClock(Math.max(0, now - startedAt) / 1000)}` });
+  if (activeJob(value.status)) lines.push({ text: 'Ctrl+C 暂停并保存', tone: 'dim' });
+  return lines;
+}
 export type EventInput = CliEvent extends infer E ? E extends CliEvent ? Pick<E, 'type' | 'data'> : never : never;
 export class CliError extends Error {
   constructor(public code: string, message: string, public exitCode = 2, public fields: string[] = [], public hint: string[] = [], public operationId: string | null = null) { super(message); }
@@ -42,13 +73,14 @@ export function formatClock(seconds: number): string {
   return `${h > 0 ? `${h}:` : ''}${h > 0 ? String(m).padStart(2, '0') : m}:${String(s).padStart(2, '0')}`;
 }
 export function errorInfo(error: unknown): { error: z.infer<typeof ErrorSchema>; exitCode: number } {
+  if (error instanceof DOMException && error.name === 'AbortError') return errorInfo(new CliError('CANCELED', '操作已取消。', 3));
   if (error instanceof z.ZodError) return errorInfo(new CliError('INVALID_INPUT', '输入数据结构不符合要求。', 2, error.issues.filter(issue => issue.path.length > 0).map(issue => issue.path.map(String).join('.'))));
   if (error instanceof SyntaxError) return errorInfo(new CliError('INVALID_INPUT', '输入内容不是有效的 JSON。'));
   if (!(error instanceof CliError) && error instanceof Error && 'code' in error && ['ENOENT','ENOTDIR','EISDIR'].includes(String(error.code))) return errorInfo(new CliError('INVALID_INPUT', '本地文件路径不存在或类型不正确。'));
   const data = error instanceof LearningError ? error.data : null;
   const exitCode = error instanceof CliError ? error.exitCode : data === null ? 1 : ['INVALID_INPUT', 'PREVIEW_EXPIRED', 'PRECONDITION_CHANGED'].includes(data.code) ? 2 : data.code === 'UNCERTAIN' ? 5 : ['AUTH_REQUIRED', 'AUTH_EXPIRED', 'FORBIDDEN', 'INTERACTION_REQUIRED', 'UNSUPPORTED', 'MISSING_RUNTIME', 'CONFLICT', 'CANCELED'].includes(data.code) ? 3 : 1;
   const code = error instanceof CliError ? error.code : data?.code ?? 'INTERNAL';
-  const hints: Record<string, string[]> = { INVALID_INPUT: ['运行对应命令 --help 查看参数。'], AUTH_REQUIRED: ['请先运行 learning login --profile <账号>。'], AUTH_EXPIRED: ['登录已过期，请重新登录。'], UNCERTAIN: [data?.operationId ? `先核对结果，勿重复提交：learning operations reconcile ${shellQuote(data.operationId)}` : '先核对不确定写入的操作记录，勿重复提交。'], CONFLICT: ['确认其他写入进程已退出后再继续；不要删除密钥或数据库。'], MISSING_RUNTIME: ['运行 learning doctor 检查本地依赖。'], CANCELED: ['操作已取消；已执行的写入不会回滚。'] };
+  const hints: Record<string, string[]> = { INVALID_INPUT: ['运行对应命令 --help 查看参数。'], AUTH_REQUIRED: ['请先运行 learning login --profile <账号>。'], AUTH_EXPIRED: ['登录已过期，请运行 learning login --profile <账号> 重新登录。'], UNCERTAIN: [data?.operationId ? `先核对结果，勿重复提交：learning operations reconcile ${shellQuote(data.operationId)}` : '先核对不确定写入的操作记录，勿重复提交。'], CONFLICT: ['确认其他写入进程已退出后再继续；不要删除密钥或数据库。'], MISSING_RUNTIME: ['运行 learning doctor 检查本地依赖。'], CANCELED: ['操作已取消；已执行的写入不会回滚。'] };
   return { exitCode, error: { code, message: cleanText(error instanceof CliError ? error.message : data?.message ?? '发生本地错误，请使用 --debug 查看错误类别。'), hint: error instanceof CliError && error.hint.length ? error.hint : hints[code] ?? [], fields: error instanceof CliError ? error.fields : [], operationId: error instanceof CliError ? error.operationId : data?.operationId ?? null, retryAfterMs: data?.retryAfterMs ?? null } };
 }
 const promptBoundaries = new WeakMap<OutputMode, { begin: () => Promise<void>; end: () => Promise<void> }>();
@@ -68,11 +100,20 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   let canceled = false;
   let home: string | undefined;
   let indicator: ReturnType<typeof spinner> | null = null;
+  let display: ReturnType<typeof createProgressDisplay> | null = null;
+  let createDisplay: typeof createProgressDisplay | null = null;
+  let live: { value: ProgressData; study: StudyDisplay | undefined; startedAt: number; observedAt: number } | null = null;
   let lastProgressAt = 0;
   let lastPhase = '';
   let indicatorText = '';
   let promptDepth = 0;
-  const pause = () => { indicator?.clear(); indicator = null; };
+  const pause = () => { const current = display; display = null; current?.clear(); indicator?.clear(); indicator = null; };
+  const showProgress = async () => {
+    createDisplay ??= (await import('./progress.js')).createProgressDisplay;
+    if (!live || promptDepth > 0 || finished || work.signal.aborted) return;
+    if (display) display.draw();
+    else display = createDisplay(streams.stderr, () => live ? progressRows(live.value, live.study, live.startedAt, live.observedAt) : [], mode.color);
+  };
   progressPauses.set(mode, pause);
   const warnings: Array<z.infer<typeof WarningSchema>> = [];
   const pendingWarnings: Array<z.infer<typeof WarningSchema>> = [];
@@ -80,7 +121,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
   const abort = new AbortController();
   const work = new AbortController();
   commandSignals.set(mode, work.signal);
-  const cancel = () => { canceled = true; work.abort(); if (Number(process.exitCode ?? 0) !== 5) process.exitCode = 3; };
+  const cancel = () => { canceled = true; work.abort(); pause(); if (Number(process.exitCode ?? 0) !== 5) process.exitCode = 3; };
   const onError = () => { abort.abort(); cancel(); };
   streams.stdout.on('error', onError);
   streams.stderr.on('error', onError);
@@ -109,6 +150,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     const next = warningFlush.then(async () => {
       if (promptDepth > 0 || pendingWarnings.length === 0) return;
       const restore = indicator !== null ? indicatorText : null;
+      const restoreProgress = display !== null;
       pause();
       while (pendingWarnings.length > 0) {
         const warning = pendingWarnings.shift()!;
@@ -118,6 +160,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       if (restore !== null && !finished && !work.signal.aborted) {
         indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(restore);
       }
+      if (restoreProgress) await showProgress();
     });
     // Return the rejection to this caller while keeping later flushes usable.
     warningFlush = next.catch(() => {});
@@ -141,28 +184,33 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     pauseProgress: pause,
     activity(message: string) {
       if (mode.format !== 'pretty' || mode.quiet) return;
+      if (display) pause();
       indicatorText = cleanText(message);
       if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(cleanText(message)); }
       else indicator.message(cleanText(message));
     },
-    async progress(value: Extract<CliEvent, { type: 'progress' }>['data']) {
+    async progress(value: ProgressData, study?: StudyDisplay) {
       await flushWarnings();
       await event({ type: 'progress', data: value });
       if (machine || mode.quiet) return;
+      if (mode.format === 'pretty' && activeJob(value.status)) {
+        const startedAt = live !== null && live.value.jobId === value.jobId ? live.startedAt : Date.now();
+        live = { value, study, startedAt, observedAt: study?.observedAtMs ?? Date.now() };
+        if (indicator) { indicator.clear(); indicator = null; }
+        await showProgress();
+        return;
+      }
       const phase = `${value.jobId}:${value.status}:${value.resourceKey ?? ''}`;
-      const interval = mode.format === 'pretty' ? 100 : 5000;
+      const interval = 5000;
       if (phase === lastPhase && Date.now() - lastProgressAt < interval) return;
       lastPhase = phase; lastProgressAt = Date.now();
-      const states: Record<string, string> = { queued: '已排队', running: '进行中', waiting: '等待下一阶段', paused: '已暂停', 'needs-input': '需要人工处理', uncertain: '写入结果待核对', succeeded: '已完成', partial: '部分完成', failed: '失败', canceled: '已取消' };
-      const label = value.resourceKey === null && value.title === null ? '' : ` · ${value.title ?? value.resourceKey}`;
+      const label = value.title === null ? '' : ` · ${singleLine(value.title)}`;
       const clock = value.durationSeconds !== null && value.durationSeconds > 0 && value.serverSeconds !== null ? ` · ${formatClock(value.serverSeconds)}/${formatClock(value.durationSeconds)}` : '';
-      const text = `${states[value.status] ?? value.status} · ${value.completed}/${value.total ?? '?'} 个资源${label}${clock}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
-      indicatorText = text;
-      if (mode.format === 'pretty' && ['queued','running','waiting'].includes(value.status)) {
-        if (!indicator) { indicator = spinner({ output: streams.stderr, onCancel: pause }); indicator.start(text); } else indicator.message(text);
-      } else { pause(); await write(streams.stderr, cleanText(text) + '\n'); }
+      const state = value.status === 'waiting' && !study ? '等待继续' : jobStates[value.status] ?? value.status;
+      const text = `${study ? singleLine(study.courseTitle) + ' · ' : ''}${state} · ${value.completed}/${value.total ?? '?'} 个资源${label}${clock}${value.serverFraction === null ? '' : ` · 服务端 ${(value.serverFraction * 100).toFixed(1)}%`}`;
+      pause(); await write(streams.stderr, cleanText(text) + '\n');
     },
-    async message(text: string, essential = false) { await flushWarnings(); if (!machine && (!mode.quiet || essential)) await write(streams.stderr, cleanText(text) + '\n'); },
+    async message(text: string, essential = false) { await flushWarnings(); if (!machine && (!mode.quiet || essential)) { pause(); await write(streams.stderr, cleanText(text) + '\n'); } },
     async warning(code: string, message: string) { recordWarning(code, message); await flushWarnings(); },
     async finish(error?: unknown) {
       if (finished) return;

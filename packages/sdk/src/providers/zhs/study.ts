@@ -9,7 +9,7 @@ import { parseHikeTree, parseShareVideoList } from './catalog.js';
 import { zhidaoQuery } from './http.js';
 import type { JobRunner } from '../../services/jobs.js';
 
-export async function zhsShareReadState(http: SessionHttp, clock: Clock, resource: ResourceRef): Promise<{ progress: Progress; identity: { recruitId: string; courseId: string; ccCourseId: string; videoSec: number | null } }> {
+export async function zhsShareReadState(http: SessionHttp, clock: Clock, resource: ResourceRef): Promise<{ progress: Progress; identity: { recruitId: string; courseId: string; ccCourseId: string; videoSec: number | null; title?: string | null } }> {
   if (resource.native.kind !== 'zhs-share' || resource.course.native.kind !== 'zhs-share') throw new LearningError({ code: 'INVALID_INPUT', message: 'share progress needs a share resource', retryAfterMs: null, operationId: null });
   const racId = resource.course.native.recruitAndCourseId;
   const chapterId = resource.native.chapterId;
@@ -35,14 +35,14 @@ export async function zhsShareReadState(http: SessionHttp, clock: Clock, resourc
   const duration = leaf.videoSec;
   if (!Number.isFinite(seconds) || seconds < 0 || duration !== null && (!Number.isFinite(duration) || duration <= 0)) throw new LearningError({ code: 'PROTOCOL', message: 'share progress numbers are invalid', retryAfterMs: null, operationId: null });
   return { progress: { resource, serverCompleted: watched.watchState === 1, serverFraction: duration === null ? null : Math.min(seconds / duration, 1), serverSeconds: seconds, durationSeconds: duration, observedAtMs: clock.nowMs() },
-    identity: { recruitId: String(recruitId), courseId: String(data?.courseInfo?.courseId ?? ''), ccCourseId: parsed.courseId, videoSec: duration } };
+    identity: { recruitId: String(recruitId), courseId: String(data?.courseInfo?.courseId ?? ''), ccCourseId: parsed.courseId, videoSec: duration, title: leaf.name } };
 }
 
 export async function zhsShareReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef): Promise<Progress> {
   return (await zhsShareReadState(http, clock, resource)).progress;
 }
 
-export async function zhsHikeReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef, requireVideo = false): Promise<Progress> {
+async function zhsHikeReadObservation(http: SessionHttp, clock: Clock, resource: ResourceRef, requireVideo = false): Promise<{ progress: Progress; title: string }> {
   if (resource.native.kind !== 'zhs-hike' || resource.course.native.kind !== 'zhs-hike') throw new LearningError({ code: 'INVALID_INPUT', message: 'hike progress needs a hike resource', retryAfterMs: null, operationId: null });
   const response = await http.request({ kind: 'read', method: 'GET', url: `https://studyresources.zhihuishu.com/studyResources/stuResouce/queryResourceMenuTree?courseId=${resource.course.native.courseId}&_=${clock.nowMs()}` });
   if (response.status !== 200) throw new LearningError({ code: 'PROTOCOL', message: `hike resource tree returned HTTP ${response.status}`, retryAfterMs: null, operationId: null });
@@ -63,9 +63,13 @@ export async function zhsHikeReadProgress(http: SessionHttp, clock: Clock, resou
   if (requireVideo && node.kind !== 'video') throw new LearningError({ code: 'INTERACTION_REQUIRED', message: 'hike file is not a verified video', retryAfterMs: null, operationId: null });
   if (!Number.isFinite(node.studyTime) || node.studyTime < 0 || !Number.isFinite(node.totalTime) || node.totalTime < 0) throw new LearningError({ code: 'PROTOCOL', message: 'hike progress numbers are invalid', retryAfterMs: null, operationId: null });
   const durationSeconds = node.totalTime > 0 ? node.totalTime : null;
-  return { resource, serverCompleted: durationSeconds === null ? null : node.studyTime >= durationSeconds,
+  return { title: node.name, progress: { resource, serverCompleted: durationSeconds === null ? null : node.studyTime >= durationSeconds,
     serverFraction: durationSeconds === null ? null : Math.min(node.studyTime / durationSeconds, 1),
-    serverSeconds: node.studyTime, durationSeconds, observedAtMs: clock.nowMs() };
+    serverSeconds: node.studyTime, durationSeconds, observedAtMs: clock.nowMs() } };
+}
+
+export async function zhsHikeReadProgress(http: SessionHttp, clock: Clock, resource: ResourceRef, requireVideo = false): Promise<Progress> {
+  return (await zhsHikeReadObservation(http, clock, resource, requireVideo)).progress;
 }
 
 interface HikeCursor { resourceKey: string; startedAtMs: number; serverSeconds: number; stalls: number }
@@ -90,7 +94,8 @@ export async function advanceHikeStudy(input: { job: Job; action: Extract<Action
       return { completed: items.length === action.resources.length, items, ...(state === 'needs-input' ? { status: 'needs-input' as const } : {}) };
     };
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'hike study duration budget expired');
-    const progress = await zhsHikeReadProgress(http, clock, next, true);
+    const { progress, title } = await zhsHikeReadObservation(http, clock, next, true);
+    await runner.emitProgress(job.id, next.key, progress.serverFraction, { title, durationSeconds: progress.durationSeconds, serverSeconds: progress.serverSeconds });
     if (progress.durationSeconds === null || progress.serverSeconds === null) return finish('needs-input', 'hike file duration is unknown');
     const target = Math.min(progress.durationSeconds, progress.durationSeconds * action.settings.targetFraction);
     if (progress.serverSeconds >= target) return finish('succeeded', progress.serverCompleted ? 'server completed' : 'target reached; server completion is not claimed');
@@ -219,7 +224,7 @@ function shareCursor(raw: string | null): ShareCursor | null {
 /** Default pause mode: no popup answer is fabricated and no offline time is replayed. */
 export async function advanceShareStudy(input: {
   job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; clock: Clock; uuid: string;
-  readState: () => Promise<{ progress: Progress; identity: { recruitId: string; courseId: string; ccCourseId: string; videoSec: number | null } }>;
+  readState: () => Promise<{ progress: Progress; identity: { recruitId: string; courseId: string; ccCourseId: string; videoSec: number | null; title?: string | null } }>;
   popupPoints: (ids: { recruitId: string; courseId: string; ccCourseId: string; videoSec: number }) => Promise<Array<{ timeSec: number }>>;
   prelearningNote: (ids: { recruitId: string; courseId: string; ccCourseId: string; videoSec: number }) => Promise<string>;
   save: (details: { played: number; lastSubmit: number; watchPoint: string; noteId: string; ids: { recruitId: string; courseId: string; ccCourseId: string; videoSec: number } }) => Promise<void>;
@@ -236,6 +241,7 @@ export async function advanceShareStudy(input: {
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'share study duration budget expired');
     const observed = await input.readState();
     const { progress, identity } = observed;
+    await runner.emitProgress(job.id, next.key, progress.serverFraction, { title: identity.title ?? null, durationSeconds: progress.durationSeconds, serverSeconds: progress.serverSeconds });
     const duration = progress.durationSeconds;
     const seconds = progress.serverSeconds;
     if (duration === null || seconds === null || identity.videoSec === null || identity.courseId === '' || identity.ccCourseId === '') return finish('needs-input', 'share video lacks duration or native course ids');

@@ -85,7 +85,7 @@ describe('xtx study lifecycle', () => {
     await jar.absorb(new URL('https://www.xuetangx.com/'), ['csrftoken=fixture; Path=/']);
     const http = createSessionHttp({ transport, clock, jar, allowHosts: ['xuetangx.com'] });
     const schedule = (rate: number, status = 200) => ({ request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/course/schedule', query: { cid: '100', sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status, body: { data: { leaf_schedules: { '7': rate } } } } });
-    const leaf = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/leaf_info/100/7/', query: { sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { id: 7, course_id: 5, user_id: 77, sku_id: 9, content_info: { media: { ccid: 'CCX1', duration: 10 } } } } } };
+    const leaf = { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/leaf_info/100/7/', query: { sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { id: 7, name: '1.1 学堂视频', course_id: 5, user_id: 77, sku_id: 9, content_info: { media: { ccid: 'CCX1', duration: 10 } } } } } };
     const row = buildXtxStudyRow({ courseId: '5', userId: '77', skuId: '9', videoId: '7', ccid: 'CCX1', duration: 10, exerciseId: null }, { event: 'heartbeat', cp: 5, speed: 1, sq: 4, tsMs: clock.nowMs(), classroomId: '100', pg: `${job.id}_7` });
     const write = { request: { method: 'POST', host: 'www.xuetangx.com', path: '/video-log/heartbeat/', headers: { xtbz: 'xt', 'x-csrftoken': 'fixture', 'content-type': 'application/json;charset=utf-8' }, body: { heart_data: [row] } }, response: { status: 200, body: {} } };
     transport.scriptInteractions([schedule(0), leaf, write, schedule(0, 403)]);
@@ -94,6 +94,7 @@ describe('xtx study lifecycle', () => {
     expect(uncertain.status).toBe('uncertain');
     const operationId = `xtx-heartbeat:${job.id}:video:4`;
     expect((await runner.metadata(job.id)).pendingOperationId).toBe(operationId);
+    expect((await runner.events(job.id, 0)).some((event) => event.type === 'progress' && event.title === '1.1 学堂视频' && event.durationSeconds === 10 && event.serverFraction === 0 && event.serverSeconds === null)).toBe(true);
     transport.scriptInteractions([schedule(0.5)]);
     expect((await reconcileXtxHeartbeat({ job: uncertain, action, runner, http, clock, operationId })).state).toBe('confirmed');
     expect((await runner.get(job.id)).status).toBe('paused');
@@ -163,5 +164,31 @@ describe('xtx study lifecycle', () => {
       transport.assertNoExtraScripts();
       expect(current.status).toBe(stage === 'heart' ? 'succeeded' : 'waiting');
     }
+  });
+
+  it('emits nullable server progress without synthesizing a schedule fraction', async () => {
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const scope = { userId: 'local', profileId: 'p-unknown-schedule', platform: 'xuetang' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'xuetang' as const, classroomId: '100', courseSign: 'SIGN-A', skuId: '9' } }, key: 'video', native: { kind: 'xuetang' as const, leafId: '7', leafInfoId: null } };
+    const action = { kind: 'study' as const, resources: [resource], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause' as const, maxDurationSeconds: 60 } };
+    const runner = new JobRunner(state, clock);
+    const job = await runner.create(scope, 'study', { total: 1, generation: 1, payload: action });
+    const jar = new SessionCookieJar();
+    await jar.absorb(new URL('https://www.xuetangx.com/'), ['csrftoken=fixture; Path=/']);
+    const http = createSessionHttp({ transport, clock, jar, allowHosts: ['xuetangx.com'] });
+    const identity = { courseId: '5', userId: '77', skuId: '9', videoId: '7', ccid: 'CCX1', duration: 10, exerciseId: null };
+    const rows = (['loadstart', 'loadeddata', 'play'] as const).map((event, index) => buildXtxStudyRow(identity, { event, cp: 0, speed: 1, sq: index + 1, tsMs: clock.nowMs(), classroomId: '100', pg: `${job.id}_7` }));
+    transport.scriptInteractions([
+      { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/course/schedule', query: { cid: '100', sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { data: { leaf_schedules: {} } } } },
+      { request: { method: 'GET', host: 'www.xuetangx.com', path: '/api/v1/lms/learn/leaf_info/100/7/', query: { sign: 'SIGN-A' }, headers: { xtbz: 'xt' } }, response: { status: 200, body: { success: true, data: { id: 7, name: '1.1 学堂视频', course_id: 5, user_id: 77, sku_id: 9, content_info: { media: { ccid: 'CCX1', duration: 10 } } } } } },
+      { request: { method: 'POST', host: 'www.xuetangx.com', path: '/video-log/heartbeat/', headers: { xtbz: 'xt', 'x-csrftoken': 'fixture', 'content-type': 'application/json;charset=utf-8' }, body: { heart_data: rows } }, response: { status: 200, body: {} } },
+    ]);
+    const waiting = await advanceXtxStudy({ job, action, runner, http, jar, clock });
+    expect(waiting.status).toBe('waiting');
+    expect((await runner.events(job.id, 0)).some((event) => event.type === 'progress' && event.title === '1.1 学堂视频' && event.durationSeconds === 10 && event.serverFraction === null && event.serverSeconds === null)).toBe(true);
+    expect(transport.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+    transport.assertNoExtraScripts();
   });
 });

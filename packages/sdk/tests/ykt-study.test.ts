@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createLearningClient } from '../src/index.js';
 import { MemoryStateStore } from './helpers/memory.js';
 import { FakeClock, FakeTransport } from './helpers/replay.js';
-import type { Runtime } from '../src/runtime/types.js';
+import type { Options, Runtime } from '../src/runtime/types.js';
 import { SessionCookieJar } from '../src/http/client.js';
 import { writeSession } from '../src/session/store.js';
 import { JobRunner } from '../src/services/jobs.js';
@@ -103,11 +103,80 @@ describe('ykt study job', () => {
     ]);
     const client = createLearningClient({ scope, runtime });
     const preview = await client.actions.prepare({ kind: 'study', resources: [good, bad], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause', maxDurationSeconds: 60 } });
-    expect(preview.warnings).toEqual([{ code: 'SKIPPED_UNKNOWN_DURATION', message: 'video duration is unknown; play it once in the official web player, then retry', resourceKey: 'video-bad' }]);
+    expect(preview.warnings).toEqual([{ code: 'SKIPPED_UNKNOWN_DURATION', message: '未能读取视频时长，本次暂不处理；请在官方网页播放后重试。', resourceKey: 'video-bad' }]);
     const execution = await client.actions.execute(preview.id);
     if (execution.type !== 'job') throw Error('missing study job');
     expect(execution.job.total).toBe(1);
+    expect((await client.jobs.get(execution.job.id)).warnings).toEqual(preview.warnings);
     transport.assertNoExtraScripts();
+  });
+
+  it.each([
+    ...[79.9, null, 0, Number.NaN].map(duration => ({ duration, url: 'https://ali-cdn.xuetangx.com/video.mp4?token=fixture', probed: true })),
+    { duration: 79.9, url: 'http://127.0.0.1/private.mp4', probed: false },
+    { duration: 79.9, url: 'https://xuetangx.com.evil.example/video.mp4', probed: false },
+  ])('uses a real media duration or keeps the video pending: $duration $url', async ({ duration, url, probed }) => {
+    const scope = { userId: 'local', profileId: 'p-probe', platform: 'ykt' as const };
+    const resource = { course: { scope, key: 'course', native: { kind: 'ykt' as const, classroomId: '28930736' } }, key: 'unplayed-video', native: { kind: 'ykt' as const, leafId: '502', leafInfoId: null } };
+    const transport = new FakeTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const masterKey = new Uint8Array(32).fill(5);
+    await writeSession(state, masterKey, { schemaVersion: 1, scope, generation: 1, platformUserId: '424242', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: clock.nowMs() });
+    const urls: string[] = [];
+    const runtime = { transport, state, clock, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {},
+      probeMediaDuration: async (url: string) => { urls.push(url); return duration; } };
+    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { name: '课程片花', course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
+    const progress = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { code: 0, data: {} } } };
+    transport.scriptInteractions([leaf, progress, {
+      request: { method: 'GET', host: 'www.yuketang.cn', path: '/api/open/audiovideo/playurl', query: { video_id: 'CC1', provider: 'cc', file_type: '1', is_single: '0', domain: 'www.yuketang.cn' } },
+      response: { status: 200, body: { data: { playurl: { sources: { quality20: [url] } } } } },
+    }]);
+    const client = createLearningClient({ scope, runtime });
+    const prepare = client.actions.prepare({ kind: 'study', resources: [resource], settings: { speed: 1, targetFraction: 0.5, questionMode: 'pause', maxDurationSeconds: 60 } });
+    if (probed && duration !== null && Number.isFinite(duration) && duration > 0) {
+      const preview = await prepare;
+      expect(preview.warnings).toEqual([]);
+      const execution = await client.actions.execute(preview.id);
+      if (execution.type !== 'job') throw Error('missing study job');
+      expect(execution.job.total).toBe(1);
+      transport.scriptInteractions([leaf, progress]);
+      const readback = await client.catalog.progress(resource);
+      expect(readback.value).toMatchObject({ durationSeconds: 79.9, serverSeconds: 0, serverFraction: 0, serverCompleted: false });
+      transport.scriptInteractions([leaf, progress, {
+        request: { method: 'POST', host: 'www.yuketang.cn', path: '/video-log/heartbeat/', headers: { xtbz: 'ykt', 'classroom-id': '28930736', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' } },
+        response: { status: 200, body: {} },
+      }, leaf, progress]);
+      const job = await client.jobs.advance(execution.job.id);
+      expect(job).toMatchObject({ status: 'waiting', completed: 0, total: 1 });
+      const writes = transport.calls.filter(call => call.method === 'POST');
+      expect(writes).toHaveLength(1);
+      expect(JSON.parse(writes[0]!.bodyText!).heart_data[0]).toMatchObject({ cp: 5, d: 79.9, sp: 1, v: '502', cc: 'CC1' });
+      await clock.sleep(5000, new AbortController().signal);
+      const abort = new AbortController();
+      const restarted = createLearningClient({ scope, runtime: { ...runtime, probeMediaDuration: async (_url: string, options?: Options) => {
+        expect(options?.signal).toBe(abort.signal);
+        abort.abort();
+        throw new DOMException('Aborted', 'AbortError');
+      } } });
+      transport.scriptInteractions([leaf, progress, {
+        request: { method: 'GET', host: 'www.yuketang.cn', path: '/api/open/audiovideo/playurl', query: { video_id: 'CC1', provider: 'cc', file_type: '1', is_single: '0', domain: 'www.yuketang.cn' } },
+        response: { status: 200, body: { data: { playurl: { sources: { quality20: ['https://ali-cdn.xuetangx.com/video.mp4?token=new-fixture'] } } } } },
+      }]);
+      await expect(restarted.jobs.advance(job.id, { signal: abort.signal })).rejects.toMatchObject({ name: 'AbortError' });
+      expect((await restarted.jobs.get(job.id)).status).toBe('paused');
+      expect(transport.calls.filter(call => call.method === 'POST')).toHaveLength(1);
+      await expect(restarted.jobs.resume(job.id)).resolves.toMatchObject({ status: 'queued' });
+      await restarted.close();
+    } else {
+      await expect(prepare).rejects.toMatchObject({ data: { code: 'INTERACTION_REQUIRED', message: expect.stringContaining('课程片花') } });
+      expect(transport.calls.every(call => call.method === 'GET')).toBe(true);
+    }
+    expect(urls).toEqual(probed ? [url] : []);
+    transport.assertNoExtraScripts();
+    await client.close();
   });
 
   it('heartbeats without any csrf cookie (platform dropped csrftoken)', async () => {

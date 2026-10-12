@@ -570,3 +570,75 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 本轮文件：packages/sdk/src/providers/zhs/auth.ts、tests/zhs-auth-crypto.test.ts；apps/cli/tests/{auth-ui,e2e}.test.ts；本进度记录。后续增量审查针对预算和打包验收修正；最终 PR 状态以关联 PR 为准。
 - 实际 Node v24.11.1 / pnpm 11.19.0，worktree 执行 pnpm install --offline --frozen-lockfile --ignore-scripts、source-lock、boundaries、pnpm lint、pnpm typecheck、pnpm test、pnpm build、pnpm test:e2e、git diff --check 全部 exit 0：SDK 260/260、CLI 111/111、E2E 7/7。原独立安装证据缺口已解决，未跳过测试；聚焦命令未选中的用例不计通过。
 - 未运行项：新的平台扫码、在线身份 probe、学习/答题/发帖/交卷、Web/云部署。Cookie、真实二维码及临时协议材料未纳入提交。后续仅按用户授权在远端检查通过时合并并同步本地命令；合并后无新增开发任务，不推进延期 Web 或其他 PLAN 项。
+
+### 2026-10-12 · run 整门课程误报 INVALID_INPUT（用户指定修复，离线完成）
+
+- 工作区：主目录 main `d02167f` 干净时新建 `.worktrees/run-input`，分支 `codex/fix-run-input`。此次只修复雨课堂课程查询的错误分类与 CLI 恢复提示，没有推进其他 PLAN 项。
+- 根因证据：用户明确授权一次只读课程列表诊断。现有加密会话复制至 0700 临时目录，文件保持 0600，仅允许 GET `/v2/api/web/courses/list?identity=2`；响应 HTTP 401、errcode 401002，没有 data。旧 SDK 先校验成功响应，ZodError 被 CLI 误报为 INVALID_INPUT。另一次纯离线检查确认本机会话中保存的 sessionid 已过期，实际 URL 的 CookieJar 输出不再包含 sessionid；没有打印 Cookie 值、个人原始数据或密钥，所有临时快照和诊断脚本均自动清理，原账号数据未修改。
+- 实施：`packages/sdk/src/providers/ykt/{catalog,schemas}.ts` 在成功数据校验之前识别 HTTP 401 与业务 401002，返回 AUTH_EXPIRED。其他错误 envelope、非成功 HTTP 和缺损成功数据返回 PROTOCOL；课程成功 schema 继续严格校验。`apps/cli/src/output.ts` 的过期提示给出 `learning login --profile <账号>`，不自动注销、重放请求或发起扫码。
+- 回归：`apps/cli/tests/catalog.test.ts` 用真实 PTY 重放账号选择 → 整门课程，覆盖 pretty/plain 的正常课程选择与认证失效提示，验证取消/失败不创建学习任务；请求方法、URL、query、Cookie、空 body 和未登记请求均由严格 fixture 检查。`packages/sdk/tests/ykt-catalog.test.ts` 补充非 JSON 401、HTTP 200 认证错误、其他业务错误、错误字段类型、缺少成功数据和非成功 HTTP 的边界。
+- 先红后绿：`node node_modules/vitest/vitest.mjs run tests/catalog.test.ts -t 'handles whole-course selection'` 修前 2/4（exit 1），两条失效会话用例复现截图同一 INVALID_INPUT；修后 4/4（exit 0）。SDK `vitest run tests/ykt-catalog.test.ts -t 'rejects course-list'` 修前 0/6（exit 1），修后 ykt-catalog + auth-flow 31/31（exit 0）。初稿 PTY 等待单账号自动选择、Cookie 测试使用错误的 hostOnly 域，均已修正测试输入后才建立上述有效红测，未将夹具错误计为根因。
+- 环境：所有产品命令使用 `/Users/uu/.nvm/versions/node/v24.11.1/bin/node`，pnpm 11.19.0，依赖版本未变。新 worktree 的 `pnpm install --offline --frozen-lockfile --ignore-scripts` 因本机 store 缺 eslint tarball exit 1；在已有目录上覆盖拷贝依赖又遇到符号链接冲突，pnpm 自动依赖检查 exit 1。随后仅重建本次新 worktree 的忽略依赖目录，完整复制主目录已安装的锁定依赖，并以直接 Node 调用执行真实构建/检查；未删除主目录依赖或放宽 lockfile。
+- 最终实际检查：两包 `node node_modules/typescript/bin/tsc -p <包>/tsconfig.build.json` 构建、`tsc -p <包>/tsconfig.json` 类型检查、`node node_modules/eslint/bin/eslint.js .` → exit 0。SDK `node node_modules/vitest/vitest.mjs run` → 31 files / 266 tests，exit 0；CLI 首次默认并发全套 113/115，两条既有进程测试超过 5 秒（exit 1），未修改断言或 timeout；`vitest run --maxWorkers=2` → 14 files / 115 tests，exit 0。`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，含独立 tarball 消费者 frozen/offline 安装。source-lock、boundaries、`git diff --check` → exit 0。
+- 未运行项：重新扫码登录、修后真实课程读回、学习/答题/发帖/交卷、付费模型、推送与云部署。当前已确认旧会话过期，代码修复不能替代人工扫码；下一事项是启用修复到本机命令，再由用户执行 `learning login --profile uu-ykt`。不自动推进 T27–T30 或 Web。
+- 本地交付授权：首次自动审批以缺少明确提交授权为由拒绝 Git 提交，命令未执行。用户随后明确选择“允许本地提交并启用”，授权本地提交、快进合入 main 与重建现有命令；不推送远端。实际启用结果另记于下方。
+
+### 2026-10-12 · 过期会话提示修复已启用到本机命令（done）
+
+- 用户明确授权本地提交并启用；使用现有有效 Git 身份提交 `fbca6c7`（fix(ykt): report expired course sessions before payload validation）。主目录 main 干净时执行 `git merge --ff-only codex/fix-run-input` → exit 0；固定 Node v24.11.1 / pnpm 11.19.0 下 `pnpm build` → exit 0。
+- 主目录针对性回归：`pnpm --filter @learning/sdk exec vitest run tests/ykt-catalog.test.ts tests/auth-flow.test.ts` → 31/31，exit 0；`pnpm --filter @learning/cli exec vitest run tests/catalog.test.ts -t 'handles whole-course selection'` → 4/4，exit 0（27 项未被过滤器选中，不计本轮通过）。真实 PTY 同时覆盖正常课程选择及登录过期提示，所有流量仍为离线 fixture。
+- 现有 `learning --version` → 0.2.0，exit 0；realpath 确认 `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`。SDK catalog.js / schemas.js 与 CLI output.js 的 SHA256 均与已通过完整测试的 worktree 相同，未以未变的版本号作为修复启用证据。
+- 未修改账号数据或命令链接，未推送远端。重新扫码与修后真实课程读回仍未运行；下一事项由用户执行 `learning login --profile uu-ykt`，扫码完成后再运行 `learning run`。本次指定修复及本地启用完成，不自动学习或推进延期 Web。
+
+### 2026-10-13 · 整课学习 CLI 交互与实时进度（用户指定优化，离线完成）
+
+- 从干净 main `af11250` 创建隔离 worktree `/Users/uu/.codex/worktrees/cli-study-ux/learning`，分支 `codex/cli-study-ux`。仅处理本次 CLI 体验请求，不推进其他 PLAN 项或 Web。
+- 默认 `run` 直接选课程，删除操作范围提问。单资源仍可传位置参数，也可用高级 `--resource <key>`；两种写法都按缓存的归属推断账号，显式账号冲突仍拒绝。确认页显示课程、账号、范围、视频/图文数量、跳过数量及设置，不再罗列资源哈希。旧缓存缺少类型或名称时明确显示未知，不阻断原有学习调用。结束摘要使用中文状态并保留任务 ID。
+- TTY 使用固定区域的两条进度条，每 100 毫秒刷新，显示课程、账号、倍速、目标、资源完成数、当前视频、播放时间、平台确认进度和已用时间。本地计时或由比例推算的秒数标为“本地估计”，最多推进到下一次计划更新；不修改平台确认值、JSONL 事件、请求频率或实际学习时序。未知数据不伪造为已完成。32/80 列真实 PTY 覆盖重绘、警告插入、Ctrl+C 和光标恢复，标题净化、窄屏截断、流错误、prompt 和退出均有生命周期回归。
+- 前台任务保留最近的视频信息，等待和人工处理状态不再丢失标题；恢复时从任务输入和课程缓存恢复展示上下文。课程目录同时缓存资源标题，删除账号时一并清理。SDK 给学堂在线与智慧树 share/hike 补上已有权威读回的进度事件；没有新增平台请求。当前分支不含超星提供者，没有合入其他任务的超星工作区。
+- 文件：CLI `commands/{run,catalog,profile}.ts`、`foreground.ts`、`output.ts`、新增 `progress.ts`，以及对应 catalog/profile/wake/progress 回归；SDK xuetang resources/study、zhs study、jobs 和对应 fixture 测试；APPS、USAGE、contracts 与本记录。未新增或升级依赖。
+- 先红后绿：默认整课/高级资源参数初次 6 项失败；动态显示初次 3/4 失败；恢复标题初次 1 项失败。审查追加的比例估时、账号删除清理、多账号资源推断、空白标题和人工处理标题丢失均先复现后修复。新确认页测试曾因 fixture 有时长却断言跳过而失败，已将该视频输入改为未知时长，保留全部断言；旧无 kind 缓存仍有成功执行回归。
+- 环境 Node v24.11.1 / pnpm 11.19.0，复用主目录已安装的锁定依赖。实际命令均使用固定 Node：两包 `node node_modules/typescript/bin/tsc -p <package>/tsconfig.build.json` 和 `tsconfig.json`、`node node_modules/eslint/bin/eslint.js .` → exit 0。SDK `node node_modules/vitest/vitest.mjs run --maxWorkers=2` → 31 files / 268 tests，exit 0。CLI 最终同命令 → 15 files / 125 tests，exit 0；`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，包含独立 tarball 消费者 frozen/offline 安装。source-lock、boundaries、`git diff --check` → exit 0。
+- 两路独立评审后已修复标题缓存清理、只给比例的平台估时、异常状态视频信息丢失、空白标题回退，并保留原 state 事件回调语义。最后一轮全套 CLI 和 E2E 在这些修复之后执行。
+- 未运行：平台真实登录/学习/答题/发帖/交卷、付费模型、推送和云部署。数据全部使用离线合成 fixture；课程名未缓存且平台解析只返回定位信息时显示“课程名称暂不可用”。下一事项仅本机启用此版本并由用户查看实际终端效果，不自动发起平台操作。
+
+### 2026-10-13 · CLI 实时进度已启用到本机
+
+- 以现有 Git 身份创建本地提交 `1ecb5b3`；主目录 main 干净时快进合入 `codex/cli-study-ux`。固定 Node v24.11.1 / pnpm 11.19.0 下，主目录 `pnpm build` → exit 0。
+- `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`；CLI 116 个、SDK 236 个构建文件的 SHA256 与已验证 worktree 全部一致。`learning --version` → 0.2.0，exit 0；未把未变的版本号作为启用证据。
+- 主目录 `pnpm --filter @learning/cli exec vitest run tests/progress.test.ts tests/wake.test.ts tests/profile.test.ts --maxWorkers=2` → 14/14，exit 0，包含真实 PTY、暂停恢复、估计进度及账号缓存删除。
+- 账号数据和命令链接未改动，未推送远端。新界面在下次启动命令时生效；本次请求完成，等待用户实际使用反馈，不自动执行平台操作或其他 PLAN 任务。
+
+### 2026-10-13 · 用 cli-progress 替换手写进度条（用户指定优化）
+
+- 复用本任务的隔离 worktree `/Users/uu/.codex/worktrees/cli-study-ux/learning`，在干净分支上快进到 main `82df149`。仅替换 CLI 展示层，SDK 协议、学习时序和账号数据未改。
+- 使用 `cli-progress` MultiBar 接管条形绘制、100 毫秒重绘、光标与自动换行恢复；删除手写 ANSI 光标操作、进度字符计算和 Unicode 宽度算法。课程名加粗，绿色整课条显示完成资源数，青色视频条显示播放比例；保留账号、倍速、目标、当前视频、播放时间、平台确认值及暂停提示。`cli-truncate` / `string-width` 负责颜色与中文、emoji 的列宽适配；未知值明确显示未知，不伪造完成进度。
+- 文件：`apps/cli/src/{progress,output}.ts`、`tests/progress.test.ts`、CLI package.json、pnpm-lock.yaml、USAGE、toolchain 和本记录。新增精确版本 cli-progress 3.12.0、cli-truncate 6.1.1、string-width 8.3.0、开发类型 @types/cli-progress 3.11.6。pnpm 添加依赖时顺带解析到的 source-map-js 1.2.2 已恢复原锁定 1.2.1；没有升级原有依赖。
+- 正常/异常测试先红后绿：双条标签、样式与未知值/窄终端配色测试在旧实现上 4 项预期失败（exit 1）。真实 Node 进程另暴露 CommonJS `Format` 不能用 ESM 命名导入，改为默认导入后启动正常。最终专项 progress/output/output-format 21/21，含 32/80 列真实 PTY、Ctrl+C、警告、prompt、流错误、估计时间上限和静态机器输出；后续全套包含 24 列 resize 与双色/无色断言。
+- 实际环境 Node v24.11.1 / pnpm 11.19.0：`pnpm install --offline --frozen-lockfile --ignore-scripts` → exit 0（供应链元数据检查访问镜像并重试连接错误）；CLI build、CLI tsconfig 类型检查、根 ESLint、boundaries、source-lock、git diff --check → exit 0。CLI `node node_modules/vitest/vitest.mjs run --maxWorkers=2` → 15 files / 127 tests，exit 0；`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，含真实 tarball 独立消费者冻结离线安装。
+- 独立审查复现库内定时器绕过背压防护：1 秒内缓冲从 585 增至 6365 字节；无错误关闭终端后，真实子进程因定时器未释放而超时。对应回归先失败，再添加整帧写入缓冲：背压时丢弃完整旧帧，drain 时恢复，close/finish 时停止库并释放内部流，清理序列按需保留。未知值改为“等待进度”，不再显示确定的 0% 空条。修后 progress/output/output-format 23/23，exit 0。
+- 最终修复之后：同环境 CLI 全套 15 files / 129 tests、打包 E2E 7/7，均 exit 0；ESLint、CLI 类型检查、git diff --check 均 exit 0。独立复核确认背压时输出缓冲不再增长，drain 后继续刷新，无错误关闭的子进程自然退出，未知条不输出数值进度图形。
+- 未运行：SDK 全套测试（SDK 源码未改）、平台真实登录/学习/答题/发帖/交卷、推送与云部署。不执行其他 PLAN 项或延期 Web。
+
+### 2026-10-13 · cli-progress 已启用到本机（done）
+
+- 使用现有 Git 身份创建本地提交 `a613316`，主目录 main 干净时 `git merge --ff-only codex/cli-study-ux` → exit 0。Node v24.11.1 / pnpm 11.19.0 下，主目录 `pnpm install --offline --frozen-lockfile --ignore-scripts`、`pnpm build` → exit 0。
+- 主目录 `pnpm --filter @learning/cli exec vitest run tests/progress.test.ts --maxWorkers=1` → 11/11，exit 0，包含真实 32/80 列终端、24 列 resize、背压和无错误关闭自然退出。
+- CLI 116 个和 SDK 236 个构建文件 SHA256 均与最终验证 worktree 一致。现有 `/Users/uu/.local/bin/learning` 仍指向主目录构建，`learning --version` → 0.2.0、exit 0；版本号未变，不作为启用的唯一证据。
+- 下次启动命令即使用库版双进度条。没有修改账号数据、命令链接或推送远端；本次请求完成，等待用户实际使用反馈。
+
+### 2026-10-13 · 雨课堂缺失时长兜底与待处理提示（用户指定修复）
+
+- 用户反馈“无时长跳过：3 个”，并明确授权将已有 UI 优化与本次修复合入本地、推送并合并远端。继续使用隔离 worktree `cli-study-ux` / `codex/cli-study-ux`，从本地 main `b7fa56d` 快进；发布审查基线固定为远端 main `d02167f`，不包含另一条超星 PR。
+- 原因：SDK 在 watch_progress.video_length 和 leaf_info.media.duration 均缺失时直接排除未完成视频。只读参考源码 `ykt-cli/src/run/ai_course.py::_probe_video_duration` 已有签名 MP4 的 ffprobe 兜底，本仓库此前未迁入。截图的 3 个资源没有做真实账号查询，因此这里只确认代码分支及其遗漏，不声称已在线修复那 3 个视频。
+- SDK 新增可选中立 `Runtime.probeMediaDuration`，Node 子路径用 ffprobe 实读 MP4 时长；CLI 负责装配。优先使用平台时长，仅缺失时请求现有 playurl；只接受有限正数，在当前 client 缓存真实时长，不缓存签名 URL，不改变服务端进度或完成状态。域名沿现有 yuketang.cn / xuetangx.com 白名单；ffprobe 无 shell、仅 HTTP(S)/mov、禁止重定向、最多 10 秒、输出限 64 KiB，缺工具/读取失败保留未知。
+- CLI 改为“本次可处理”和“暂不处理（未能读取时长）”，显示最多 5 个待处理视频名称和官方网页播放后重试的说明。警告中文化并随 Job 保存；`run --yes` 与 `jobs resume` 都保留警告和资源 key，有排除视频时即使计划完成也返回 partial / exit 4。取消只读探测保存为 paused，可恢复；实际写入的不确定结果处理不变。
+- 先红后绿：SDK 新视频时长用例修前 4 项失败，正常场景被 INTERACTION_REQUIRED 拒绝；真实 PTY 预览修前缺少可处理数与名称而失败。进一步回归复现只读取消误记 uncertain、Job 丢失预览警告，均先 exit 1 后修复。最终 YKT study 专项 20/20；新增 Node 子进程专项 4/4（成功、坏输出、缺工具、取消与截止时间），均 exit 0。
+- 实际环境 Node v24.11.1 / pnpm 11.19.0：最终 SDK 全套 32 files / 278 tests、CLI 全套 15 files / 129 tests，exit 0；pnpm build、pnpm lint、pnpm typecheck、source-lock、boundaries、git diff --check，exit 0。最后仅追加 ffprobe 禁重定向参数，重新执行适配器专项 4/4 与 ESLint，exit 0。真实本机 ffprobe + 回环 HTTP：生成 1 秒 MP4，读出 1.000 秒；302 返回 null 且重定向目标收到 0 次请求，exit 0。
+- 检查过程的非产品失败：CLI 首次测试受 worktree 写权限 EPERM 阻挡，授权隔离目录执行后才记录有效红测；一次从根目录调用不存在的 Vitest 链接 exit 1，改从 SDK workspace 运行后 4/4。JSON 回归最初错误假定只有一种 warning，改为同时保留 SQLite ExperimentalWarning 与业务 warning，没有屏蔽警告。未把这些失败计为产品修复证据。
+- 并行适配器实现与 Spec 审查使用用户授权的 zhipu/glm-5.3 / max；Standards 与后续复审因 5 小时额度限制无法完成，主代理接手逐项审查和最终参数修正。已处理警告持久化、恢复退出码、媒体域名与重定向约束；未据合成 HLS fixture 改写旧媒体类型协议。
+- 最终 `pnpm build && pnpm test:e2e` → exit 0，7/7，包含真实 tarball 的独立消费者冻结离线安装。本地与远端交付结果续记。
+- 未运行：真实平台登录/学习/答题/发帖/交卷、付费模型或云部署。本次仅处理用户指定 UI 与时长问题，不推进其他 PLAN 项或延期 Web。
+- 交付复查补充：初次时长核对期间取消 ffprobe 会抛 DOM AbortError，通用 CLI 输出原先误报 INTERNAL / exit 1。新增输出边界回归先失败，再将其规范化为中文“操作已取消” / CANCELED / exit 3；不改变 UNCERTAIN 的优先级。CLI build、output/output-format 专项 13/13、对应 ESLint、git diff --check，均 exit 0。
+- 远端首轮 CI（run 38283344956）SDK 278/278 通过，CLI 127/129；两条多进程用例分别耗时 5819 ms / 5403 ms，超过默认 5000 ms，没有业务断言失败。复查确认普通机器命令也提前加载进度渲染库；新增 Node 模块加载拦截回归先失败，再改为仅动态进度需要时异步加载，保持取消/警告后的显示生命周期。Node 24 本机输出模块冷启动 4 次从 90–93 ms 降至 65–66 ms；CLI build、progress/output/output-format 25/25、对应 ESLint 通过，未删除断言或放宽测试超时。最终远端结果以随后记录为准。
+- 延迟加载后本地 CLI 全套 131/131、打包 E2E 7/7 通过。远端 run 38284410912 的 SDK 278/278、CLI 130/131，剩下混合学习用例耗时 5315 ms：把独立的非法参数/单资源显示与预览执行拆成两个用例，复用相同严格 fixture 初始化；偏好用例中的下载路径设置/清除也从默认账号场景抽出，避免多次进程启动共用一个 5 秒窗口。所有原有断言、fixture 请求验证、默认 5 秒上限保持不变。学习拆分专项 2/2、偏好专项 6/6、ESLint、CLI 类型检查、git diff --check 通过。

@@ -84,7 +84,7 @@ export interface ItemResult { key: string; state: 'succeeded' | 'failed' | 'skip
 export interface Job { id: string; scope: Scope; kind: 'export' | 'study' | 'homework' | 'live'; status: JobStatus; createdAtMs: number; updatedAtMs: number; nextRunAtMs: number | null; completed: number; total: number | null; items: ItemResult[]; warnings: Warning[] }
 export type JobEvent =
   | { sequence: number; type: 'state'; job: Job }
-  | { sequence: number; type: 'progress'; jobId: string; resourceKey: string; estimatedSeconds: number | null; serverFraction: number | null }
+  | { sequence: number; type: 'progress'; jobId: string; resourceKey: string; estimatedSeconds: number | null; serverFraction: number | null; title?: string | null; durationSeconds?: number | null; serverSeconds?: number | null }
   | { sequence: number; type: 'question'; jobId: string; phaseId: string; question: Question; closesAtMs: number | null }
   | { sequence: number; type: 'gap'; jobId: string; message: string };
 export type ErrorCode = 'INVALID_INPUT' | 'AUTH_REQUIRED' | 'AUTH_EXPIRED' | 'FORBIDDEN' | 'INTERACTION_REQUIRED' | 'NETWORK' | 'TIMEOUT' | 'RATE_LIMITED' | 'PROTOCOL' | 'UNSUPPORTED' | 'MISSING_RUNTIME' | 'CONFLICT' | 'PREVIEW_EXPIRED' | 'PRECONDITION_CHANGED' | 'UNCERTAIN' | 'CANCELED' | 'BUDGET' | 'INTEGRITY' | 'CONTENT_UNREADABLE' | 'STORAGE' | 'VERSION';
@@ -183,6 +183,7 @@ export interface Runtime {
   masterKey: Uint8Array;
   heavy: HeavyRenderer | null;
   model: ModelClient | null;
+  probeMediaDuration?: (url: string, options?: Options) => Promise<number | null>;
   log(event: { level: 'debug' | 'info' | 'warn' | 'error'; message: string; fields: Record<string, string | number | boolean | null> }): void;
   wake(): Promise<void>;
 }

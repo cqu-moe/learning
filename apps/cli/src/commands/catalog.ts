@@ -9,13 +9,14 @@ import { listProfiles } from '../profiles.js';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import type { CliRuntime } from '../context.js';
 
-function cacheKey(key: string): string { return `cli:course:${key}`; }
+export function courseCacheKey(key: string): string { return `cli:course:${key}`; }
 export function resourceCacheKey(key: string): string { return `cli:resource:${key}`; }
 export function resourceKindCacheKey(key: string): string { return `cli:resource-kind:${key}`; }
+export function resourceTitleCacheKey(key: string): string { return `cli:resource-title:${key}`; }
 
 export async function cacheCourses(runtime: CliRuntime, courses: Course[]): Promise<void> {
   for (const course of courses) {
-    const key = cacheKey(course.ref.key);
+    const key = courseCacheKey(course.ref.key);
     const existing = await runtime.state.get(key);
     const ok = await runtime.state.commit({
       expected: [{ key, revision: existing?.revision ?? null }],
@@ -40,9 +41,11 @@ export async function cacheResources(runtime: CliRuntime, nodes: OutlineNode[]):
     for (const resource of node.resources) {
       const key = resourceCacheKey(resource.ref.key);
       const kindKey = resourceKindCacheKey(resource.ref.key);
+      const titleKey = resourceTitleCacheKey(resource.ref.key);
       const existing = await runtime.state.get(key);
       const existingKind = await runtime.state.get(kindKey);
-      const ok = await runtime.state.commit({ expected: [{ key, revision: existing?.revision ?? null }, { key: kindKey, revision: existingKind?.revision ?? null }], changes: [{ key, value: resource.ref as unknown as Json }, { key: kindKey, value: resource.kind }] });
+      const existingTitle = await runtime.state.get(titleKey);
+      const ok = await runtime.state.commit({ expected: [{ key, revision: existing?.revision ?? null }, { key: kindKey, revision: existingKind?.revision ?? null }, { key: titleKey, revision: existingTitle?.revision ?? null }], changes: [{ key, value: resource.ref as unknown as Json }, { key: kindKey, value: resource.kind }, { key: titleKey, value: resource.title }] });
       if (!ok) throw new LearningError({ code: 'CONFLICT', message: 'resource cache changed concurrently', retryAfterMs: null, operationId: null });
     }
     await cacheResources(runtime, node.children);
@@ -94,7 +97,7 @@ export function registerCatalogCommands(program: Command): void {
         else if (/^https?:\/\//i.test(input)) {
           ref = await client.catalog.resolveCourse(input);
         } else {
-          const stored = await runtime.state.get(cacheKey(input));
+          const stored = await runtime.state.get(courseCacheKey(input));
           if (stored === null) {
             throw new CliError('INVALID_INPUT', 'unknown course key; run learning courses first', 2);
           }

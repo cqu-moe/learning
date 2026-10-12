@@ -8,6 +8,7 @@ import { JobRunner } from '../../../packages/sdk/src/services/jobs.js';
 import { writeSession } from '../../../packages/sdk/src/session/store.js';
 import { SessionCookieJar } from '../../../packages/sdk/src/http/client.js';
 import { sha256Hex } from '../../../packages/sdk/src/types/sha256.js';
+import type { Fixture } from '../../../packages/sdk/tests/helpers/replay.js';
 
 const cli = resolve(import.meta.dirname, '../dist/index.js');
 const preload = resolve(import.meta.dirname, 'fixture-fetch.mjs');
@@ -48,6 +49,23 @@ function run(dir: string, args: string[], fixture?: string, expectedCookie?: str
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
+async function preparedYktStudy() {
+  const dir = home();
+  expect(run(dir, ['init']).code).toBe(0);
+  expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+  expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
+  expect(run(dir, ['profile', 'add', 'beta', '--platform', 'ykt']).code).toBe(0);
+  const state = new SqliteStateStore(resolve(dir, 'state.db'));
+  const profile = await state.get('cli:profile:alpha');
+  const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
+  const ref = { course: { scope, key: 'fixture-course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'study-video', native: { kind: 'ykt', leafId: '502', leafInfoId: null } };
+  expect(await state.commit({ expected: [{ key: 'cli:resource:study-video', revision: null }, { key: 'cli:resource-kind:study-video', revision: null }], changes: [{ key: 'cli:resource:study-video', value: ref }, { key: 'cli:resource-kind:study-video', value: 'video' }] })).toBe(true);
+  state.close();
+  const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
+  const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
+  return { dir, leaf, progress };
+}
+
 afterAll(() => { for (const dir of homes) rmSync(dir, { recursive: true, force: true }); });
 
 describe('CLI auth and catalog against strict offline fixtures', () => {
@@ -85,6 +103,112 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(outline.code).toBe(0);
     expect(JSON.parse(outline.stdout).data.value.roots.length).toBeGreaterThan(0);
   });
+
+  it.each([
+    { format: 'pretty', expired: false },
+    { format: 'plain', expired: false },
+    { format: 'pretty', expired: true },
+    { format: 'plain', expired: true },
+  ])('handles whole-course selection with format=$format expired=$expired', ({ format, expired }) => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'beta', '--platform', 'zhs']).code).toBe(0);
+    const cookieFile = resolve(dir, 'cookies.json');
+    writeFileSync(cookieFile, JSON.stringify([{ name: 'sessionid', value: 'fixture-session', domain: 'www.yuketang.cn' }]));
+    expect(run(dir, ['login', '--profile', 'alpha', '--import', cookieFile]).code).toBe(0);
+    const fixture = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/courses-list.json'), 'utf8')) as Fixture;
+    if (expired) fixture.interactions[0]!.response = { status: 401, body: { errcode: 401002 } };
+    const fixtureFile = resolve(dir, 'course-selection.json');
+    writeFileSync(fixtureFile, JSON.stringify(fixture));
+    const result = spawnSync('python3', [resolve(import.meta.dirname, 'helpers/terminal-driver.py'), JSON.stringify({
+      argv: [process.execPath, '--import', preload, cli, '--home', dir, 'run', '--output-format', format],
+      env: { LEARNING_FIXTURE_FILE: fixtureFile, LEARNING_ASSERT_COOKIE: 'sessionid=fixture-session' },
+      steps: [
+        { wait: '选择账号', send: format === 'pretty' ? '\r' : '1\n' },
+        ...(expired ? [] : [{ wait: '学术写作', send: '\u0003' }]),
+      ],
+    })], { encoding: 'utf8', timeout: 15_000 });
+    expect(result.status, result.stderr).toBe(0);
+    const data = JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
+    expect(data.screen).not.toContain('INVALID_INPUT');
+    expect(data.screen).not.toContain('选择操作范围');
+    if (expired) {
+      expect(data.screen).toContain('AUTH_EXPIRED');
+      expect(data.screen).toContain('learning login --profile');
+      expect(data.steps).toBe(1);
+    } else {
+      expect(data.screen).toContain('学术写作');
+      expect(data.steps, data.screen).toBe(2);
+    }
+    expect(data.code).toBe(3);
+    expect(JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs).toEqual([]);
+  }, 20_000);
+
+
+  it('shows a concise whole-course confirmation without resource hash lists', async () => {
+    const dir = home();
+    expect(run(dir, ['init']).code).toBe(0);
+    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
+    expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
+    const courses = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/courses-list.json'), 'utf8')) as Fixture;
+    const outline = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/nested-outline.json'), 'utf8')) as Fixture;
+    const outlineBody = outline.interactions[2]!.response.body as { data: { course_chapter: unknown[] } };
+    outlineBody.data.course_chapter = [{
+      id: 11,
+      name: '第1章',
+      section_leaf_list: [
+        { name: '1.1 小节', leaf_type: null, leaf_list: [{ id: 502, leafinfo_id: 602, name: '小节视频', leaf_type: 0, chapter_id: 11, order: 1 }] },
+        { id: 504, leafinfo_id: 604, name: '图文讲义', leaf_type: 3, chapter_id: 11, order: 2 },
+      ],
+    }];
+    const videoLeaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
+    const videoProgress = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate: 0, completed: 0, video_length: 0, last_point: 0 } } } } };
+    const articleLeaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/504/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 3, sku_id: 901, finish: false } } } };
+    const fixtureFile = resolve(dir, 'run-confirm.json');
+    const playUrl = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/api/open/audiovideo/playurl', query: { video_id: 'CC1', provider: 'cc', file_type: '1', is_single: '0', domain: 'www.yuketang.cn' } }, response: { status: 200, body: { data: { playurl: { sources: {} } } } } };
+    writeFileSync(fixtureFile, JSON.stringify({ interactions: [...courses.interactions, ...outline.interactions, articleLeaf, videoLeaf, videoProgress, playUrl] }));
+    const result = spawnSync('python3', [resolve(import.meta.dirname, 'helpers/terminal-driver.py'), JSON.stringify({
+      argv: [process.execPath, '--import', preload, cli, '--home', dir, 'run', '--profile', 'alpha', '--speed', '1', '--target', '0.5'],
+      env: { LEARNING_FIXTURE_FILE: fixtureFile, LEARNING_ASSERT_COOKIE: 'sessionid=sess-fixture' },
+      steps: [
+        { wait: '搜索并选择课程', send: '\r' },
+        { wait: '确认执行以上操作', send: '\u0003' },
+      ],
+    })], { encoding: 'utf8', timeout: 15_000 });
+    expect(result.status, result.stderr).toBe(0);
+    const data = JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
+    expect(data.steps, data.screen).toBe(2);
+    expect(data.screen).not.toContain('选择操作范围');
+    const summary = data.screen.slice(data.screen.indexOf('课程：'));
+    expect(summary).toContain('课程：学术写作');
+    expect(summary).toContain('账号：alpha');
+    expect(summary).toContain('视频：1 个');
+    expect(summary).toContain('图文：1 个');
+    expect(summary).toContain('本次可处理：1 / 2 个资源');
+    expect(summary).toContain('暂不处理：1 个视频（未能读取时长）');
+    expect(summary).toContain('小节视频');
+    expect(summary).toContain('官方网页播放后重试');
+    expect(data.screen).not.toContain('video duration is unknown');
+    expect(summary).toContain('倍速：1×');
+    expect(summary).toContain('目标进度：50%');
+    expect(data.code).toBe(3);
+    expect(JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs).toEqual([]);
+    const state = new SqliteStateStore(resolve(dir, 'state.db'));
+    try {
+      const cached = await state.list('cli:resource:', null, 100);
+      for (const row of cached.items) expect(summary).not.toContain(String((row.record.value as { key: string }).key));
+    } finally { state.close(); }
+    const courseKey = JSON.parse(run(dir, ['courses', '--profile', 'alpha', '--json'], 'ykt/courses-list').stdout).data.items[0].ref.key as string;
+    articleLeaf.response.body.data.finish = true;
+    writeFileSync(fixtureFile, JSON.stringify({ interactions: [...outline.interactions, articleLeaf, videoLeaf, videoProgress, playUrl, articleLeaf] }));
+    const executed = run(dir, ['run', courseKey, '--profile', 'alpha', '--yes', '--json'], fixtureFile);
+    expect(executed.code, executed.stderr).toBe(4);
+    expect(JSON.parse(executed.stdout)).toMatchObject({ status: 'partial', warnings: expect.arrayContaining([expect.objectContaining({ code: 'SKIPPED_UNKNOWN_DURATION' })]), data: { status: 'succeeded', completed: 1, total: 1 } });
+    const resumed = run(dir, ['jobs', 'resume', JSON.parse(executed.stdout).data.id as string, '--profile', 'alpha', '--json']);
+    expect(resumed.code, resumed.stderr).toBe(4);
+    expect(JSON.parse(resumed.stdout)).toMatchObject({ status: 'partial', data: { job: { warnings: [expect.objectContaining({ code: 'SKIPPED_UNKNOWN_DURATION', resourceKey: expect.any(String) })] } } });
+  }, 20_000);
 
   it('runs default ZHS WeChat QR entirely through allowlisted API requests', () => {
     const dir = home();
@@ -362,23 +486,14 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
   });
 
   it('previews then runs a one-beat Yuketang study job with server confirmation', async () => {
-    const dir = home();
-    expect(run(dir, ['init']).code).toBe(0);
-    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
-    expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
-    const state = new SqliteStateStore(resolve(dir, 'state.db'));
-    const profile = await state.get('cli:profile:alpha');
-    const scope = (profile?.value as { scope: { userId: string; profileId: string; platform: 'ykt' } }).scope;
-    const ref = { course: { scope, key: 'fixture-course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'study-video', native: { kind: 'ykt', leafId: '502', leafInfoId: null } };
-    expect(await state.commit({ expected: [{ key: 'cli:resource:study-video', revision: null }], changes: [{ key: 'cli:resource:study-video', value: ref }] })).toBe(true);
-    state.close();
-    const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
-    const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
+    const { dir, leaf, progress } = await preparedYktStudy();
     const dryFixture = resolve(dir, 'study-dry.json');
     writeFileSync(dryFixture, JSON.stringify({ interactions: [leaf, progress(0, 0)] }));
-    const dry = run(dir, ['run', 'study-video', '--target', '0.5', '--speed', '1', '--dry-run', '--profile', 'alpha', '--json'], dryFixture);
+    const dry = run(dir, ['run', '--resource', 'study-video', '--target', '0.5', '--speed', '1', '--dry-run', '--json'], dryFixture);
     expect(dry.code, dry.stderr).toBe(0);
-    expect(JSON.parse(dry.stdout).data.kind).toBe('study');
+    const dryResult = JSON.parse(dry.stdout) as { data: Record<string, unknown> };
+    expect(Object.keys(dryResult.data)).toEqual(['id', 'scope', 'kind', 'digest', 'generation', 'expiresAtMs', 'description', 'startsTimer', 'finalSubmission', 'blockers', 'warnings']);
+    expect(dryResult.data.kind).toBe('study');
     const row = { i: 5, et: 'heartbeat', p: 'web', n: 'ali-cdn.xuetangx.com', lob: 'ykt', cp: 5, fp: 0, tp: 10, sp: 1,
       ts: '__NOW_MS__', u: '424242', uip: '', c: '5184094', v: '502', skuid: '901', classroomid: '28930736', cc: 'CC1', d: 10,
       pg: '__JOB_PG_502__', sq: 1, t: 'video', cards_id: 0, slide: 0 };
@@ -388,6 +503,24 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const actual = run(dir, ['run', 'study-video', '--target', '0.5', '--speed', '1', '--yes', '--profile', 'alpha', '--json'], runFixture);
     expect(actual.code, actual.stderr).toBe(0);
     expect(JSON.parse(actual.stdout).data.status).toBe('succeeded');
+  });
+
+  it('previews one cached resource and rejects a missing resource key', async () => {
+    const { dir, leaf, progress } = await preparedYktStudy();
+    const dryFixture = resolve(dir, 'study-dry.json');
+    writeFileSync(dryFixture, JSON.stringify({ interactions: [leaf, progress(0, 0)] }));
+    const missing = run(dir, ['run', '--resource', 'missing-video', '--dry-run', '--profile', 'alpha', '--json'], dryFixture);
+    const missingResult = JSON.parse(missing.stdout);
+    expect(missingResult.exitCode).toBe(2);
+    expect(missingResult.error).toMatchObject({ code: 'INVALID_INPUT' });
+    expect(missingResult.error).toMatchObject({ fields: ['resource'] });
+    expect(missingResult.error.message).toContain('找不到课程或资源 key');
+    const single = run(dir, ['run', '--resource', 'study-video', '--target', '0.5', '--speed', '1', '--dry-run', '--profile', 'alpha', '--output-format', 'plain'], dryFixture);
+    expect(single.code, single.stderr).toBe(0);
+    expect(single.stdout).toContain('课程：课程名称暂不可用');
+    expect(single.stdout).toContain('范围：单个资源');
+    expect(single.stdout).toContain('视频：1 个');
+    expect(single.stdout).not.toContain('study-video');
   });
 
   it('runs a Yuketang study job with the default preset: max speed and full target', async () => {

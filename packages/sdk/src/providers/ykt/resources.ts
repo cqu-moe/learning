@@ -2,6 +2,7 @@ import { LearningError } from '../../types/errors.js';
 import type { Lesson, MediaInfo, SlideDeck, Transcript } from '../../types/models.js';
 import type { CourseRef, ResourceRef } from '../../types/refs.js';
 import type { SessionHttp } from '../../http/client.js';
+import type { Options } from '../../runtime/types.js';
 import { moocEnvelopeChecked, YKT_BASE } from './schemas.js';
 
 interface LeafInfoWire {
@@ -148,19 +149,26 @@ export async function yktMedia(http: SessionHttp, ref: ResourceRef): Promise<Med
   if (ccid === undefined || ccid === '') {
     throw new LearningError({ code: 'UNSUPPORTED', message: 'leaf has no media ccid', retryAfterMs: null, operationId: null });
   }
-  const response = await http.request({
-    kind: 'read',
-    method: 'GET',
-    url: `${YKT_BASE}/api/open/audiovideo/playurl?video_id=${encodeURIComponent(ccid)}&provider=cc&file_type=1&is_single=0&domain=www.yuketang.cn`,
-  });
-  const payload = (await response.json()) as { data?: { playurl?: { sources?: Record<string, string[]> } } };
-  const sources = payload.data?.playurl?.sources ?? {};
+  const sources = await fetchYktPlaySources(http, ccid);
   const variants: MediaInfo['variants'] = [];
   const hd = sources.quality20?.[0];
   const sd = sources.quality10?.[0];
   if (hd !== undefined && hd !== '') variants.push({ id: hd, quality: 'hd', mimeType: 'application/vnd.apple.mpegurl', durationSeconds: null });
   if (sd !== undefined && sd !== '') variants.push({ id: sd, quality: 'sd', mimeType: 'application/vnd.apple.mpegurl', durationSeconds: null });
   return { resource: ref, variants };
+}
+
+export async function fetchYktPlaySources(http: SessionHttp, ccid: string, options?: Options): Promise<Record<string, string[]>> {
+  const response = await http.request({
+    kind: 'read',
+    method: 'GET',
+    url: `${YKT_BASE}/api/open/audiovideo/playurl?video_id=${encodeURIComponent(ccid)}&provider=cc&file_type=1&is_single=0&domain=www.yuketang.cn`,
+    timeoutMs: 10_000,
+    ...(options?.signal ? { signal: options.signal } : {}),
+  });
+  if (response.status !== 200) throw new LearningError({ code: 'PROTOCOL', message: 'video source is unavailable', retryAfterMs: null, operationId: null });
+  const payload = (await response.json()) as { data?: { playurl?: { sources?: Record<string, string[]> } } };
+  return payload.data?.playurl?.sources ?? {};
 }
 
 export async function yktTranscript(http: SessionHttp, ref: ResourceRef): Promise<{ value: Transcript; warnings: [] }> {

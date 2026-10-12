@@ -95,6 +95,8 @@ standard 的 section_leaf_list 是异构：直接单元与 leaf_list 小节混�
 
 progress.read 查询 cid=courseId，snapshot=1（数字）、no_loading="true"（字符串）；可能 data[videoId] 或顶层[videoId]。未观看视频没有行（data 为空对象），duration 优先取 video_length，回落 leaf_info content_info.media.duration（已观看视频两者相等）；playurl 不含 duration。仍未知不能发 fabricated 进度。[Y08]
 
+若 Runtime 提供媒体探测端口，未完成且上述两处均无时长的视频可读取 playurl 的签名 MP4，用 ffprobe 获取容器实际时长。参考 `ykt-cli/src/run/ai_course.py::_probe_video_duration`；本仓库只完成严格离线请求重放和本机子进程测试，本轮未做真实平台写入验收。仅接受有限正数，失败仍保留未知，不把探测成功当成学习完成。
+
 视频完成、图文 finish、内嵌题 solved/continued-with-wrong/stuck/unknown 分开统计。新默认 questionMode=pause，不迁移穷举猜答案或自动第一项；显式已批准答案可通过平台允许次数执行。需要由反馈重试的模式须单独计次和批准，不能让泛用 retry 中间件处理业务答案。
 
 ### 字体和课件

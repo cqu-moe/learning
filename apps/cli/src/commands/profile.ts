@@ -90,6 +90,7 @@ export function registerProfileCommands(program: Command): void {
         if (resource.course.scope.profileId !== existing.scope.profileId) continue;
         deletions.set(row.key, row.record.revision);
         await queue(`cli:resource-kind:${resource.key}`);
+        await queue(`cli:resource-title:${resource.key}`);
       }
       for (const row of await all('preview:')) {
         const value = row.record.value;

@@ -1,6 +1,6 @@
 import { createCompatibleModelClient, loadOrCreateMasterKey, NodeArtifactStore, SqliteStateStore } from '@learning/sdk/node';
 import type { Runtime } from '@learning/sdk/node';
-import { NodeFetchTransport } from '@learning/sdk/node';
+import { NodeFetchTransport, probeMediaDuration } from '@learning/sdk/node';
 import { chmodSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -44,6 +44,7 @@ export function createCliRuntime(dataDir: string): Runtime & { state: SqliteStat
     masterKey,
     heavy: new LocalHeavyRenderer(),
     model,
+    probeMediaDuration,
     log: () => {},
     wake: async () => { for (const listener of [...wakeListeners]) listener(); },
     waitForWake,

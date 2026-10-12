@@ -6,6 +6,8 @@
 
 包 `@learning/sdk` 根导出 createLearningClient、aggregateCourses、安全错误类型；`/public` 导出 DTO/schema，不能导出 Cookie 或 Runtime；`/node` 提供 Node 传输、SQLite StateStore、本机 ArtifactStore、CLI 初始化工具；`/render-node` 在 T24 提供实际重型算法与受控浏览器执行。本期不创建 `/cloudflare` 出口或空实现。Runtime 接口保持环境中立，未来 Web 再实现其适配。
 
+Runtime 可选提供 `probeMediaDuration(url, options)`，返回视频文件的真实秒数或 null。CLI 装配 `/node` 的 `ffprobe` 适配器，工具未安装或探测失败时返回 null；单次最多 10 秒，支持取消，仅允许 HTTP(S) MP4，禁止跟随重定向，子进程输出限 64 KiB。雨课堂在进度和资源信息都缺少时长时使用此端口，媒体地址须属于现有平台域名白名单；结果只缓存于当前 client，不保存签名 URL，不推算或改写服务端完成状态。
+
 provider 用内部 switch 选择 ykt/xuetang/zhs，三个模块共享纯代码，不共享未经证明的 wire 映射。不做配置驱动的万能 endpoint 执行器。每个原生 API 用具名普通函数，附近注释注明 source ref、HTTP 方法、是否改变上游状态、成功 envelope。关键 request/response 用 Zod 校验，额外无关字段允许保留/忽略，但关键 ID、success 和 data 结构不能缺失后静默兜底。
 
 factory 仅构造对象，不能因为 import/创建就读 Cookie、联网或启动浏览器。应用初始化后请求调用才执行 I/O。

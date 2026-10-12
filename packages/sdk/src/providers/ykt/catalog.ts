@@ -1,11 +1,12 @@
 import { LearningError } from '../../types/errors.js';
+import { httpError, protocolError } from '../../http/errors.js';
 import type { Course, Outline, OutlineNode, Resource, ResourceKind } from '../../types/models.js';
 import type { Page } from '../../types/errors.js';
 import type { Scope } from '../../types/refs.js';
 import { keyOfCourse, keyOfResource } from '../../types/refs.js';
 import type { CourseRef } from '../../types/refs.js';
 import type { SessionHttp } from '../../http/client.js';
-import { ClassroomWire, CourseListWire, HasKgWire, KgChapterWire, StandardChapterWire, moocEnvelopeChecked, YKT_BASE } from './schemas.js';
+import { ClassroomWire, CourseListEnvelopeWire, CourseListWire, HasKgWire, KgChapterWire, StandardChapterWire, moocEnvelopeChecked, YKT_BASE } from './schemas.js';
 import { RawNode as RawNodeSchema } from './schemas.js';
 import type { RawNode } from './schemas.js';
 
@@ -238,11 +239,19 @@ export async function yktCourses(http: SessionHttp, scope: Scope): Promise<Page<
     method: 'GET',
     url: `${YKT_BASE}/v2/api/web/courses/list?identity=2`,
   });
-  const parsed = CourseListWire.parse(await response.json());
-  if (parsed.errcode !== 0) {
-    throw new LearningError({ code: 'PROTOCOL', message: `courses/list errcode=${parsed.errcode}`, retryAfterMs: null, operationId: null });
+  const authExpired = () => httpError({ code: 'AUTH_EXPIRED', message: '雨课堂登录状态已失效，请重新扫码登录。', operationId: null });
+  if (response.status === 401) throw authExpired();
+  if (response.status !== 200) throw protocolError(`courses/list HTTP ${response.status}`);
+  const payload = await response.json();
+  const envelope = CourseListEnvelopeWire.safeParse(payload);
+  if (!envelope.success) throw protocolError('Yuketang courses/list envelope is invalid');
+  if (envelope.data.errcode === 401002) throw authExpired();
+  if (envelope.data.errcode !== 0) {
+    throw protocolError(`courses/list errcode=${envelope.data.errcode}`);
   }
-  const items = parsed.data.list.map((raw) => {
+  const parsed = CourseListWire.safeParse(payload);
+  if (!parsed.success) throw protocolError('Yuketang courses/list data is invalid');
+  const items = parsed.data.data.list.map((raw) => {
     const native = { kind: 'ykt' as const, classroomId: String(raw.classroom_id) };
     return {
       ref: { scope, key: keyOfCourse({ scope, key: 'pending', native }), native },

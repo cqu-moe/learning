@@ -1,6 +1,6 @@
 import { describe, expect, it, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 const home = mkdtempSync(resolve(tmpdir(), 'learning-output-'));
@@ -56,6 +56,28 @@ describe('machine output contract', () => {
 });
 
 describe('output streams and terminal mode', () => {
+  it('starts machine commands without loading the terminal progress renderer', () => {
+    const hook = resolve(home, 'no-progress-renderer.mjs');
+    writeFileSync(hook, `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier === 'cli-progress' || specifier === 'cli-truncate') throw new Error('terminal renderer loaded for a machine command');
+  return next(specifier, context);
+} });`);
+    const result = spawnSync(process.execPath, ['--import', hook, resolve(import.meta.dirname, '../dist/index.js'), '--version', '--json'], { encoding: 'utf8' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, exitCode: 0 });
+  });
+  it('reports an aborted media probe as cancellation in the final machine result', async () => {
+    const { Writable } = await import('node:stream');
+    const { createOutput, resolveOutputMode } = await import('../src/output.js');
+    let text = '';
+    const stream = new Writable({ write(chunk, _encoding, callback) { text += String(chunk); callback(); } });
+    const output = createOutput(resolveOutputMode({ json: true }), { stdout: stream, stderr: stream });
+    try {
+      await output.finish(new DOMException('Media duration probe aborted', 'AbortError'));
+      expect(JSON.parse(text)).toMatchObject({ status: 'canceled', exitCode: 3, error: { code: 'CANCELED', message: '操作已取消。' } });
+    } finally { output.close(); process.exitCode = 0; }
+  });
   it('waits for the writer and handles a broken pipe without rejection', async () => {
     const { Writable } = await import('node:stream');
     const { createOutput, resolveOutputMode } = await import('../src/output.js');
