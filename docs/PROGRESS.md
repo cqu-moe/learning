@@ -517,3 +517,11 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 文档核对：Context7 仅返回不同的 pngjs3 fork，未用其替代本次依赖；回退读取已安装 pngjs 5.0.0 包内 README 和实际 API，以真实测试确认 `PNG.sync.read` 的尺寸/RGBA 输出。
 - 未运行项/缺口：没有真实微信扫码、平台 Cookie 交换、在线身份核验或任何学习/答题/发帖/交卷；没有读取用户本机登录秘密或调用付费模型。终端图案保真与登录 fixture 通过不代表真实平台已登录。无 debug 日志遗留。
 - 下一当前任务：无新增开发任务，本次两个指定修复的离线实施已完成；独立安装缓存与真实扫码证据保留未完成状态，不自动合并/推送或执行其他 PLAN 项，T27–T30 与 Web 继续延期。
+
+### 2026-10-12 · 本地启用扫码修复版（done，待用户真机测试）
+
+- 用户明确要求“先把本地的用上修复版，我测试一下”。已使用有效 Git 身份提交 `4318046`（`fix(zhs): parse WeChat codes and render QR in terminal`），本地 main 从 `4f31a1e` 快进合入修复；现有 `/Users/uu/.local/bin/learning` 仍指向主仓 `apps/cli/dist/index.js`，该文件及 SDK 已重新构建。
+- 实际环境：Node v24.11.1、pnpm 11.19.0。主仓执行 `git merge --ff-only codex/zhs-login-qr`、`pnpm install --offline --frozen-lockfile --ignore-scripts`、`pnpm build` → 全部 exit 0；现有 `learning --version` → 0.2.0、exit 0，realpath 检查确认使用重建的本地 main。没有以版本号变化判断是否切换，实际核对了命令路径并重跑主仓修复行为。
+- 主仓实际回归：`pnpm --filter @learning/sdk exec vitest run tests/zhs-auth-crypto.test.ts` → 19/19、exit 0；`pnpm --filter @learning/cli exec vitest run tests/auth-ui.test.ts tests/qr-terminal.test.ts` → 4/4、exit 0，含真实 PTY PNG 二维码展示与机器输出隔离。
+- 未运行/缺口：未替用户进行真实扫码、平台登录或读写，未改动账号数据或命令链接，未推送远端；前次 E2E 独立无锁文件安装所缺 pdf-lib 缓存元数据仍是未通过项，本轮没有重复该无变化检查。
+- 下一当前任务：用户使用现有 `learning` 命令进行真机测试；收到反馈后仅处理相关问题，不自动执行其他 PLAN 项或延期 Web。
