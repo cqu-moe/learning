@@ -582,3 +582,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 最终实际检查：两包 `node node_modules/typescript/bin/tsc -p <包>/tsconfig.build.json` 构建、`tsc -p <包>/tsconfig.json` 类型检查、`node node_modules/eslint/bin/eslint.js .` → exit 0。SDK `node node_modules/vitest/vitest.mjs run` → 31 files / 266 tests，exit 0；CLI 首次默认并发全套 113/115，两条既有进程测试超过 5 秒（exit 1），未修改断言或 timeout；`vitest run --maxWorkers=2` → 14 files / 115 tests，exit 0。`vitest run --config vitest.e2e.config.ts --maxWorkers=1` → 7/7，exit 0，含独立 tarball 消费者 frozen/offline 安装。source-lock、boundaries、`git diff --check` → exit 0。
 - 未运行项：重新扫码登录、修后真实课程读回、学习/答题/发帖/交卷、付费模型、推送与云部署。当前已确认旧会话过期，代码修复不能替代人工扫码；下一事项是启用修复到本机命令，再由用户执行 `learning login --profile uu-ykt`。不自动推进 T27–T30 或 Web。
 - 本地交付授权：首次自动审批以缺少明确提交授权为由拒绝 Git 提交，命令未执行。用户随后明确选择“允许本地提交并启用”，授权本地提交、快进合入 main 与重建现有命令；不推送远端。实际启用结果另记于下方。
+
+### 2026-10-12 · 过期会话提示修复已启用到本机命令（done）
+
+- 用户明确授权本地提交并启用；使用现有有效 Git 身份提交 `fbca6c7`（fix(ykt): report expired course sessions before payload validation）。主目录 main 干净时执行 `git merge --ff-only codex/fix-run-input` → exit 0；固定 Node v24.11.1 / pnpm 11.19.0 下 `pnpm build` → exit 0。
+- 主目录针对性回归：`pnpm --filter @learning/sdk exec vitest run tests/ykt-catalog.test.ts tests/auth-flow.test.ts` → 31/31，exit 0；`pnpm --filter @learning/cli exec vitest run tests/catalog.test.ts -t 'handles whole-course selection'` → 4/4，exit 0（27 项未被过滤器选中，不计本轮通过）。真实 PTY 同时覆盖正常课程选择及登录过期提示，所有流量仍为离线 fixture。
+- 现有 `learning --version` → 0.2.0，exit 0；realpath 确认 `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`。SDK catalog.js / schemas.js 与 CLI output.js 的 SHA256 均与已通过完整测试的 worktree 相同，未以未变的版本号作为修复启用证据。
+- 未修改账号数据或命令链接，未推送远端。重新扫码与修后真实课程读回仍未运行；下一事项由用户执行 `learning login --profile uu-ykt`，扫码完成后再运行 `learning run`。本次指定修复及本地启用完成，不自动学习或推进延期 Web。
