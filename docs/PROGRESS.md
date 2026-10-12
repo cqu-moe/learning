@@ -14,7 +14,7 @@
 | T07 | 雨课堂资源、课件及考试只读 | done | vitest tests/ykt-resources.test.ts → 6/6; 全套 80/80, typecheck/lint/build exit 0 | E01 fixtures 合成；E03 分页 unknown |
 | T08 | 学堂WS登录、课程与大纲 | done | vitest tests/xuetang-catalog.test.ts → 6/6; 全套 86/86, typecheck/lint/build/boundaries exit 0 | E02 分页终止 unknown；E04 身份字段待真机 |
 | T09 | 学堂资源、作业和考试结果读取 | done | vitest tests/xuetang-resources.test.ts → 4/4; 全套 90/90, typecheck/lint/build exit 0 | E05 交卷未实现属 T17 |
-| T10 | 智慧树编码与登录 | done | 默认微信 QR/原生 QR fixture；已授权旧会话在线 UUID 核验通过 | 全新 QR 扫码未做真机 |
+| T10 | 智慧树编码与登录 | done | 默认微信 JPEG/wxTransit/原生 QR fixture；已授权扫码回调真机复现及旧会话在线 UUID 核验 | 用户已确认微信扫码登录；原生 QR 尚无真机验收 |
 | T11 | 智慧树两类课程树和权威进度 | done | share/hike fixture；已授权真机 2 门共享课、1 门校内课及共享课视频进度读回 | 校内课为考试，按用户要求未操作其学习 |
 | T12 | 富文本、Markdown与格式导出 | done | vitest tests/content.test.ts → 7/7; 全套 109/109, typecheck/lint/build/boundaries exit 0 | parse5 8.0.1 + yaml 2.9.1 已冻结 |
 | T13 | 草稿导入、反馈匹配与可选模型建议 | done | SDK 模型建议过滤未解码/未选内容、Node 假模型与学堂讨论草稿 fixture；全套见最新记录 | 真实付费模型未授权调用 |
@@ -504,3 +504,69 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户反馈：wizard 里 run 整门课后"倍速/目标进度"两个提示默认值直接回车报"请输入当前平台允许的倍速"，且刷课默认语义就是"整门课、最高倍速、刷完"，不该连按多次回车。根因：@clack/prompts 1.8.1 的 TextPrompt 在 finalize（应用 defaultValue）之前就运行 validate，空提交以 undefined 校验必然失败；修复为 prompts.ts 统一将空/undefined 提交按 initialValue 校验（submittedText），所有带默认值的 text 提示共用。
 - run 设置折叠为一个选择：向导且未显式给 --speed/--target 时只问一次"学习配置"——默认（倍速=平台上限：ykt 5、zhs 1.5/hike 1.25，目标=刷完整门课）或自定义（才展开原两个提示，倍速预填上限值）；非向导直跑未显式传参时同样按默认预设取平台上限倍速，--speed/--target 显式值不变。选择操作范围仍默认"整门课程"，预览后的执行确认保留。
 - 先红后绿：新增 catalog 用例（不带 --speed/--target 的 run，fixture 心跳断言 sp:5/cp:10/tp:10 一拍完成，旧代码 sp:1 红）；interaction 用例 submittedText(undefined,'5')→'5'（旧代码无此函数红）。修改 apps/cli/src/{prompts.ts,commands/run.ts}、apps/cli/tests/{interaction,catalog}.test.ts。Node24.11.1：lint、typecheck、CLI 104/104 exit 0（SDK 未动）。证据缺口：向导"学习配置"菜单本身未做 PTY 端到端（其 select 机制与其余向导提示同路径，由既有 terminal 套件覆盖）。
+
+### 2026-10-12 · 智慧树微信交换码解析与终端 PNG 二维码（用户指定修复，离线完成）
+
+- 工作区：`/Users/uu/.codex/worktrees/zhs-login-qr/learning`，分支 `codex/zhs-login-qr`，基于 main `4f31a1e`。主仓和现有 `learning` 可执行链接未切换，修改尚未提交、合并或推送。二维码初稿由按 `zhipu/glm-5.3 / max` 派出的 subagent 编写；主 agent 完成审阅、类型/留白/测试夹具校正与全部最终验证。
+- SDK 修复：`WeChat confirmed without a safe code` 意味着已收到 `wx_errcode=405` 但未解析出登录交换码，不是要求输入验证码。原解析仅接受单引号和字母数字；现在有限解析单双引号、赋值空白及 `-`/`_`，仍拒绝缺值、空值、不配对引号、非法字符和字符串拼接表达式，不执行脚本，不输出 code。没有用户当次轮询响应，只证明这些格式能触发同一错误，不能断言截图是哪一种。
+- CLI 修复：pretty/交互/颜色终端将 SDK PNG 解码并按二维码模块输出黑白半格方块，保留四模块留白；识别失败、plain/无颜色终端、JSON/JSONL 或显式 `--qr-file` 保留受限二维码文件后备及清理。校验 PNG 大小和 IHDR 像素预算后才解码。pngjs 5.0.0 从既有传递依赖显式固定为 CLI 直接依赖，未升级工具链，SDK/root/public 不导入它。
+- 实际改动：`packages/sdk/src/providers/zhs/auth.ts`、`packages/sdk/tests/zhs-auth-crypto.test.ts`；`apps/cli/src/{commands/login.ts,qr-terminal.ts,pngjs.d.ts,qrcode.d.ts}`、`apps/cli/tests/{auth-ui.test.ts,qr-terminal.test.ts,fixture-fetch.mjs}`、`apps/cli/package.json`、`pnpm-lock.yaml`、`docs/{protocol-evidence.md,toolchain.md,PROGRESS.md}`。CLI HTTP fixture 的字符串响应现在按原文返回，与 SDK fixture 一致；对象仍序列化为 JSON，请求断言与未登记请求拒绝保持严格。
+- 先红后绿：`pnpm --filter @learning/sdk exec vitest run tests/zhs-auth-crypto.test.ts` 初次 14/19，exit 1，含 `-`/`_`、双引号三例得到截图中的同一错误；最小 `-t 'code containing hyphen'` 再现同错，exit 1。修复后 zhs-auth + auth-flow 36/36，exit 0。终端图案由 qrcode 编码矩阵独立比对；真实 PTY 全链覆盖 PNG 展示与成功结束。临时将 worktree 中忽略的编译 login.js 替换为主仓原编译实现，SHA256 验证确实切换后运行 `vitest run tests/auth-ui.test.ts -t 'renders a ZHS WeChat PNG QR'`，因只显示图片路径按预期失败（exit 1），finally 恢复修复产物；最终同一回归由全套测试覆盖通过。
+- 环境：Node v24.11.1，pnpm 11.19.0，所有产品命令显式前置固定 Node PATH。实际命令：`pnpm install --offline --frozen-lockfile --ignore-scripts` → exit 0；`pnpm build` → exit 0；`pnpm typecheck` → exit 0；最终 `pnpm lint` → exit 0；最终 `pnpm test` → SDK 246/246、CLI 106/106，exit 0；修正 HTTP 文本 fixture 后 catalog/auth-ui/qr-terminal 聚焦 31/31，exit 0。源码参考以只读 `.reference` 符号链接复用主仓固定 ref；`node scripts/check-source-lock.mjs`、`node scripts/check-boundaries.mjs`、`git diff --check` → exit 0。
+- 尚未通过：`pnpm test:e2e` → 6/7，exit 1。独立 packed consumer 在 `pnpm install --offline --ignore-scripts` 阶段缺少本机 npmmirror 缓存的 `pdf-lib@1.17.1` 元数据，未运行后续安装消费者功能验收；未删断言、未跳过该项、不记通过。当前 workspace frozen-lockfile 离线安装已通过，与独立消费者的无 lockfile 解析不同。
+- 文档核对：Context7 仅返回不同的 pngjs3 fork，未用其替代本次依赖；回退读取已安装 pngjs 5.0.0 包内 README 和实际 API，以真实测试确认 `PNG.sync.read` 的尺寸/RGBA 输出。
+- 未运行项/缺口：没有真实微信扫码、平台 Cookie 交换、在线身份核验或任何学习/答题/发帖/交卷；没有读取用户本机登录秘密或调用付费模型。终端图案保真与登录 fixture 通过不代表真实平台已登录。无 debug 日志遗留。
+- 下一当前任务：无新增开发任务，本次两个指定修复的离线实施已完成；独立安装缓存与真实扫码证据保留未完成状态，不自动合并/推送或执行其他 PLAN 项，T27–T30 与 Web 继续延期。
+
+### 2026-10-12 · 本地启用扫码修复版（done，待用户真机测试）
+
+- 用户明确要求“先把本地的用上修复版，我测试一下”。已使用有效 Git 身份提交 `4318046`（`fix(zhs): parse WeChat codes and render QR in terminal`），本地 main 从 `4f31a1e` 快进合入修复；现有 `/Users/uu/.local/bin/learning` 仍指向主仓 `apps/cli/dist/index.js`，该文件及 SDK 已重新构建。
+- 实际环境：Node v24.11.1、pnpm 11.19.0。主仓执行 `git merge --ff-only codex/zhs-login-qr`、`pnpm install --offline --frozen-lockfile --ignore-scripts`、`pnpm build` → 全部 exit 0；现有 `learning --version` → 0.2.0、exit 0，realpath 检查确认使用重建的本地 main。没有以版本号变化判断是否切换，实际核对了命令路径并重跑主仓修复行为。
+- 主仓实际回归：`pnpm --filter @learning/sdk exec vitest run tests/zhs-auth-crypto.test.ts` → 19/19、exit 0；`pnpm --filter @learning/cli exec vitest run tests/auth-ui.test.ts tests/qr-terminal.test.ts` → 4/4、exit 0，含真实 PTY PNG 二维码展示与机器输出隔离。
+- 未运行/缺口：未替用户进行真实扫码、平台登录或读写，未改动账号数据或命令链接，未推送远端；前次 E2E 独立无锁文件安装所缺 pdf-lib 缓存元数据仍是未通过项，本轮没有重复该无变化检查。
+- 下一当前任务：用户使用现有 `learning` 命令进行真机测试；收到反馈后仅处理相关问题，不自动执行其他 PLAN 项或延期 Web。
+
+
+### 2026-10-12 · 微信实际 JPEG 与 wxTransit 凭据交换（用户指定修复，离线完成）
+
+- 用户第二次截图仍显示文件并报 `WeChat exchange did not set CASLOGC`。用户明确授权一次真实二维码诊断并扫码确认，随后要求继续研究。复用了隔离 worktree `/Users/uu/.codex/worktrees/zhs-login-qr/learning`、分支 `codex/zhs-login-qr`，未修改用户账号数据。子代理负责 CLI 图片展示，因使用额度限制中止后由主代理完成审查及整合。
+- 当次实测：二维码实际为 JPEG（470×470、47,045 bytes）；OAuth 回调 302 → wxTransit/0 页面 200，没有 CASLOGC。user 域仅出现 acw_tc/INGRESSCOOKIE/JSESSIONID/SERVERID；Cookie 值、cacheId/code/pwd 均未保存到源码/文档或公开日志。隔离诊断到同一错误后停止，不把“手机确认”称为 CLI 登录完成。
+- 修复：SDK 按文件魔数发布 png/jpeg DTO，contracts 同步。按当前官网公开脚本补齐 user/cache → 必要时 isNewUser → POST code/skipSet → passport/login → onlineservice 重定向；CookieJar 保留域/路径。锁定、新账号需绑定、缺认证或跨学校需选择均保持人工闸门，不随意选身份；状态或 pwd 缺失严格失败。OAuth code/skipSet/once-password 请求均按单次消费处理，响应丢失只报 UNCERTAIN、不自动重发。CASLOGC 保留于加密会话，公开 SessionView 只提供解析出的 UUID 或 null，在线身份仍须 probe。
+- CLI 修复：jpeg-js 0.4.4 / jsqr 1.4.0 精确固定；PNG/JPEG 在 CLI 解码为 RGBA，再把二维码原始字节作为 qrcode 的 byte segment 编码为终端矩阵，保留 4-module quiet zone、固定黑白半块字符。JSON/非交互/显式 qr-file 延续文件元数据及清理规则，fallback 后缀与真实格式一致。图片 bytes/pixels/JPEG 解码内存有界，不导入 SDK/root/public。
+- 文件：SDK providers/zhs/auth.ts、types/models.ts、tests/zhs-auth-crypto.test.ts、tests/helpers/replay.ts、合成 wechat-qr fixture；CLI commands/login.ts、qr-terminal.ts、图片库声明、auth-ui/qr-terminal 测试及公开 QR 图片生成 helper；CLI package.json/pnpm-lock.yaml；docs/contracts.d.ts、protocol-evidence.md、toolchain.md、PROGRESS.md。真实二维码没有作为测试 fixture 入库。
+- 先红后绿：`vitest run tests/zhs-auth-crypto.test.ts` 初次 transit 测试 5/24 失败（exit 1），正例复现同一 CASLOGC 错误；随后 JPEG 类型断言也按预期失败。修复后的 zhs-auth + auth-flow 48/48（exit 0），覆盖正常单学校、无手机号旧账号、新账号绑定、锁定、缺认证、同校多角色、跨学校、缺 pwd，以及三个凭据消费端响应丢失不重放。SDK 完整 31 files / 258 tests 通过（exit 0）。
+- 终端验证：公开合成 JPEG 有缩放、非整数 module pitch 和中心 logo；真实 PTY 走 JPEG/PNG + 当前 wxTransit 完整重定向链，验证成功结束、无需文件、扫码内容一致及 JSONL 不泄露 QR/code/pwd/cookie。非 UTF-8 二进制 QR 逐字节回读断言通过。初次 CLI 全套两条新增测试错误比较了文本字段（108/110，exit 1），已改为 binaryData 逐字节比较；坐标元组声明修正后严格类型通过，未删断言/skip/放宽 schema。
+- 已授权真实 JPEG 在本机一次性 harness 中回读：终端宽 45 列、内容与原 JPEG 的 binaryData 相同，exit 0，只输出尺寸/布尔值；真实图片、诊断 harness 和官网临时脚本已清理，dist 无诊断材料，打包不携带登录二维码。
+- 实际环境 Node v24.11.1 / pnpm 11.19.0。命令均显式前置固定 Node PATH：`pnpm install --offline --frozen-lockfile --ignore-scripts` → exit 0；`pnpm --filter @learning/sdk test` → 258/258，exit 0；CLI test 中 SDK/CLI 构建 → exit 0；最终 `pnpm --filter @learning/cli exec vitest run` → 110/110，exit 0；最终 `pnpm typecheck` / `pnpm lint` / boundaries / source-lock / `git diff --check` → exit 0。
+- 尚未通过：`pnpm test:e2e` → 6/7，exit 1；无 lockfile 的独立 packed consumer 在离线依赖解析阶段缺本机 npmmirror 的 `@clack/prompts@1.8.1` 元数据。它与固定锁文件的工作区安装不同，未跳过或伪称通过。官方公开源码说明后半链，不是修复后真机 CASLOGC 已获取；用户已休息，未再生成新二维码要求扫码，也没有平台学习/答题/发帖/交卷操作。
+- 下一当前事项：沿用户既有授权启用本地修复版，然后等待人工新扫码验收智慧树完整登录。没有推进其他 PLAN 任务或 Web。
+
+
+### 2026-10-12 · 实际 JPEG / wxTransit 修复已启用到本地命令
+
+- 沿用户“先把本地的用上修复版”既有授权，使用有效 Git 身份提交 `493aeac`（fix(zhs): finish wxTransit login and display JPEG QR）；主目录 main 干净时快进合入该分支。
+- 主目录 Node v24.11.1 / pnpm 11.19.0 实际执行 `pnpm install --offline --frozen-lockfile --ignore-scripts`、`pnpm build` → exit 0，新增两个解码依赖使用本机缓存，未升级既有包。`/Users/uu/.local/bin/learning --version` → 0.2.0，exit 0；realpath 确认仍使用主目录 `apps/cli/dist/index.js`，SDK auth.js / CLI qr-terminal.js 的 SHA256 与已验证 worktree 相同，dist 不含 diagnostics。
+- 合入后主目录针对性回归：`pnpm --filter @learning/sdk exec vitest run tests/zhs-auth-crypto.test.ts tests/auth-flow.test.ts` → 48/48，exit 0；`pnpm --filter @learning/cli exec vitest run tests/qr-terminal.test.ts tests/auth-ui.test.ts` → 8/8，exit 0，包含 JPEG/PNG + wxTransit 的真实 PTY 进程链。
+- 用户账号数据与命令链接未改动，未推送远端。离线独立 packed consumer 元数据缺失和修后真实完整扫码验收仍是上一记录中的缺口；本轮没有重复无变化的 E2E 检查。下一当前事项：人工重新启动 `learning login --profile uu-zhs` 完成新的扫码确认，再验收 CLI 登录结果；没有自动生成待扫二维码或执行平台学习写入。
+
+
+### 2026-10-12 · 文本/图片二维码统一为一格窄边，已启用本地
+
+- 用户明确反馈智慧树可以登录，截图显示 CLI 登录成功；这是用户提供的实际验收，不等同于本代理新增在线身份 probe。此次仅调整二维码终端展示。
+- 原因：text QR 使用 qrcode 的 terminal small 渲染，JPEG/PNG 使用独立矩阵渲染，两者白边不同。提交 `1e433ab` 将 UTF-8 文本与图片解出的原始字节共用 byte segment 编码和半块字符渲染。用户随后明确不喜欢厚白边，提交 `1d52aa9` 将统一留白从四格缩为一格；颜色、字符比例及左右边缘一致，格子数仍由各自内容决定，不强行拉伸。
+- 实际文件：apps/cli/src/{commands/login.ts,qr-terminal.ts}、tests/{auth-ui.test.ts,qr-terminal.test.ts}、本进度记录。没有修改 SDK 登录协议、依赖或用户账号数据。
+- 回归先红后绿：扩展既有真实 PTY 用例，分别走雨课堂 text / 智慧树 JPEG 登录 fixture，同一包含中文的公开内容，验证扫码回读、窄边和颜色、不输出 QR/交换凭据。初次统一测试 text 因留白不一致失败（exit 1）；窄边契约在四格版本上两例均失败（exit 1）。最终 auth-ui + qr-terminal 9/9（exit 0），包含文本、PNG、缩放带 logo JPEG、非 UTF-8 原始字节和图片预算异常分支；未删断言或禁用测试。
+- Node v24.11.1 / pnpm 11.19.0：worktree CLI build、最终 pnpm typecheck、pnpm lint、git diff --check → exit 0。沿既有本地启用授权，main 干净时分别快进合入两项修复并重建；主目录 auth-ui + qr-terminal 在统一版本 9/9，最终窄边版本以 `-t 'shared terminal style'` 运行 2/2（其余 4 项由过滤器未选中），均 exit 0。
+- realpath 确认现有 learning 使用主目录 apps/cli/dist/index.js，login.js / qr-terminal.js 的 SHA256 与已验证 worktree 一致。下一次启动登录命令即使用窄边样式；没有推送远端或修改命令链接。
+- 未运行：本轮平台真机扫码、SDK 全套、CLI 全套、独立消费者 E2E；展示专项检查已覆盖实际 CLI 路径，之前独立安装的离线镜像元数据缺失未重复检查。下一当前事项：用户查看统一窄边样式；不自动执行其他 PLAN 项或平台业务操作。
+
+
+### 2026-10-12 · 登录与窄边二维码 PR 交付检查
+
+- 用户明确授权“开 PR，没问题就合”。本次范围是 origin/main 4f31a1e 之后的微信交换码解析、JPEG/PNG 终端展示、wxTransit 登录补全，以及文本/图片统一一格窄边；用户已提供智慧树实际登录成功和最终样式接受，未新增真机平台请求。
+- 两路独立审查：需求审查无问题；规范审查发现新增 wxTransit JSON 无读取预算，已在 457a99b 改用已有流式 bytes(256 KiB) 后解析，缓存/skipSet 两个超大响应回归修前均误登录成功、exit 1，修后 auth+flow 50/50、exit 0；超预算不保存会话、不继续 passport 交换。整体字节限制同时约束字符串和数组大小，不猜平台字段的额外语义上限。
+- 完整测试发现新增机器输出用例启动三个 CLI 进程，在并行负载下超过默认 5 秒；改为与同文件进程验收一致的 20 秒，保留全部断言，专项 6/6、exit 0。
+- 修复既有 packed consumer 验收：本机旧版本 6/7、exit 1（pdf-lib 镜像元数据缺失）；远端 main 的 CI 38191346623 同项选中锁文件外的 tldts 7.4.18，离线缺 tarball。现在读取真实 tarball 清单、比对其依赖版本，复制原锁定生产依赖闭包并为 tarball 计算 SHA512，执行 frozen/offline 真实独立安装。仅派生消费者使用 pnpm 11.19 的 trust-lockfile，复用正常安装已检查的原始 registry 条目；仓库/CI 的正常安装策略未改，完整性校验、可执行文件、全部 exports、QR/课程/导出/Range 恢复断言均保留。复用了 SDK 已固定的 yaml，不增包或升级依赖。
+- 本轮文件：packages/sdk/src/providers/zhs/auth.ts、tests/zhs-auth-crypto.test.ts；apps/cli/tests/{auth-ui,e2e}.test.ts；本进度记录。后续增量审查针对预算和打包验收修正；最终 PR 状态以关联 PR 为准。
+- 实际 Node v24.11.1 / pnpm 11.19.0，worktree 执行 pnpm install --offline --frozen-lockfile --ignore-scripts、source-lock、boundaries、pnpm lint、pnpm typecheck、pnpm test、pnpm build、pnpm test:e2e、git diff --check 全部 exit 0：SDK 260/260、CLI 111/111、E2E 7/7。原独立安装证据缺口已解决，未跳过测试；聚焦命令未选中的用例不计通过。
+- 未运行项：新的平台扫码、在线身份 probe、学习/答题/发帖/交卷、Web/云部署。Cookie、真实二维码及临时协议材料未纳入提交。后续仅按用户授权在远端检查通过时合并并同步本地命令；合并后无新增开发任务，不推进延期 Web 或其他 PLAN 项。

@@ -75,14 +75,29 @@ export function registerLoginCommands(program: Command): void {
           for await (const event of flow.events) {
             if (event.type === 'qr') {
               const qr = await import('qrcode');
-              if (descriptor === null && (event.qr.type === 'png' || output.mode.format !== 'pretty' || !output.mode.color)) openQr(resolve(dataDir, `login-qr-${randomUUID()}.png`));
-              if (descriptor !== null) {
-                const bytes = event.qr.type === 'png' ? Buffer.from(event.qr.base64, 'base64') : await qr.default.toBuffer(event.qr.value, { type: 'png' });
-                let offset = 0;
-                while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset, bytes.length - offset, offset);
-                ftruncateSync(descriptor, bytes.length);
-                await output.message(`请扫描二维码图片：${qrPath}`);
-              } else if (event.qr.type === 'text') process.stderr.write(await qr.default.toString(event.qr.value, { type: 'terminal', small: true }));
+              let terminal: string | null = null;
+              if (descriptor === null && output.mode.format === 'pretty' && output.mode.color && output.mode.interactive) {
+                try {
+                  const renderer = await import('../qr-terminal.js');
+                  terminal = event.qr.type === 'text'
+                    ? renderer.renderTextQrTerminal(event.qr.value)
+                    : renderer.renderImageQrTerminal(Buffer.from(event.qr.base64, 'base64'));
+                } catch {
+                  terminal = null;
+                }
+              }
+              if (terminal !== null) process.stderr.write(terminal);
+              else {
+                const extension = event.qr.type === 'text' ? 'png' : event.qr.type;
+                if (descriptor === null) openQr(resolve(dataDir, `login-qr-${randomUUID()}.${extension}`));
+                if (descriptor !== null) {
+                  const bytes = event.qr.type === 'text' ? await qr.default.toBuffer(event.qr.value, { type: 'png' }) : Buffer.from(event.qr.base64, 'base64');
+                  let offset = 0;
+                  while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset, bytes.length - offset, offset);
+                  ftruncateSync(descriptor, bytes.length);
+                  await output.message(`请扫描二维码图片：${qrPath}`);
+                }
+              }
               await output.event({ type: 'auth', data: { stage: 'qr', generation: event.generation, expiresAtMs: event.expiresAtMs, qrPath } });
             } else {
               await output.event({ type: 'auth', data: { stage: event.type, generation: 'generation' in event ? event.generation : null, expiresAtMs: null, qrPath: null } });
