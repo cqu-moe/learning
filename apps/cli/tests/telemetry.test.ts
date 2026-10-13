@@ -112,7 +112,7 @@ async function waitForTokenPayloads(apiKey: string, count: number): Promise<Capt
   const deadline = Date.now() + 2000;
   for (;;) {
     const payloads = requests.filter(candidate => candidate.body.api_key === apiKey);
-    if (payloads.length >= count) return payloads.slice(-count);
+    if (payloads.flatMap(payload => payload.body.batch).length >= count) return payloads;
     if (Date.now() > deadline) throw new Error(`expected ${count} telemetry requests, received ${payloads.length}`);
     await new Promise(resolveWait => setTimeout(resolveWait, 10));
   }
@@ -170,9 +170,9 @@ describe('cli telemetry lifecycle', () => {
     expect(statSync(resolve(home, 'telemetry.json')).mode & 0o777).toBe(0o600);
 
     const payloads = await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 2);
-    expect(payloads.map(payload => payload.url)).toEqual(['/batch', '/batch']);
-    expect(payloads.map(payload => payload.body.api_key)).toEqual(['phc_public_fixture_token_1234567890abcdef', 'phc_public_fixture_token_1234567890abcdef']);
-    expect(payloads.map(payload => payload.body.batch.map(event => event.event))).toEqual([['cli_command_started'], ['cli_command_completed']]);
+    expect(payloads.map(payload => payload.url)).toEqual(['/batch']);
+    expect(payloads.map(payload => payload.body.api_key)).toEqual(['phc_public_fixture_token_1234567890abcdef']);
+    expect(payloads.map(payload => payload.body.batch.map(event => event.event))).toEqual([['cli_command_started', 'cli_command_completed']]);
     expect(new Set(payloads.flatMap(payload => payload.body.batch.map(event => event.uuid))).size).toBe(2);
     for (const uuid of payloads.flatMap(payload => payload.body.batch.map(event => event.uuid))) {
       expect(uuid).toMatch(/^[0-9a-f-]{36}$/);
@@ -196,7 +196,7 @@ describe('cli telemetry lifecycle', () => {
       product: 'learning',
       surface: 'cli',
       environment: 'production',
-      release: '0.2.5',
+      release: '0.2.6',
       actor_type: 'installation',
       trigger: 'user',
       operation: 'init',
@@ -230,7 +230,7 @@ describe('cli telemetry lifecycle', () => {
     expect(JSON.stringify(payloads)).not.toContain(home);
   });
 
-  it('sends a started request before command completion without blocking business output', async () => {
+  it('coalesces a quick command outcome with its start without delaying business output', async () => {
     const home = freshHome('learning-telemetry-observed-start-');
     const token = 'phc_start_observability_fixture_token_123456789';
     const env = userEnv(home, { token });
@@ -250,18 +250,37 @@ describe('cli telemetry lifecycle', () => {
     const stdoutDeadline = Date.now() + 2000;
     while (stdout.length === 0 && Date.now() < stdoutDeadline) await new Promise(resolveWait => setTimeout(resolveWait, 10));
     expect(startPayload.body.api_key).toBe(token);
-    expect(startPayload.body.batch.map(event => event.event)).toEqual(['cli_command_started']);
+    expect(startPayload.body.batch.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
     expect(stdout.trim().split('\n')).toHaveLength(1);
     expect(JSON.parse(stdout)).toMatchObject({ command: 'init', ok: true, exitCode: 0 });
     expect(stderr).toContain('learning telemetry off');
     expect(child.exitCode).toBeNull();
 
     releaseHeldRequest();
-    const [completionPayload] = await waitForRequests(2);
     expect(await exited).toBe(0);
-    expect(completionPayload.body.batch.map(event => event.event)).toEqual(['cli_command_completed']);
-    expect(completionPayload.body.batch[0]!.properties.operation_id).toBe(startPayload.body.batch[0]!.properties.operation_id);
-    expect(new Set([startPayload.body.batch[0]!.uuid, completionPayload.body.batch[0]!.uuid]).size).toBe(2);
+    expect(requests).toHaveLength(1);
+    expect(startPayload.body.batch[1]!.properties.operation_id).toBe(startPayload.body.batch[0]!.properties.operation_id);
+    expect(new Set(startPayload.body.batch.map(event => event.uuid)).size).toBe(2);
+  });
+
+  it('still delivers the start of a long-running command before its outcome', async () => {
+    const home = freshHome('learning-telemetry-long-command-');
+    const token = 'phc_long_command_fixture_token_123456789';
+    const previousEnv = process.env;
+    process.env = userEnv(home, { token });
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    try {
+      await startTelemetry(output, home, 'jobs resume');
+      const payloads = await waitForTokenPayloads(token, 1);
+      expect(payloads.flatMap(payload => payload.body.batch.map(event => event.event))).toEqual(['cli_command_started']);
+      await finishTelemetry(output);
+      const finished = await waitForTokenPayloads(token, 2);
+      expect(finished.flatMap(payload => payload.body.batch.map(event => event.event))).toEqual(['cli_command_started', 'cli_command_completed']);
+    } finally {
+      await finishTelemetry(output);
+      output.close();
+      process.env = previousEnv;
+    }
   });
 
   it('keeps command result and exit code unchanged when sending fails', () => {
@@ -296,7 +315,8 @@ describe('cli telemetry lifecycle', () => {
     expect(disabled.status).toBe(0);
     expect(JSON.parse(disabled.stdout).data).toEqual({ enabled: false, reason: 'persistent' });
     const afterOff = requests.length;
-    expect(afterOff).toBe(2);
+    expect(afterOff).toBe(1);
+    expect(requests[0]!.body.batch).toHaveLength(2);
     expect(runUserCli(['init'], home).status).toBe(0);
     expect(requests).toHaveLength(afterOff);
 

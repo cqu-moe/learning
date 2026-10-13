@@ -10,6 +10,7 @@ import pkg from '../package.json' with { type: 'json' };
 const POSTHOG_HOST = 'https://p.cqu.moe';
 const BACKGROUND_REQUEST_TIMEOUT_MS = 500;
 const FINISH_TIMEOUT_MS = 750;
+const FLUSH_DELAY_MS = 100;
 const MAX_EVENTS = 16;
 const MAX_BODY_BYTES = 16 * 1024;
 const STATE_VERSION = 1;
@@ -45,6 +46,7 @@ interface TelemetryController {
   jobAttempts: Map<string, { attemptId: string; startedAtMs: number; completed: boolean }>;
   flushTail: Promise<void>;
   transportAbort: AbortController | null;
+  flushTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const controllers = new WeakMap<Output, TelemetryController>();
@@ -274,8 +276,19 @@ function flush(controller: TelemetryController, timeoutMs: number): Promise<void
 }
 
 function scheduleFlush(controller: TelemetryController): void {
-  if (!controller.enabled || controller.token === null) return;
-  void flush(controller, BACKGROUND_REQUEST_TIMEOUT_MS).catch(() => {});
+  if (!controller.enabled || controller.token === null || controller.flushTimer !== null) return;
+  // Short commands send start and outcome together; slow commands still expose
+  // their start without waiting for completion or holding business output.
+  controller.flushTimer = setTimeout(() => {
+    controller.flushTimer = null;
+    void flush(controller, BACKGROUND_REQUEST_TIMEOUT_MS).catch(() => {});
+  }, FLUSH_DELAY_MS);
+  controller.flushTimer.unref();
+}
+
+function cancelScheduledFlush(controller: TelemetryController): void {
+  if (controller.flushTimer !== null) clearTimeout(controller.flushTimer);
+  controller.flushTimer = null;
 }
 
 function commandOutcome(exitCode: number, errorCode: string | null, canceled: boolean): TelemetryPropertyValue {
@@ -309,6 +322,7 @@ export async function startTelemetry(output: Output, dataDir: string, command: s
     jobAttempts: new Map(),
     flushTail: Promise.resolve(),
     transportAbort: null,
+    flushTimer: null,
   };
   controllers.set(output, controller);
   if (loaded.created) writeFirstNotice();
@@ -323,6 +337,7 @@ export function disableTelemetry(output: Output): void {
   const controller = controllers.get(output);
   if (controller === undefined) return;
   controller.enabled = false;
+  cancelScheduledFlush(controller);
   controller.events.length = 0;
   controller.jobAttempts.clear();
   controller.transportAbort?.abort();
@@ -409,6 +424,7 @@ export async function finishTelemetry(output: Output, error?: unknown): Promise<
     duration_basis: 'cli_process',
   };
   queueEvent(controller, 'cli_command_completed', properties);
+  cancelScheduledFlush(controller);
   if (controller.token === null) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
