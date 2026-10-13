@@ -1,4 +1,4 @@
-name: private-cli-release
+name: cli-release
 on:
   push:
     branches: [main]
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: private-cli-release
+  group: cli-release
   cancel-in-progress: false
 jobs:
   version:

@@ -730,3 +730,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 ### 2026-10-14 遥测回归测试时序
 
 合并后 CI 的真实 init 在繁忙 runner 超过 100ms，测试错误地假定它必然落入合批窗口。进程用例继续验证输出先于被挂起请求、退出码不变和两个事件同一操作 ID；另用连续 start/finish 验证单批次起止，并保留长命令先发送 started 的用例。没有改发行程序或放宽事件覆盖断言。
+
+### 2026-10-14 · 公开仓库与 GitHub 原生 CI
+
+用户撤回 Blacksmith，明确公开 Learning 及另外五个产品/设计仓库。PR#11 在合并前关闭，因此 main 保留 GitHub 原生五目标（macOS x64 为 macos-15-intel），不引入 Rosetta 构建。仓库可见性已读回 PUBLIC。发行脚本的私有断言改为公开断言，入口/安装/发行规范同步；workspace package 的 private:true 保留，不发布 npm。源码与已发布 Release 现在公开，0.2.6 原提交与附件不重建、不覆盖，不触发同版本手动发行。
+
+此前耗时假设修复继续保留：进程启动耗时不决定是否单批，业务输出在 HTTP 响应前产生；连续 start/finish 的单批保证由独立测试验证。等待本 PR 的原生五平台 CI 与 Node 门禁。
