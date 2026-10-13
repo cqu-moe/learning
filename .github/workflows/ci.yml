@@ -27,6 +27,17 @@ jobs:
       - run: pnpm lint && pnpm typecheck && pnpm test && pnpm build
       - run: pnpm test:e2e
       - run: node scripts/test-release.mjs
+      - name: Collect third-party licenses
+        run: |
+          mkdir -p dist
+          pnpm licenses list --prod --json > dist/licenses.json
+          node scripts/package-licenses.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-licenses
+          path: dist/releases/LICENSES.txt*
+          if-no-files-found: error
+          retention-days: 7
   binaries:
     name: binary (${{ matrix.target }})
     strategy:
@@ -60,12 +71,8 @@ jobs:
       - name: Verify runtime compatibility
         run: node scripts/test-bun-runtime.mjs
       - run: node scripts/build-cli.mjs
-      - name: Package licenses and executable
-        run: |
-          pnpm licenses list --prod --json > dist/licenses.json
-          node scripts/package-cli.mjs
-      - name: Run extracted release archive
-        run: node scripts/test-archive.mjs
+      - name: Run standalone release executable
+        run: node scripts/test-distribution.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-${{ matrix.target }}

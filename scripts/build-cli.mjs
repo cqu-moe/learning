@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,8 +10,8 @@ export const bunVersion = readFileSync(resolve(root, '.bun-version'), 'utf8').tr
 export const cliVersion = JSON.parse(readFileSync(resolve(root, 'apps/cli/package.json'))).version;
 export const targets = ['windows-x64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64'];
 export const target = `${{ win32: 'windows', darwin: 'macos', linux: 'linux' }[process.platform]}-${process.arch}`;
-export const executable = process.platform === 'win32' ? 'learning.exe' : 'learning';
-export const stage = resolve(root, 'dist', `learning-${cliVersion}-${target}`);
+export const executable = `learning-${cliVersion}-${target}${process.platform === 'win32' ? '.exe' : ''}`;
+export const releaseDirectory = resolve(root, 'dist/releases');
 
 export function compile(entry, outfile) {
   const bun = process.env.BUN_BINARY ?? 'bun';
@@ -23,6 +24,9 @@ export function compile(entry, outfile) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   assert.ok(targets.includes(target), `unsupported release target: ${target}`);
   assert.match(cliVersion, /^\d+\.\d+\.\d+$/);
-  mkdirSync(stage, { recursive: true });
-  compile('apps/cli/src/index.ts', resolve(stage, executable));
+  mkdirSync(releaseDirectory, { recursive: true });
+  const binary = resolve(releaseDirectory, executable);
+  compile('apps/cli/src/index.ts', binary);
+  const digest = createHash('sha256').update(readFileSync(binary)).digest('hex');
+  writeFileSync(`${binary}.sha256`, `${digest}  ${executable}\n`);
 }

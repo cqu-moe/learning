@@ -4,22 +4,31 @@
 
 ## 便携程序（推荐）
 
-登录有仓库读权限的 GitHub 账号，打开 [私有 Releases](https://github.com/cqu-moe/learning/releases)，下载对应系统/架构的压缩包和 `SHA256SUMS`。Windows 为 x64 ZIP；macOS 与 Linux 各提供 x64、arm64 的 tar.gz。解压即可运行，不需要安装 Node、Bun 或 Python。
+登录有仓库读权限的 GitHub 账号，打开 [私有 Releases](https://github.com/cqu-moe/learning/releases)，直接下载对应系统/架构的程序和 `SHA256SUMS`。Windows 提供 x64 `.exe`；macOS 与 Linux 各提供 x64、arm64 无扩展名程序。无需解压或安装 Node、Bun、Python。第三方许可证集中在同一 Release 的独立附件 `LICENSES.txt`，程序运行不依赖该文件。
 
 ```bash
 # macOS / Linux：校验下载，按实际版本和架构替换文件名
-shasum -a 256 learning-0.2.2-macos-arm64.tar.gz
-tar -xzf learning-0.2.2-macos-arm64.tar.gz
-cd learning-0.2.2-macos-arm64
-./learning doctor
-./learning init
+shasum -a 256 learning-0.2.3-macos-arm64
+# 与 SHA256SUMS 对应行比较；Linux 可用 sha256sum
+chmod +x learning-0.2.3-macos-arm64
+./learning-0.2.3-macos-arm64 doctor
+./learning-0.2.3-macos-arm64 init
 ```
 
-Windows 解压 ZIP 后，在 PowerShell 中运行 `Get-FileHash <下载的zip> -Algorithm SHA256`，与 `SHA256SUMS` 中对应行比较；进入解压目录运行 `./learning.exe doctor`、`./learning.exe init`。需要全局命令时，把程序所在目录加入当前用户 PATH。GitHub CLI 用户也可通过 `gh release download cli-v0.2.2 --repo cqu-moe/learning --pattern '*windows-x64.zip' --pattern SHA256SUMS` 下载；不提供携带私有 token 的公开安装脚本。
+Windows 下载后，在 PowerShell 中运行：
+
+```powershell
+Get-FileHash .\learning-0.2.3-windows-x64.exe -Algorithm SHA256
+# 与 SHA256SUMS 对应行比较
+.\learning-0.2.3-windows-x64.exe doctor
+.\learning-0.2.3-windows-x64.exe init
+```
+
+可将程序重命名为 `learning`（Windows 为 `learning.exe`），并把所在目录加入当前用户 PATH，之后直接使用 `learning` 命令。GitHub CLI 用户也可通过 `gh release download cli-v0.2.3 --repo cqu-moe/learning --pattern '*windows-x64.exe' --pattern SHA256SUMS --pattern LICENSES.txt` 下载；不提供携带私有 token 的公开安装脚本。
 
 运行要求沿 Bun：Windows 10 1809+、macOS 13+、glibc 2.17+ 的 Linux，x64 需 SSE4.2；首版不提供 Alpine/musl 或 Windows ARM64 原生包。实际 CI 使用 Windows 2025、macOS 15、Ubuntu 24.04，最低版本系统未逐一真机验证。首版未使用开发者证书签名或 macOS 公证，系统可能提示未知发布者；请核对来源与校验和，遵循系统的应用审批流程。
 
-程序随包提供安装说明、构建版本和第三方许可。Bun 的 minify/bytecode 不保证源码保密。程序不自动加载当前目录的 `.env` 或 `bunfig.toml`；模型等配置请显式设置进程环境变量。
+Release 页面提供安装说明、构建提交和 Bun 版本；`SHA256SUMS` 同时覆盖五个程序和独立许可证附件。Bun 的 minify/bytecode 不保证源码保密。程序不自动加载当前目录的 `.env` 或 `bunfig.toml`；模型等配置请显式设置进程环境变量。
 
 ## 源码安装前置条件
 

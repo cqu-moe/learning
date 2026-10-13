@@ -4,7 +4,7 @@
 
 本仓库实现共享 SDK 与本地 CLI，只有 @learning/sdk、@learning/cli 两包；Web 和 Cloudflare 部署延期。开发规范沿用 1.1，实际能力与未完成的真机验收见 [功能状态](docs/FEATURE-STATUS.md) 和 [进度](docs/PROGRESS.md)。
 
-CLI 提供 Windows、macOS、Linux 便携程序，解压即可运行，无需安装 Node/Bun。使用有仓库权限的账号访问 [私有 Releases](https://github.com/cqu-moe/learning/releases)，按 [安装指南](docs/INSTALL.md) 下载、校验和初始化。源码开发继续使用固定 Node 24.11.1 / pnpm 11.19.0；发行流程见 [CLI 发布](docs/CLI-DISTRIBUTION.md)。
+CLI 提供 Windows、macOS、Linux 独立程序，直接下载运行，无需解压或安装 Node/Bun（macOS/Linux 下载后需 `chmod +x`）。使用有仓库权限的账号访问 [私有 Releases](https://github.com/cqu-moe/learning/releases)，按 [安装指南](docs/INSTALL.md) 下载、校验和初始化；第三方许可作为独立附件提供。源码开发继续使用固定 Node 24.11.1 / pnpm 11.19.0；发行流程见 [CLI 发布](docs/CLI-DISTRIBUTION.md)。
 
 ## 当前文件
 

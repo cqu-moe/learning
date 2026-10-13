@@ -4,8 +4,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { cliVersion, root } from './build-cli.mjs';
-import { releaseManifest } from './release-manifest.mjs';
+import { bunVersion, cliVersion, root } from './build-cli.mjs';
+import { parseManifest, releaseManifest } from './release-manifest.mjs';
 
 assert.equal(process.env.GITHUB_REF, 'refs/heads/main', 'release only from main');
 const repository = process.env.GITHUB_REPOSITORY;
@@ -30,30 +30,38 @@ if (lookup.status === 0) {
   existing = JSON.parse(lookup.stdout);
   assert.equal(existing.targetCommitish, sha, 'version already belongs to a different commit; bump CLI version');
   if (!existing.isDraft) {
-    // Rebuilt archives may have different timestamps. Verify the already published
+    // Rebuilt executables may differ. Verify the already published
     // files against their own manifest; never overwrite a published version.
     const manifestAsset = existing.assets.find(item => item.name === 'SHA256SUMS');
     assert.ok(manifestAsset);
+    assert.deepEqual(existing.assets.map(item => item.name).sort(), files.map(path => path.split('/').at(-1)).sort());
     const manifest = gh(['api', '-H', 'Accept: application/octet-stream', manifestAsset.apiUrl]);
-    const names = [];
-    for (const line of manifest.split('\n')) {
-      const match = /^([a-f0-9]{64}) {2}(learning-[\w.-]+\.(?:zip|tar\.gz))$/.exec(line);
-      assert.ok(match, 'invalid published checksum manifest');
-      const [, digest, name] = match;
-      names.push(name);
+    for (const { digest, name } of parseManifest(manifest, cliVersion)) {
       const asset = existing.assets.find(item => item.name === name);
       assert.ok(asset, `published release is missing ${name}`);
       const bytes = execFileSync('gh', ['api', '-H', 'Accept: application/octet-stream', asset.apiUrl], { maxBuffer: 256 * 1024 * 1024 });
       assert.equal(createHash('sha256').update(bytes).digest('hex'), digest, `published asset changed: ${name}`);
     }
-    assert.deepEqual(names.sort(), files.map(path => path.split('/').at(-1)).filter(name => name !== 'SHA256SUMS').sort());
     console.log(`Already published: ${existing.url}`);
     process.exit(0);
   }
 } else {
   assert.ok(lookup.stderr.trim() === 'release not found', `release lookup failed: ${lookup.stderr}`);
   const notes = resolve(root, 'dist/release-notes.md');
-  writeFileSync(notes, `CLI ${cliVersion} 的 Windows、macOS、Linux 便携程序。下载与源码均需本私有仓库权限。\n\n解压后运行 learning（Windows 为 learning.exe），无需安装 Node/Bun。请阅读压缩包中的 INSTALL.md；使用 SHA256SUMS 校验下载。ffprobe 为可选依赖，learning doctor 会显示可用性。\n\n构建提交：${sha}\n\n本版未使用开发者证书签名或 macOS 公证。\n`);
+  writeFileSync(notes, `CLI ${cliVersion} 的 Windows、macOS、Linux 独立程序。下载与源码均需本私有仓库权限。
+
+直接下载对应系统和架构的程序，无需解压或安装 Node/Bun：
+
+- macOS/Linux：先执行 \`chmod +x <程序文件>\`，再运行 \`./<程序文件> doctor\`、\`./<程序文件> init\`。
+- Windows：在 PowerShell 运行 \`.\\learning-${cliVersion}-windows-x64.exe doctor\`、\`.\\learning-${cliVersion}-windows-x64.exe init\`。
+- 可将文件重命名为 \`learning\`（Windows 为 \`learning.exe\`），并将所在目录加入 PATH。
+
+[完整安装说明](https://github.com/${repository}/blob/${tag}/docs/INSTALL.md)。使用独立附件 SHA256SUMS 校验下载；Bun 及第三方依赖许可集中在独立附件 LICENSES.txt。ffprobe 为可选依赖，doctor 会显示可用性。
+
+构建提交：${sha}；构建运行时：Bun ${bunVersion}。
+
+本版未使用开发者证书签名或 macOS 公证。
+`);
   gh(['release', 'create', tag, '--repo', repository, '--target', sha, '--draft', '--title', `CLI ${cliVersion}`, '--notes-file', notes]);
 }
 // Only draft assets may be replaced when recovering an interrupted upload.
