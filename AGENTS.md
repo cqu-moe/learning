@@ -28,7 +28,7 @@
 
 工具链沿既定选择，T01真实解析并冻结精确版本，后续不擅自升级。缺少私有源码列明repo/ref/path及能力；可继续不依赖它的工程，不猜协议。missing证据只阻塞相关项，不能虚构通过。
 
-用户已授权 CLI 使用 `.bun-version` 固定的 Bun 编译便携程序；沿用 SDK 的 Node 适配，不新增 Runtime 抽象。Node/pnpm 开发与 SDK 测试版本不变。五目标原生运行与归档解压验收均通过才发布私有 Release；CLI package.json 版本更新合入 main 后自动发布。平台真机操作仍需单独授权。
+用户已授权 CLI 使用 `.bun-version` 固定的 Bun 编译便携程序；沿用 SDK 的 Node 适配，不新增 Runtime 抽象。Node/pnpm 开发与 SDK 测试版本不变。五目标原生运行与独立程序验收均通过才发布私有 Release；直接提供程序，许可证独立附上，不打压缩包。CLI package.json 版本更新合入 main 后自动发布。平台真机操作仍需单独授权。
 
 ## 权限、现有代码与进度
 

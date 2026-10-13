@@ -698,3 +698,12 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 合并后 [main CI 38337319863](https://github.com/cqu-moe/learning/actions/runs/38337319863) 与 [自动发行 38337320102](https://github.com/cqu-moe/learning/actions/runs/38337320102) 均 success；[cli-v0.2.2](https://github.com/cqu-moe/learning/releases/tag/cli-v0.2.2) 非草稿、指向上述合并提交，五份归档及 SHA256SUMS 齐全。当前推荐版本为 0.2.2，0.2.1 保持原资产不覆盖。
 - 从私有 Release 下载 0.2.2 macOS arm64 包，SHA256 `f47974cc782169a01c264ddbe772b68de81832ab744eb98fc2afaa6158238e95` 与清单一致；解压后的真实程序再次通过 test-binary 与 test-binary-terminal，exit 0。保留于主目录 `dist/release-check-0.2.2-20261013`；BUILD.json 为 CLI 0.2.2 / Bun 1.4.3 / macos-arm64 / 6e589bc。
 - 主目录干净快进至补丁合并提交后，Node 24.11.1 / pnpm 11.19.0 下 `pnpm build`、`node apps/cli/dist/index.js --version` 均 exit 0，版本为 0.2.2。仅补交本交付记录（[skip ci]），程序和发行源码不再变化。上述真实平台、签名/公证、最低系统版本和 Windows 原生终端的证据边界继续有效；本次用户任务最终完成。
+
+### 2026-10-13 · CLI 0.2.3 改为直接程序下载（用户指定）
+
+- 用户要求移走 LICENSE、不要压缩包，Release 直接提供程序。基于 `bceecb1` 创建隔离分支 `codex/cli-direct-release`，版本递增为 0.2.3；未覆盖原有已发布版本。
+- 构建脚本直接产出带版本/系统/架构名称的五个程序（仅 Windows 为 .exe）；删除 ZIP/tar.gz 打包步骤。Node CI 统一收集 Bun 说明与冻结生产依赖许可全文，作为独立 LICENSES.txt 附件；SHA256SUMS 覆盖五个程序和该附件。安装说明、提交和运行时版本移至 Release 页面，README/INSTALL/发行文档/AGENTS 同步。
+- 新清单测试先在旧代码失败（要求 ZIP/tar.gz，拒绝五个独立程序和许可证），改后 exit 0；覆盖缺目标、缺许可证、错误版本、文件损坏、多余归档。已发布清单解析覆盖非法摘要、路径、重复和缺失资产；发布前校验全部条目，已发布版本仍不可覆盖。
+- Node v24.11.1 / pnpm 11.19.0：冻结离线安装、`pnpm build`、`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 278/278、CLI 141/141）、`pnpm test:e2e`（7/7）、`check-boundaries.mjs`、`git diff --check` 均 exit 0。
+- Bun 1.4.3 / 本机 macOS arm64：`build-cli.mjs`、`pnpm licenses list --prod --json`、`package-licenses.mjs`、`test-distribution.mjs`、`test-release.mjs` 均 exit 0。约 78.4 MB 的实际程序独自复制到仓库外中文/空格路径，恢复执行权限后，通过无 JS 运行时 PATH 的 CLI/SQLite/账号隔离/权限/锁回归和真实 PTY 交互；不依赖许可证或其他随附文件。
+- 待完成：五目标远端原生 CI、合并、自动私有 Release 与真实下载回读，结果续记。真实平台与付费模型未运行，签名/公证及最低系统版本等原证据边界不变；不推进延期 Web。
