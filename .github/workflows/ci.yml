@@ -11,9 +11,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: useblacksmith/checkout@v1 # v4
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 11.19.0
@@ -44,11 +44,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: linux-x64, runner: ubuntu-24.04 }
-          - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: macos-x64, runner: macos-15-intel }
-          - { target: macos-arm64, runner: macos-15 }
-          - { target: windows-x64, runner: windows-2025 }
+          - { target: linux-x64, runner: blacksmith-4vcpu-ubuntu-2404 }
+          - { target: linux-arm64, runner: blacksmith-4vcpu-ubuntu-2404-arm }
+          - { target: macos-x64, runner: blacksmith-6vcpu-macos-15 }
+          - { target: macos-arm64, runner: blacksmith-6vcpu-macos-15 }
+          - { target: windows-x64, runner: blacksmith-4vcpu-windows-2025 }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     defaults:
