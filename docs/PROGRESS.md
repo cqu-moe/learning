@@ -688,3 +688,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - ffprobe 首版为可选 PATH 依赖，不捆绑、不自动下载。doctor 显示实际运行时与可用性；缺少/失败仅保留缺失视频时长的未知/暂不处理/partial 行为。本机实际 ffprobe 有/无路径已分别验证。
 - 证据边界：没有平台真实登录/学习/答题/发帖/交卷或付费模型调用；没有开发者证书签名/公证；Windows 原生交互终端及最低系统版本机器未单独验收。原 T31/业务能力缺口不因打包成功而改记完成。本次用户指定优化与发行任务完成，不推进其他 PLAN 项或 Web。
 - 本条为交付结果记录，使用 `[skip ci]` 的文档提交避免重复运行已经通过的产品门禁；程序源码与已验证发行提交相同。
+
+### 2026-10-13 · 0.2.2 补齐账号推断的数据目录保护（交付复核补丁）
+
+- 下载验收后检查所有 SQLite 入口，发现 `inferTargetScope` 会在命令动作前直接打开既有数据库；遇到宽松目录或 Windows junction 时，尚未经过 `ensureDataDir`。仅修改该入口：确认既有数据库存在后先保护目录，再打开状态库；doctor 和不存在数据库的定位仍不创建目录。补丁版本为 CLI 0.2.2，不覆盖已发布 0.2.1。
+- 新增实际 CLI 回归：init 后把临时目录改成 0777，`jobs show missing-job` 在推断账号时报 INVALID_INPUT，但打开数据库前仍必须收紧到 0700。旧代码实跑 exit 1（收到 0777），修复后 basic/doctor 20/20、CLI build/typecheck、root lint、diff check 均 exit 0。
+- Windows 验收新增 junction 目标里的空 state.db：`jobs show` 必须返回 STORAGE/junction，目标数据库保持零字节，证明推断入口不会先初始化或修改外部状态库。远端结果随后记录；不涉及真实账号或平台请求。

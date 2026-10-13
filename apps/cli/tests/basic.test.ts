@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, statSync, realpathSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -164,6 +164,15 @@ describe('cli basics (T25, A251/A252)', () => {
     const second = runCli(['init'], { home: first.home });
     expect(second.exitCode).toBe(0);
     expect(readFileSync(resolve(first.home, 'master.key'), 'utf8')).toBe(original);
+  });
+
+  it('protects existing data before inferring an account from a job ID', () => {
+    const initialized = runCli(['init']);
+    chmodSync(initialized.home, 0o777);
+    const missing = runCli(['jobs', 'show', 'missing-job', '--json'], { home: initialized.home });
+    expect(missing.exitCode).toBe(2);
+    expect(JSON.parse(missing.stdout).error.code).toBe('INVALID_INPUT');
+    expect(statSync(initialized.home).mode & 0o777).toBe(0o700);
   });
 
   it('profile unlock removes a stale lock but refuses a live owner', () => {

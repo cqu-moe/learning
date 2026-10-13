@@ -8,14 +8,14 @@
 
 ```bash
 # macOS / Linux：校验下载，按实际版本和架构替换文件名
-shasum -a 256 learning-0.2.1-macos-arm64.tar.gz
-tar -xzf learning-0.2.1-macos-arm64.tar.gz
-cd learning-0.2.1-macos-arm64
+shasum -a 256 learning-0.2.2-macos-arm64.tar.gz
+tar -xzf learning-0.2.2-macos-arm64.tar.gz
+cd learning-0.2.2-macos-arm64
 ./learning doctor
 ./learning init
 ```
 
-Windows 解压 ZIP 后，在 PowerShell 中运行 `Get-FileHash <下载的zip> -Algorithm SHA256`，与 `SHA256SUMS` 中对应行比较；进入解压目录运行 `./learning.exe doctor`、`./learning.exe init`。需要全局命令时，把程序所在目录加入当前用户 PATH。GitHub CLI 用户也可通过 `gh release download cli-v0.2.1 --repo cqu-moe/learning --pattern '*windows-x64.zip' --pattern SHA256SUMS` 下载；不提供携带私有 token 的公开安装脚本。
+Windows 解压 ZIP 后，在 PowerShell 中运行 `Get-FileHash <下载的zip> -Algorithm SHA256`，与 `SHA256SUMS` 中对应行比较；进入解压目录运行 `./learning.exe doctor`、`./learning.exe init`。需要全局命令时，把程序所在目录加入当前用户 PATH。GitHub CLI 用户也可通过 `gh release download cli-v0.2.2 --repo cqu-moe/learning --pattern '*windows-x64.zip' --pattern SHA256SUMS` 下载；不提供携带私有 token 的公开安装脚本。
 
 运行要求沿 Bun：Windows 10 1809+、macOS 13+、glibc 2.17+ 的 Linux，x64 需 SSE4.2；首版不提供 Alpine/musl 或 Windows ARM64 原生包。实际 CI 使用 Windows 2025、macOS 15、Ubuntu 24.04，最低版本系统未逐一真机验证。首版未使用开发者证书签名或 macOS 公证，系统可能提示未知发布者；请核对来源与校验和，遵循系统的应用审批流程。
 

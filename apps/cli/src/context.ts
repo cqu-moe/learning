@@ -94,6 +94,7 @@ export async function inferTargetScope(program: Command, argument: string | unde
   if (!['resource','course-or-resource','course-url-or-key','jobId'].includes(argument ?? '')) return;
   const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
   if (!existsSync(resolve(dataDir, 'state.db'))) return;
+  ensureDataDir(dataDir);
   const state = new SqliteStateStore(resolve(dataDir, 'state.db'));
   try {
     if (argument === 'jobId') {
