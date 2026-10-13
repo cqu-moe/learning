@@ -29,6 +29,7 @@ jobs:
       - run: node scripts/test-release.mjs
       - name: Collect third-party licenses
         run: |
+          mkdir -p dist
           pnpm licenses list --prod --json > dist/licenses.json
           node scripts/package-licenses.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

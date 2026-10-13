@@ -707,3 +707,4 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - Node v24.11.1 / pnpm 11.19.0：冻结离线安装、`pnpm build`、`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 278/278、CLI 141/141）、`pnpm test:e2e`（7/7）、`check-boundaries.mjs`、`git diff --check` 均 exit 0。
 - Bun 1.4.3 / 本机 macOS arm64：`build-cli.mjs`、`pnpm licenses list --prod --json`、`package-licenses.mjs`、`test-distribution.mjs`、`test-release.mjs` 均 exit 0。约 78.4 MB 的实际程序独自复制到仓库外中文/空格路径，恢复执行权限后，通过无 JS 运行时 PATH 的 CLI/SQLite/账号隔离/权限/锁回归和真实 PTY 交互；不依赖许可证或其他随附文件。
 - 待完成：五目标远端原生 CI、合并、自动私有 Release 与真实下载回读，结果续记。真实平台与付费模型未运行，签名/公证及最低系统版本等原证据边界不变；不推进延期 Web。
+- 首轮 [CI 38339759895](https://github.com/cqu-moe/learning/actions/runs/38339759895)，提交 `e5d008d`：五个原生目标全部 success，Node 测试与 E2E 通过，但统一许可证收集在重定向到 `dist/licenses.json` 时失败。干净 Node runner 尚无根目录 dist（本机构建 Bun 时已创建）；独立审查也定位同一问题。补上收集前 `mkdir -p dist`，保留原生/Node 全部门禁重跑，不将失败记为完整通过。
