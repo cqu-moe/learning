@@ -65,6 +65,13 @@ foreach ($coreName in @('master.key', 'state.db', 'state.db-wal', 'state.db-shm'
   Clear-And-GrantAcl $candidate $false
 }
 
+foreach ($entry in [System.IO.Directory]::EnumerateFiles($root, 'login-qr-*')) {
+  if ([System.IO.Path]::GetFileName($entry) -notmatch '^login-qr-[0-9a-f-]{36}[.](png|jpeg)$') { continue }
+  $candidate = Assert-ApplicationPath $entry
+  [void](Get-SafeItem $candidate)
+  Clear-And-GrantAcl $candidate $false
+}
+
 foreach ($subtree in @('artifacts', 'exports')) {
   $directory = Assert-ApplicationPath ([System.IO.Path]::Combine($root, $subtree))
   if (-not (Test-Path -LiteralPath $directory)) { continue }

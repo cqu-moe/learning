@@ -40,6 +40,16 @@ try {
   const transport = new NodeFetchTransport();
   const stream = await transport.fetch(new Request(new URL('/stream', baseUrl), { headers: { 'x-probe': 'bun' } }));
   const http = { body: await collect(stream), header: stream.headers.get('x-runtime-probe'), abortError: await abortHang(transport, new URL('/hang', baseUrl).href) };
+  const wsUrl = new URL('/socket', baseUrl); wsUrl.protocol = 'ws:';
+  const socket = await transport.connect({ url: wsUrl.href, signal: new AbortController().signal });
+  const messages = socket.messages[Symbol.asyncIterator]();
+  await socket.send('hello from bun');
+  const websocket = (await messages.next()).value;
+  assert.equal(websocket, 'ws-ok');
+  const pending = messages.next();
+  await socket.close();
+  assert.equal((await pending).done, true, 'close releases pending receivers');
+  await assert.rejects(socket.send('after-close'));
 
   const png = Buffer.from(await qrcode.toBuffer('learning:bun-runtime', { type: 'png', errorCorrectionLevel: 'M', margin: 4, scale: 8 }));
   const raster = PNG.sync.read(png);
@@ -69,7 +79,7 @@ try {
   let cancellationRemoved = false;
   try { await artifacts.open(canceledArtifactId); } catch { cancellationRemoved = true; }
 
-  const result = { source: 'bun', seed, runtime: 'Bun', http, conflictRolledBack, cancellationRemoved, artifact: { id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256 }, canceledArtifactId };
+  const result = { source: 'bun', seed, runtime: 'Bun', http, websocket, conflictRolledBack, cancellationRemoved, artifact: { id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256 }, canceledArtifactId };
   const revision = (await state.get('probe:state'))?.revision;
   assert.equal(await state.commit({ expected: [{ key: 'probe:state', revision }], changes: [{ key: 'probe:state', value: { encrypted: await encryptJson(key, JSON.stringify(result), aad) } }] }), true);
 } finally {

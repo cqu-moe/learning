@@ -46,6 +46,8 @@ node apps/cli/dist/index.js init --home ~/.learning
 
 首次 init 生成 `master.key` 与 SQLite 状态库；macOS/Linux 目录权限 0700，密钥和数据库 0600；Windows 使用系统自带 PowerShell 设置当前用户专用 ACL，并让新文件继承。数据目录应为 CLI 专用目录，已有目录打开时也会收紧权限。操作草稿正文使用 AES-GCM 保存；旧明文操作记录首次读取时原地迁移，保留不确定写入状态。密钥与数据库同机存储，不抵御整机失陷；可用 LEARNING_HOME 隔离多套数据。
 
+Windows 同时收紧已有密钥、数据库、锁和默认 artifacts/exports 子树，并拒绝符号链接或 junction 跟随；放在数据目录外的自定义导出目录，请自行选择合适的访问权限。
+
 ## 可选 ffprobe
 
 平台已提供视频时长时不需要 ffprobe。仅雨课堂部分视频缺失时长时，CLI 才会用 PATH 中的 `ffprobe` 读取已获授权的 MP4 时长。主程序不捆绑或自动下载 FFmpeg；可从 [FFmpeg 官方下载入口](https://ffmpeg.org/download.html) 选择适合系统的安装方式，将 `ffprobe` 加入 PATH 后运行 `learning doctor` 检查。

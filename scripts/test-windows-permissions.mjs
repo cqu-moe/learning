@@ -46,6 +46,7 @@ const exportDirectory = join(home, 'exports', '旧任务');
 const exportFile = join(exportDirectory, '课程.txt');
 const masterKeyPath = join(home, 'master.key');
 const stateDbPath = join(home, 'state.db');
+const qrPath = join(home, 'login-qr-00000000-0000-0000-0000-000000000000.png');
 mkdirSync(home, { recursive: true });
 mkdirSync(artifactDirectory, { recursive: true });
 mkdirSync(exportDirectory, { recursive: true });
@@ -54,6 +55,7 @@ writeFileSync(masterKeyPath, initialMasterKey);
 writeFileSync(stateDbPath, Buffer.alloc(0));
 writeFileSync(artifactFile, 'existing artifact');
 writeFileSync(exportFile, 'existing export');
+writeFileSync(qrPath, 'expired fixture QR');
 
 const makeLooseAcl = `
 $ErrorActionPreference = 'Stop'
@@ -96,7 +98,7 @@ $acl = Get-Acl -LiteralPath $path
 const makeJunction = `
 $ErrorActionPreference = 'Stop'
 $junction = [Environment]::GetEnvironmentVariable('LEARNING_ACL_TEST_PATH')
-$target = Join-Path (Split-Path -LiteralPath $junction -Parent) 'junction 目标'
+$target = Join-Path ([System.IO.Path]::GetDirectoryName($junction)) 'junction 目标'
 [void](New-Item -ItemType Directory -Path $target -Force)
 [void](New-Item -ItemType Junction -Path $junction -Target $target)
 `;
@@ -139,7 +141,7 @@ function assertOwnerOnly(label, path) {
 }
 
 try {
-  const looseTargets = [home, artifacts, artifactDirectory, artifactFile, exportDirectory, exportFile, masterKeyPath, stateDbPath];
+  const looseTargets = [home, artifacts, artifactDirectory, artifactFile, exportDirectory, exportFile, masterKeyPath, stateDbPath, qrPath];
   for (const path of looseTargets) runPowerShell(makeLooseAcl, path);
 
   const loose = inspect(home);
@@ -194,6 +196,7 @@ try {
     ['artifacts file', artifactFile],
     ['exports directory', exportDirectory],
     ['exports file', exportFile],
+    ['residual login QR', qrPath],
   ]);
   for (const suffix of ['state.db-wal', 'state.db-shm']) {
     const path = join(home, suffix);

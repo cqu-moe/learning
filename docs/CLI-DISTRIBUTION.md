@@ -21,7 +21,7 @@ Bun 内置运行时，用户无需安装 Node/Bun；比把当前含顶层 await 
 ## 兼容性门禁
 
 - 原 Node lint、类型、SDK/CLI 单测、打包消费者 E2E 保留。
-- 每个 runner 用相同 Bun 参数编译测试探针，验证 SQLite 与 AES-GCM 的 Node/Bun 双向互读、冲突回滚、二维码、PDF、本机 HTTP/流与取消；该探针不进入发布包。
+- 每个 runner 用相同 Bun 参数编译测试探针，验证 SQLite 与 AES-GCM 的 Node/Bun 双向互读、冲突回滚、二维码、PDF、本机 HTTP/流/取消、WebSocket 收发与关闭；该探针不进入发布包。
 - 实际发行归档解压到仓库外，清空 PATH 后运行真正的 CLI，验证无 Node/Bun 可用时的启动、版本、doctor、中文/空格相对路径、初始化与密钥保留、账号隔离、进程锁、失败清理和 dotenv/bunfig 隔离。
 - macOS/Linux 再做真实 PTY 交互、取消与锁释放；Windows 检查当前用户目录/密钥/数据库 ACL。Windows 原生终端交互不以 POSIX PTY 测试替代。
 - 发布前必须凑齐五个准确版本归档，逐个核对构建任务生成的 SHA256。缺目标、错误版本、校验失败均拒绝发布。

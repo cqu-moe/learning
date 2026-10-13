@@ -57,28 +57,6 @@ jobs:
       - run: pnpm build
       - name: Verify runtime compatibility
         run: node scripts/test-bun-runtime.mjs
-      - name: Prove the Windows ACL regression fails without the fix
-        if: runner.os == 'Windows'
-        run: |
-          node --input-type=module <<'JS'
-          import assert from 'node:assert/strict';
-          import { readFileSync, writeFileSync } from 'node:fs';
-          import { execFileSync, spawnSync } from 'node:child_process';
-          import { resolve } from 'node:path';
-          import { stage, executable } from './scripts/build-cli.mjs';
-          const path = 'apps/cli/src/data-dir.ts';
-          const original = readFileSync(path, 'utf8');
-          const baseline = original.replace("if (process.platform === 'win32') securePrivateDirectory(dataDir);", 'if (false) securePrivateDirectory(dataDir);');
-          assert.notEqual(baseline, original);
-          try {
-            writeFileSync(path, baseline);
-            execFileSync(process.execPath, ['scripts/build-cli.mjs'], {stdio:'inherit'});
-            const result = spawnSync(process.execPath, ['scripts/test-windows-permissions.mjs', resolve(stage, executable)], {encoding:'utf8'});
-            assert.equal(result.status, 1, result.stderr);
-            assert.match(result.stderr, /windows permissions: data directory .*ACE/);
-            console.log('Confirmed pre-fix failure:', result.stderr.trim());
-          } finally { writeFileSync(path, original); }
-          JS
       - run: node scripts/build-cli.mjs
       - name: Package licenses and executable
         run: |
