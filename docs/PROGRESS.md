@@ -649,3 +649,31 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - [PR #3](https://github.com/cqu-moe/learning/pull/3) 的 [CI 38285420417](https://github.com/cqu-moe/learning/actions/runs/38285420417) 全部通过：依赖冻结安装、边界、lint、类型、SDK/CLI 测试、构建、打包 E2E。使用 `gh pr merge --merge --match-head-commit cfa51313bdcfe9b4a2cdb8290bd1d27d8f8441d2` 合并，读回 MERGED，合并提交 `01a58f4`。另一条超星 PR 未合并。
 - 主目录依次快进启用修复并以 Node v24.11.1 / pnpm 11.19.0 重建，SDK 时长/子进程专项 24/24、CLI 预览/恢复专项 1/1、最终主目录进度/输出专项 24/24，均 exit 0。`git fetch origin && git merge --ff-only origin/main` 同步至远端合并提交，exit 0；244 个 SDK 与 116 个 CLI 构建文件的 SHA256 全部匹配已验证 worktree。
 - `/Users/uu/.local/bin/learning` 仍指向主目录 `apps/cli/dist/index.js`，版本号维持 0.2.0；实际启用以构建文件一致性为准。没有修改账号数据或发起真实平台学习。截图中 3 个视频的在线结果留待用户下次 `learning run` 读回；本次授权开发与合并完成，不推进其他任务或 Web。
+
+### 2026-10-13 · 数据目录小幅优化与 CLI 发布选型（用户指定）
+
+- 范围：用户要求简单优化并先选型可执行程序 CI/CD；确认覆盖 Windows/macOS/Linux，仅向有仓库权限的人分发，并从架构报告中选择先统一本地数据目录。基于 `abeca05` 的隔离工作树 `/Users/uu/.codex/worktrees/cli-distribution-review/learning`，分支 `codex/cli-distribution-review`。原 main 工作区干净且未改动；本轮未提交、合并或推送。
+- 实现（done）：新增 `apps/cli/src/data-dir.ts` 集中 `--home → LEARNING_HOME → os.homedir()/.learning`，统一绝对路径；区分只读定位与原有 mkdir/chmod。`runtime.ts`、`context.ts`、`commands/{init,doctor,profile,tasks}.ts` 使用同一规则，保留写锁、账号作用域与初始化行为；doctor/目标推断仅定位时不创建目录。`docs/INSTALL.md` 同步说明。
+- 测试先行：`apps/cli/tests/basic.test.ts` 新增真实 CLI 进程回归，旧代码在缺 HOME 时落到 cwd、init 返回相对路径两处失败。macOS 临时目录符号链接预期修正后，`pnpm --filter @learning/cli exec vitest run tests/basic.test.ts -t 'OS home|absolute path' --maxWorkers=1` → 2 项预期失败、exit 1；实现后完整 basic → 14/14、exit 0。包含中文/空格路径、显式目录优先、doctor 不创建目录和 init 后状态读回。
+- 实际环境：macOS，Node v24.11.1、pnpm 11.19.0。`pnpm install --offline --frozen-lockfile --ignore-scripts` 初次受工作树写沙箱限制 exit 255，授权沙箱重试后复用 195 个缓存包、零下载、exit 0；工具链和 lockfile 未改变。现有 `.reference` 以忽略的只读使用链接接入工作树，未修改参考仓。
+- 实际完整门禁：`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 278/278、CLI 135/135）、`pnpm build`、`pnpm test:e2e`（7/7，含真实 tarball 消费者）、`node scripts/check-boundaries.mjs`、`node scripts/check-source-lock.mjs`、`git diff --check`，全部 exit 0。新增测试未放宽超时、schema 或既有断言。
+- 独立审查：使用已授权 `zhipu/glm-5.3` / `max` 进行热点调查及本轮 diff 复核，无阻塞产品问题；修正一项测试环境隐患，改用同样删除 HOME 的独立 Node 进程取得操作系统参考路径，避免父进程自定义 HOME 影响断言。仅测试代码调整后重跑 basic 14/14、该文件 ESLint、CLI 类型检查及 diff 检查，全部 exit 0；产品代码与上述全套通过版本一致。
+- 选型（文档完成，CI/CD 未实施）：`docs/CLI-DISTRIBUTION.md` 比较 Bun compile、固定 Node 24.11.1 SEA、Deno compile 与原生重写；建议先验证 Bun，SEA 备选。记录 CLI 版本标签触发、五目标构建与实际运行、签名/校验和、私有 Release、ffprobe 可选依赖、Windows ACL/最低系统要求及 bytecode 不隐藏源码。Context7 后查官方网页；Exa 达到配额后以官方 GitHub 文档补充。没有安装 Bun 或升级冻结运行时。
+- 架构报告：`/var/folders/n0/3pnzhmpn47gfh6n838phf9m00000gn/T/architecture-review-20261013-085225.html`，三个候选均有前后对照；HTML 结构/锚点检查 exit 0。系统 `open` 返回无关联应用（exit 1），改交 Codex 文件面板打开请求，返回 queued；未声称已完成浏览器像素验收。
+- 未运行与证据缺口：Bun/Deno/SEA 编译、性能基准、Windows/Linux 真机运行、Windows ACL、代码签名、公证、远端 CI/Release、真实平台登录/学习/答题/发帖/交卷、付费模型均未运行。现有 T31 与业务验收缺口保持原状；Node 本机成功不代表三端二进制已验收。
+- 下一步：按选型确认新增 CLI 发布运行时后，进行固定版本 Bun 兼容性验证，再实现发布工作流；不自动执行其他 PLAN 项或延期 Web。
+
+### 2026-10-13 · Bun 便携 CLI 与私有发行（用户授权实施）
+
+- 用户明确选定 Bun，要求先验证兼容性、再接 Windows/macOS/Linux 私有 Release CI/CD，测试通过后把数据目录优化一起合并。继续在 `codex/cli-distribution-review` 隔离工作树，基线 `abeca054`；未操作真实平台账号或延期 Web。
+- 运行时：从官方 `oven-sh/bun` Release 取得 Bun 1.4.3（darwin-aarch64），ZIP SHA256 `80afd4c069b46a6fa8f3ec520bebc750a7843e4a8d5b9583d29ad436c00a3403` 与 GitHub 资产 digest 一致。`.bun-version` 固定版本；Node 24.11.1 / pnpm 11.19.0 / lockfile 保持不变。CLI 发行版本改为 0.2.1。
+- 已执行 Node 门禁：`pnpm typecheck`、`pnpm test`（SDK 278/278、CLI 140/140）、`pnpm test:e2e`（7/7）、boundaries、source-lock 均 exit 0。doctor 增加真实运行时标识与限时 ffprobe 检查；测试覆盖可用、缺失、坏输出、非零退出和挂起。Bun 本机 doctor 识别 ffprobe 8.1.1；清空 PATH 则正确报告不可用。
+- 已执行 macOS arm64 编译与归档验收：`node scripts/build-cli.mjs`、`package-cli.mjs`、`test-archive.mjs`，使用固定 BUN_BINARY；全部 exit 0。完整程序实际解压到仓库外、清空 PATH 后验证版本/doctor/SQLite/中文空格路径/密钥保留/多账号/活跃与失效锁/失败清理；另有真实 PTY Clack 输入、取消、锁释放、菜单退出。初始旧产物在 runtime=Bun 断言预期失败；首次新归档脚本未识别 LICENSE-MIT.txt、PTY fixture 未 init 分别失败，均修正工具/fixture 后通过，没有放宽产品断言。
+- 本机 `--help` 启动各 9 次，中位数 Node 204.3 ms、Bun 33.6 ms；这是当时 macOS arm64/当前负载下的进程启动测量，不代表网络业务速度。当前编译程序约 78.4 MB，tar.gz 约 34.5 MB，最终资产以 CI 为准。
+- CI 定义五个原生 runner，各执行 Bun 运行时互通探针和真实发行归档验收。Release 由合入 main 的 CLI 版本变化触发，完整检查后先草稿上传、再发布；检查 private、提交、版本和五份校验和，保留 published 版本，不覆盖已有发行。新 Bun setup action 固定已解析 SHA，其他开发工具沿用原版本。
+- 当前未完成证据：Windows/Linux/Intel macOS 原生运行、Windows ACL 真正运行、远端 CI、合并与私有 Release 尚待下续记录。本机 Bun 深层兼容探针与两路独立审查正在进行。代码签名/公证、最低系统版本机器和 Windows 原生交互终端未验收；真实平台登录/学习/答题/发帖/交卷、付费模型均 not-run。
+- 本机最终 Bun 深层探针：`BUN_BINARY=dist/tooling/bun-darwin-aarch64/bun node scripts/test-bun-runtime.mjs` → exit 0，真实 Node/Bun 双向 SQLite 与 AES-GCM（含错误 AAD、冲突回滚）、PNG/JPEG 终端 QR、3976 字节 PDF 与取消删除、回环 HTTP header/流/取消均通过。随后 root lint、重新编译生产程序、重新打包并解压运行、真实 PTY → 均 exit 0；发布输入负例检查 `test-release.mjs` → exit 0，缺目标/错误版本/损坏归档确实被拒绝。
+- 独立 Standards/Spec 双轴复核（用户授权 zhipu/glm-5.3 / max）补齐默认 exports 和残留 login-qr 的 Windows ACL、固定所有 workflow action SHA，并增加真实回环 WebSocket 收发/关闭/待收消息清理测试。本机新版 Bun 探针实际通过；未新增 SDK 协议或产品依赖。
+- 首轮 [CI 38332718744](https://github.com/cqu-moe/learning/actions/runs/38332718744)，提交 `eb338f0`：Node 完整门禁通过；macOS x64/arm64、Linux x64/arm64 四个原生任务全部通过。Windows 实际 Bun 深层探针和清空 PATH 的发行 CLI 全部通过；真实核心文件/artifacts/exports/lock ACL 也通过，最后 junction 测试 fixture 使用 Windows PowerShell 不支持的 `Split-Path -LiteralPath ... -Parent` 而失败，现改为 .NET GetDirectoryName；这不是程序接受了 junction。
+- 同次 Windows CI 实际执行一次旧行为负例：临时关闭 ACL 调用后编译，真实验收拒绝宽松目录（仍有 Everyone 和继承 ACE）。随后恢复源码编译新程序，前述文件 ACL 通过。已删除这段一次性源码替换步骤，永久保留宽松 fixture 预检与实际系统 ACL 回归。二维码残留与 WebSocket 新增项随下一轮五目标门禁验证，不提前宣称通过。
+- 第二轮 [CI 38333549669](https://github.com/cqu-moe/learning/actions/runs/38333549669)，提交 `109e9df`：Node 门禁及 macOS/Linux 四个目标再次全部通过；新增 WebSocket 在五端实际通过，Windows 二维码残留等 ACL 通过。junction 被程序正确拒绝，但安全层抛普通 Error 被 CLI 通用边界隐藏，导致诊断断言失败。改为明确的 STORAGE/CliError 和安全中文提示，保留对 junction 原目标未被修改的检查；下一轮验证此用户可见错误路径。

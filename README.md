@@ -1,8 +1,10 @@
-# learning — SDK + CLI 本期交接包
+# learning — SDK + CLI
 
-**项目/私有仓库：learning / cqu-moe/learning。版本1.1，2026-09-23。**
+**私有仓库：cqu-moe/learning。规范版本 1.1；CLI 发行版本见 Releases。**
 
-这是修改后的设计、任务和交接文档，不是已运行的产品。**本期开发SDK与CLI；Web和Cloudflare部署延期。** 当前只建@learning/sdk与@learning/cli两包。本版替代最终版1.0及此前v0.1/v0.2。
+本仓库实现共享 SDK 与本地 CLI，只有 @learning/sdk、@learning/cli 两包；Web 和 Cloudflare 部署延期。开发规范沿用 1.1，实际能力与未完成的真机验收见 [功能状态](docs/FEATURE-STATUS.md) 和 [进度](docs/PROGRESS.md)。
+
+CLI 提供 Windows、macOS、Linux 便携程序，解压即可运行，无需安装 Node/Bun。使用有仓库权限的账号访问 [私有 Releases](https://github.com/cqu-moe/learning/releases)，按 [安装指南](docs/INSTALL.md) 下载、校验和初始化。源码开发继续使用固定 Node 24.11.1 / pnpm 11.19.0；发行流程见 [CLI 发布](docs/CLI-DISTRIBUTION.md)。
 
 ## 当前文件
 
@@ -21,9 +23,9 @@
 | [DELIVERY-CHECK](docs/DELIVERY-CHECK.md) | 本轮文档检查，不冒充产品测试 |
 | [AGENTS](AGENTS.md) | 防止模型提前开发Web或过度设计的根约束 |
 
-## 使用
+## 开发交接
 
-将ZIP内learning/的内容放到cqu-moe/learning根目录。新仓库按HANDOFF首次提示开始；已有1.0代码/进度时按“已有项目切换范围”提示合并，不能直接覆盖PROGRESS或删除已写文件。旧文档移出模型活动上下文。
+继续开发时先读 AGENTS、SPEC 和 PROGRESS，按 HANDOFF 的继续/复核提示执行；合并已有进度，不能覆盖 PROGRESS 或删除已写文件。旧文档移出模型活动上下文。
 
 先完成T00–T26，再执行本机验收T31，之后停止。T27–T30已延期，不建空包、不安装Web/Cloudflare依赖，不要求云账号或Docker。CLI需要的本地PDF、字体和浏览器仍在T24/T26内。
 

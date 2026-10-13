@@ -5,7 +5,7 @@ import { getOutput, CliError, formatTable } from '../output.js';
 import type { Command } from 'commander';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { resolveDataDir } from '../runtime.js';
+import { ensureDataDir } from '../data-dir.js';
 import { CourseSchema, ResourceRefSchema, createLearningClient, JobSchema, PlatformSchema } from '@learning/sdk';
 import { withCliRuntime, printResult } from '../context.js';
 import { addProfile, getProfile, listProfiles, removeProfile, validName } from '../profiles.js';
@@ -121,7 +121,7 @@ export function registerProfileCommands(program: Command): void {
     .command('unlock')
     .description('核实 PID 后移除失效锁')
     .action(() => {
-      const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
+      const dataDir = ensureDataDir(program.opts<{ home?: string }>().home);
       const lockPath = resolve(dataDir, 'learning.lock');
       if (!existsSync(lockPath)) {
         printResult(program, { unlocked: false }, '当前没有写入锁。');

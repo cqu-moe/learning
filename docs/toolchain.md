@@ -8,6 +8,7 @@
 |---|---|---|
 | Node | v24.11.1（nvm：~/.nvm/versions/node/v24.11.1/bin） | SPEC 既定 Node 24 系列；本机默认 node 为 v22.22.3，所有 install/build/test 命令均显式前置 v24.11.1 PATH 后执行 |
 | pnpm | 11.19.0 | packageManager 字段固定；不随提示升级到 12.x |
+| Bun | 1.4.3 | 2026-10-13 用户选定，仅用于 CLI 独立程序编译和运行；以 `.bun-version` 为唯一构建版本输入，不替换 Node/pnpm |
 
 ## 直接依赖（精确版本）
 

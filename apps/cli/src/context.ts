@@ -6,7 +6,8 @@ import { getOutput, CliError } from './output.js';
 import type { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { acquireDataDirLock, createCliRuntime, resolveDataDir } from './runtime.js';
+import { acquireDataDirLock, createCliRuntime } from './runtime.js';
+import { ensureDataDir, resolveDataDir } from './data-dir.js';
 import { createPrompts } from './prompts.js';
 import { readPreferences } from './preferences.js';
 import type { Scope } from '@learning/sdk/public';
@@ -23,7 +24,7 @@ export async function withCliRuntime(
   action: (runtime: CliRuntime, dataDir: string) => Promise<void>,
 ): Promise<void> {
   getOutput(program).assertActive();
-  const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
+  const dataDir = ensureDataDir(program.opts<{ home?: string }>().home);
   if (!existsSync(resolve(dataDir, 'master.key')) || !existsSync(resolve(dataDir, 'state.db'))) {
     throw new CliError('INTERACTION_REQUIRED', '本地尚未初始化，请运行 learning init。', 3);
   }
@@ -91,7 +92,7 @@ export async function inferTargetScope(program: Command, argument: string | unde
     return;
   }
   if (!['resource','course-or-resource','course-url-or-key','jobId'].includes(argument ?? '')) return;
-  const dataDir = resolve(program.opts<{ home?: string }>().home ?? process.env.LEARNING_HOME ?? resolve(process.env.HOME ?? '.', '.learning'));
+  const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
   if (!existsSync(resolve(dataDir, 'state.db'))) return;
   const state = new SqliteStateStore(resolve(dataDir, 'state.db'));
   try {

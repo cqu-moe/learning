@@ -76,6 +76,8 @@ SDK 不导入 CLI。CLI 不直接实现平台 URL、认证协议或数据归一�
 
 Node 24 继续沿用既定运行时目标，不重新选型。精确 Node/pnpm/TypeScript/库补丁在 T01 实际安装验证后写 toolchain.md 和 lockfile，后续不擅自升级。没有在本次文档修改中重新查询 registry 或安装产品依赖。node:sqlite 的能力仍在真正 Node 24 环境测试，不把文档检查环境当产品环境。
 
+2026-10-13 用户授权补充：CLI 便携发行使用固定 Bun 1.4.3 编译，复用现有 Node 子路径适配；开发、SDK 包消费和 Node 测试仍固定 Node 24.11.1 / pnpm 11.19.0。每个发行目标须实际验证 SQLite/加密互读、渲染及编译 CLI，不能以交叉编译成功代替运行验收。版本与私有 Release 约束见 CLI-DISTRIBUTION.md。
+
 TypeScript 开启 strict、noUncheckedIndexedAccess、exactOptionalPropertyTypes、useUnknownInCatchVariables。根脚本只保留 `lint`、`typecheck`、`test`、`build`、`cli`，到 T31 添加 `test:e2e`（仅本地 CLI）。没有 `test:worker`、`dev:web`、`deploy:web`、镜像构建或假成功占位脚本。
 
 T01 只安装当前基础任务用到的依赖；Commander 在 CLI 任务、Playwright/pdf-lib 等在内容/本地渲染任务加入并冻结版本。不安装 React、Vite、Hono、Wrangler、Cloudflare 插件/SDK 或 Docker 工具链。安装/build/test 不自动装浏览器，不连接真实平台。

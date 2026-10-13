@@ -1,17 +1,10 @@
 import { createCompatibleModelClient, loadOrCreateMasterKey, NodeArtifactStore, SqliteStateStore } from '@learning/sdk/node';
 import type { Runtime } from '@learning/sdk/node';
 import { NodeFetchTransport, probeMediaDuration } from '@learning/sdk/node';
-import { chmodSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
+import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
-
-export function resolveDataDir(explicit?: string): string {
-  const base = explicit ?? process.env.LEARNING_HOME ?? resolve(process.env.HOME ?? '.', '.learning');
-  mkdirSync(base, { recursive: true, mode: 0o700 });
-  chmodSync(base, 0o700);
-  return base;
-}
 
 export function createCliRuntime(dataDir: string): Runtime & { state: SqliteStateStore; waitForWake: (ms: number, signal: AbortSignal) => Promise<void> } {
   const masterKey = loadOrCreateMasterKey(dataDir);

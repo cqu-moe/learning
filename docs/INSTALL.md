@@ -2,13 +2,32 @@
 
 本仓库为私有项目 cqu-moe/learning 的 SDK+CLI 阶段。Web 与云端部署已延期。
 
-## 前置条件
+## 便携程序（推荐）
+
+登录有仓库读权限的 GitHub 账号，打开 [私有 Releases](https://github.com/cqu-moe/learning/releases)，下载对应系统/架构的压缩包和 `SHA256SUMS`。Windows 为 x64 ZIP；macOS 与 Linux 各提供 x64、arm64 的 tar.gz。解压即可运行，不需要安装 Node、Bun 或 Python。
+
+```bash
+# macOS / Linux：校验下载，按实际版本和架构替换文件名
+shasum -a 256 learning-0.2.1-macos-arm64.tar.gz
+tar -xzf learning-0.2.1-macos-arm64.tar.gz
+cd learning-0.2.1-macos-arm64
+./learning doctor
+./learning init
+```
+
+Windows 解压 ZIP 后，在 PowerShell 中运行 `Get-FileHash <下载的zip> -Algorithm SHA256`，与 `SHA256SUMS` 中对应行比较；进入解压目录运行 `./learning.exe doctor`、`./learning.exe init`。需要全局命令时，把程序所在目录加入当前用户 PATH。GitHub CLI 用户也可通过 `gh release download cli-v0.2.1 --repo cqu-moe/learning --pattern '*windows-x64.zip' --pattern SHA256SUMS` 下载；不提供携带私有 token 的公开安装脚本。
+
+运行要求沿 Bun：Windows 10 1809+、macOS 13+、glibc 2.17+ 的 Linux，x64 需 SSE4.2；首版不提供 Alpine/musl 或 Windows ARM64 原生包。实际 CI 使用 Windows 2025、macOS 15、Ubuntu 24.04，最低版本系统未逐一真机验证。首版未使用开发者证书签名或 macOS 公证，系统可能提示未知发布者；请核对来源与校验和，遵循系统的应用审批流程。
+
+程序随包提供安装说明、构建版本和第三方许可。Bun 的 minify/bytecode 不保证源码保密。程序不自动加载当前目录的 `.env` 或 `bunfig.toml`；模型等配置请显式设置进程环境变量。
+
+## 源码安装前置条件
 
 - Node.js 24.11.1（nvm：`nvm install 24.11.1`；`node -v` 必须 ≥24.11.1 且 <25）
 - pnpm 11.19.0（`corepack enable && corepack prepare pnpm@11.19.0 --activate`）
 - 仓库读权限（cqu-moe/learning；.reference 参考仓需要 cqu-moe/ykt-cli、cqu-moe/xuetang-cli、cqu-moe/zhs-cli 的读权限）
 
-## 安装
+## 源码安装
 
 ```bash
 git clone https://github.com/cqu-moe/learning.git
@@ -19,11 +38,21 @@ pnpm build
 
 ## 初始化
 
+数据目录按 `--home` → `LEARNING_HOME` → 系统用户目录下的 `.learning` 选择；相对路径按当前工作目录转为绝对路径。默认路径由操作系统解析，不依赖必须存在的 `HOME` 环境变量。`doctor` 只检查路径与状态，不创建数据目录。
+
 ```bash
 node apps/cli/dist/index.js init --home ~/.learning
 ```
 
-首次 init 生成 `master.key` 与 SQLite 状态库；目录权限 0700，密钥和数据库 0600。已有目录打开时也会收紧这些权限。操作草稿正文使用 AES-GCM 保存；旧明文操作记录首次读取时原地迁移，保留不确定写入状态。密钥与数据库同机存储，不抵御整机失陷；可用 LEARNING_HOME 隔离多套数据。
+首次 init 生成 `master.key` 与 SQLite 状态库；macOS/Linux 目录权限 0700，密钥和数据库 0600；Windows 使用系统自带 PowerShell 设置当前用户专用 ACL，并让新文件继承。数据目录应为 CLI 专用目录，已有目录打开时也会收紧权限。操作草稿正文使用 AES-GCM 保存；旧明文操作记录首次读取时原地迁移，保留不确定写入状态。密钥与数据库同机存储，不抵御整机失陷；可用 LEARNING_HOME 隔离多套数据。
+
+Windows 同时收紧已有密钥、数据库、锁和默认 artifacts/exports 子树，并拒绝符号链接或 junction 跟随；放在数据目录外的自定义导出目录，请自行选择合适的访问权限。
+
+## 可选 ffprobe
+
+平台已提供视频时长时不需要 ffprobe。仅雨课堂部分视频缺失时长时，CLI 才会用 PATH 中的 `ffprobe` 读取已获授权的 MP4 时长。主程序不捆绑或自动下载 FFmpeg；可从 [FFmpeg 官方下载入口](https://ffmpeg.org/download.html) 选择适合系统的安装方式，将 `ffprobe` 加入 PATH 后运行 `learning doctor` 检查。
+
+缺少工具、超时或探测失败时，保留“未知时长、暂不处理”的提示和 partial 状态，不伪造时长或学习完成。普通查询、登录和已有时长的视频不受影响。`doctor` 的 ffprobe 检查只运行本机 `ffprobe -version`，不请求视频或平台。
 
 ## 可选模型建议
 
@@ -36,8 +65,9 @@ node apps/cli/dist/index.js init --home ~/.learning
 ## 备份/升级/回滚
 
 - 备份：复制 LEARNING_HOME 目录（含 master.key 与 state.db）。
-- 升级：`git pull && pnpm install --frozen-lockfile && pnpm build`。
-- 回滚：`git checkout <旧tag> && pnpm install --frozen-lockfile && pnpm build`。
+- 升级便携程序：停止当前 learning 进程，下载新版本、校验并替换程序，继续使用原数据目录；不复制或覆盖 master.key。
+- 源码升级：`git pull && pnpm install --frozen-lockfile && pnpm build`。
+- 回滚：保留完整数据备份，换回旧版本程序；源码使用旧 tag 重新安装构建。数据库 schema 不兼容时程序会拒绝打开，不自动降级数据。
 
 ## 解锁与恢复
 
