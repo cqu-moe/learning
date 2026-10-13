@@ -677,3 +677,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 首轮 [CI 38332718744](https://github.com/cqu-moe/learning/actions/runs/38332718744)，提交 `eb338f0`：Node 完整门禁通过；macOS x64/arm64、Linux x64/arm64 四个原生任务全部通过。Windows 实际 Bun 深层探针和清空 PATH 的发行 CLI 全部通过；真实核心文件/artifacts/exports/lock ACL 也通过，最后 junction 测试 fixture 使用 Windows PowerShell 不支持的 `Split-Path -LiteralPath ... -Parent` 而失败，现改为 .NET GetDirectoryName；这不是程序接受了 junction。
 - 同次 Windows CI 实际执行一次旧行为负例：临时关闭 ACL 调用后编译，真实验收拒绝宽松目录（仍有 Everyone 和继承 ACE）。随后恢复源码编译新程序，前述文件 ACL 通过。已删除这段一次性源码替换步骤，永久保留宽松 fixture 预检与实际系统 ACL 回归。二维码残留与 WebSocket 新增项随下一轮五目标门禁验证，不提前宣称通过。
 - 第二轮 [CI 38333549669](https://github.com/cqu-moe/learning/actions/runs/38333549669)，提交 `109e9df`：Node 门禁及 macOS/Linux 四个目标再次全部通过；新增 WebSocket 在五端实际通过，Windows 二维码残留等 ACL 通过。junction 被程序正确拒绝，但安全层抛普通 Error 被 CLI 通用边界隐藏，导致诊断断言失败。改为明确的 STORAGE/CliError 和安全中文提示，保留对 junction 原目标未被修改的检查；下一轮验证此用户可见错误路径。
+
+### 2026-10-13 · CLI 0.2.1 已合并并完成私有发行（done）
+
+- 最终代码提交 `52a5460` 的 [CI 38334391158](https://github.com/cqu-moe/learning/actions/runs/38334391158) 全绿：Node 门禁与五个原生目标均 success。Windows 已完成当前用户 ACL、旧显式宽松 ACE、默认导出/残留 QR、活跃锁、junction 拒绝且目标未修改的真实验收；五端 Bun 的 SQLite/AES-GCM 互通、PDF/QR、HTTP/取消、WebSocket 收发/关闭和发行归档实际执行全部通过。
+- [PR #4](https://github.com/cqu-moe/learning/pull/4) 按精确 head `52a5460eae0f54da7b1586f88de6bcf160b3a5ae` 合并，读回 MERGED，合并提交 `b9c7b12bdf55fee0ac1a701b402a3189f2aafde1`。合并后 [main CI 38335303881](https://github.com/cqu-moe/learning/actions/runs/38335303881) 也全部 success。
+- CLI 版本变化自动触发 [Release 38335304082](https://github.com/cqu-moe/learning/actions/runs/38335304082)：版本检查、Node 门禁、五个原生任务、publish 全部 success。[cli-v0.2.1](https://github.com/cqu-moe/learning/releases/tag/cli-v0.2.1) 已发布（非草稿），仓库再次读回 isPrivate=true；targetCommitish 与上述合并提交一致。共五个归档和 SHA256SUMS，下载需要仓库权限；归档约 34.5–48.1 MB。
+- 从该私有 Release 实际下载 macOS arm64 包和 SHA256SUMS 至主目录 `dist/release-check-0.2.1-20261013`，核对 SHA256 `9d0b4219e428473aea4c4d1c92299ac62044f2549f30fb5f35e957b5401b1f61` 一致。解压后重新运行 `node scripts/test-binary.mjs <下载的程序>`、`node scripts/test-binary-terminal.mjs <下载的程序>`，均 exit 0；BUILD.json 确认 CLI 0.2.1 / Bun 1.4.3 / macos-arm64 / b9c7b12。
+- 主目录原本干净，`git fetch origin && git merge --ff-only origin/main`、Node 24.11.1 / pnpm 11.19.0 下冻结离线安装与 `pnpm build` 全部 exit 0；原 `~/.local/bin/learning` 仍指向主目录 Node 构建，`--version` 为 0.2.1。没有替换用户命令链接或更改真实账号数据。
+- ffprobe 首版为可选 PATH 依赖，不捆绑、不自动下载。doctor 显示实际运行时与可用性；缺少/失败仅保留缺失视频时长的未知/暂不处理/partial 行为。本机实际 ffprobe 有/无路径已分别验证。
+- 证据边界：没有平台真实登录/学习/答题/发帖/交卷或付费模型调用；没有开发者证书签名/公证；Windows 原生交互终端及最低系统版本机器未单独验收。原 T31/业务能力缺口不因打包成功而改记完成。本次用户指定优化与发行任务完成，不推进其他 PLAN 项或 Web。
+- 本条为交付结果记录，使用 `[skip ci]` 的文档提交避免重复运行已经通过的产品门禁；程序源码与已验证发行提交相同。
