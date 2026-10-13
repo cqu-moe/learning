@@ -184,6 +184,7 @@ describe('cli telemetry lifecycle', () => {
     expect(new Set(events.map(event => event.properties.operation_id)).size).toBe(1);
 
     const commonKeys = [
+      '$geoip_disable', '$process_person_profile',
       'actor_type', 'arch', 'cli_version', 'duration_basis', 'environment', 'is_test', 'operation',
       'operation_id', 'os', 'product', 'release', 'runtime', 'runtime_version', 'surface',
       'telemetry_version', 'trigger',
@@ -195,7 +196,7 @@ describe('cli telemetry lifecycle', () => {
       product: 'learning',
       surface: 'cli',
       environment: 'production',
-      release: '0.2.4',
+      release: '0.2.5',
       actor_type: 'installation',
       trigger: 'user',
       operation: 'init',

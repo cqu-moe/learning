@@ -192,6 +192,8 @@ function writeFirstNotice(): void {
 
 function baseProperties(controller: TelemetryController, operation: string): Record<string, TelemetryPropertyValue> {
   return {
+    $geoip_disable: true,
+    $process_person_profile: false,
     telemetry_version: 2,
     product: 'learning',
     surface: 'cli',

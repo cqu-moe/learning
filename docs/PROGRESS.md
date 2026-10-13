@@ -718,3 +718,7 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 0.2.4 在 CLI 装配层增加独立安装身份、命令/任务起止与有界异步发送。普通运行和用户脚本默认开启，首次 stderr 提示；`telemetry off`、环境变量、CI/测试开关可关闭。事件不包含参数、profile 名、课程内容或原始错误；逻辑任务、每次前台尝试、部分完成和未验证结果分开。
 
 本地 Node 24.11.1：150 项 CLI 常规测试、7 项端到端测试通过；lint/类型/边界/发行 manifest 检查通过。Bun 1.4.3 本机 macOS arm64 独立程序通过无运行时启动、SQLite、权限、锁、真实终端取消/退出验证；额外确认构建期 CI 不会把用户运行期默认上报冻结关闭。其余四平台与发布后的下载校验由 GitHub CI/Release 另验收，此处不声称已上线。新 PostHog 项目为 662666；历史项目保留到跨产品验收完成。
+
+### 2026-10-14 遥测发行验收补修
+
+0.2.4 五平台 CI 与私有 Release 完成。线上属性检查发现采集端匿名化 IP 不等于禁止 GeoIP；所有 CLI 事件现显式禁止地理位置补充与 person profile 创建。PTY helper 为展示交互清空 CI，必须独立设置 LEARNING_TELEMETRY_DISABLED=1，避免原生发行测试被计为真实使用。修订版本 0.2.5，等待定向测试和五平台 CI；0.2.4 不能作为最终迁移验收。
