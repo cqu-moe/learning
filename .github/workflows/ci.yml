@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -20,3 +23,72 @@ jobs:
       - run: node scripts/check-boundaries.mjs
       - run: pnpm lint && pnpm typecheck && pnpm test && pnpm build
       - run: pnpm test:e2e
+      - run: node scripts/test-release.mjs
+  binaries:
+    needs: verify
+    name: binary (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: macos-x64, runner: macos-15-intel }
+          - { target: macos-arm64, runner: macos-15 }
+          - { target: windows-x64, runner: windows-2025 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: pnpm
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Verify runtime compatibility
+        run: node scripts/test-bun-runtime.mjs
+      - name: Prove the Windows ACL regression fails without the fix
+        if: runner.os == 'Windows'
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { execFileSync, spawnSync } from 'node:child_process';
+          import { resolve } from 'node:path';
+          import { stage, executable } from './scripts/build-cli.mjs';
+          const path = 'apps/cli/src/data-dir.ts';
+          const original = readFileSync(path, 'utf8');
+          const baseline = original.replace("if (process.platform === 'win32') securePrivateDirectory(dataDir);", 'if (false) securePrivateDirectory(dataDir);');
+          assert.notEqual(baseline, original);
+          try {
+            writeFileSync(path, baseline);
+            execFileSync(process.execPath, ['scripts/build-cli.mjs'], {stdio:'inherit'});
+            const result = spawnSync(process.execPath, ['scripts/test-windows-permissions.mjs', resolve(stage, executable)], {encoding:'utf8'});
+            assert.equal(result.status, 1, result.stderr);
+            assert.match(result.stderr, /windows permissions: data directory .*ACE/);
+            console.log('Confirmed pre-fix failure:', result.stderr.trim());
+          } finally { writeFileSync(path, original); }
+          JS
+      - run: node scripts/build-cli.mjs
+      - name: Package licenses and executable
+        run: |
+          pnpm licenses list --prod --json > dist/licenses.json
+          node scripts/package-cli.mjs
+      - name: Run extracted release archive
+        run: node scripts/test-archive.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/releases/*
+          if-no-files-found: error
+          retention-days: 7
