@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { CliError } from './output.js';
 
 const secureDirectoryScript = `
 $ErrorActionPreference = 'Stop'
@@ -111,8 +112,9 @@ export function securePrivateDirectory(path: string): void {
   );
 
   if (result.error || result.status !== 0) {
-    const reason = result.error?.message ?? `exit code ${result.status}`;
     const output = `${result.stderr ?? ''}${result.stdout ?? ''}`.trim().slice(0, 4096);
-    throw new Error(`unable to secure Windows data directory (${reason})${output ? `: ${output}` : ''}`);
+    throw new CliError('STORAGE', output.includes('Refusing reparse point')
+      ? '数据目录不能包含符号链接或 junction，请选择普通目录。'
+      : '无法设置 Windows 数据目录的专用权限，请检查目录所有者和系统 PowerShell 是否可用。', 1, ['home']);
   }
 }

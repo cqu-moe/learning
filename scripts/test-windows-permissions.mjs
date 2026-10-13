@@ -222,7 +222,7 @@ try {
   runPowerShell(makeJunction, junction);
   runPowerShell(makeLooseAcl, junctionTarget);
   writeFileSync(join(junctionTarget, 'marker.txt'), 'external target');
-  const junctionInit = spawnSync(binary, ['init', '--home', junction], {
+  const junctionInit = spawnSync(binary, ['init', '--home', junction, '--json'], {
     encoding: 'utf8',
     maxBuffer,
     timeout,
@@ -230,9 +230,9 @@ try {
   });
   if (junctionInit.error) fail(`junction CLI failed to start: ${junctionInit.error.message}`);
   if (junctionInit.status === 0) fail('CLI accepted a reparse point as the data directory');
-  const junctionOutput = `${junctionInit.stderr}${junctionInit.stdout}`;
-  if (!junctionOutput.includes('reparse point')) {
-    fail(`junction rejection did not identify the reparse point: ${junctionOutput.slice(0, 4096)}`);
+  const junctionError = JSON.parse(junctionInit.stdout).error;
+  if (junctionInit.status !== 1 || junctionError.code !== 'STORAGE' || !junctionError.message.includes('junction')) {
+    fail(`junction rejection did not identify the unsafe directory: ${junctionInit.stdout.slice(0, 4096)}`);
   }
   const junctionTargetAcl = inspect(junctionTarget);
   if (!ownerOnlyViolations(junctionTargetAcl, junctionTarget).some((violation) => violation.includes('S-1-1-0'))) {
