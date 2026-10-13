@@ -736,3 +736,5 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 用户撤回 Blacksmith，明确公开 Learning 及另外五个产品/设计仓库。PR#11 在合并前关闭，因此 main 保留 GitHub 原生五目标（macOS x64 为 macos-15-intel），不引入 Rosetta 构建。仓库可见性已读回 PUBLIC。发行脚本的私有断言改为公开断言，入口/安装/发行规范同步；workspace package 的 private:true 保留，不发布 npm。源码与已发布 Release 现在公开，0.2.6 原提交与附件不重建、不覆盖，不触发同版本手动发行。
 
 此前耗时假设修复继续保留：进程启动耗时不决定是否单批，业务输出在 HTTP 响应前产生；连续 start/finish 的单批保证由独立测试验证。等待本 PR 的原生五平台 CI 与 Node 门禁。
+
+公开后的首轮原生 CI 38451785866：五个实际二进制目标全部通过；Node 门禁的作业离线 fixture 用例耗时 5.8 秒，超过默认 5 秒，全部业务断言未报差异。CLI Vitest 限制最多两个文件 worker，给真实 CLI 子进程保留 CPU；不增加超时、不删除断言。Node24 本地 141 项常规测试通过；遥测 11 项初次因沙箱禁止 localhost listen 未运行，允许本地 fixture 监听后 11/11 通过；root lint、diff check 通过。最终远端结果后续读回。
