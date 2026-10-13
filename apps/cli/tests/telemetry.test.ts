@@ -230,7 +230,7 @@ describe('cli telemetry lifecycle', () => {
     expect(JSON.stringify(payloads)).not.toContain(home);
   });
 
-  it('coalesces a quick command outcome with its start without delaying business output', async () => {
+  it('writes business output before a held telemetry request completes', async () => {
     const home = freshHome('learning-telemetry-observed-start-');
     const token = 'phc_start_observability_fixture_token_123456789';
     const env = userEnv(home, { token });
@@ -250,7 +250,7 @@ describe('cli telemetry lifecycle', () => {
     const stdoutDeadline = Date.now() + 2000;
     while (stdout.length === 0 && Date.now() < stdoutDeadline) await new Promise(resolveWait => setTimeout(resolveWait, 10));
     expect(startPayload.body.api_key).toBe(token);
-    expect(startPayload.body.batch.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
+    expect(startPayload.body.batch[0]!.event).toBe('cli_command_started');
     expect(stdout.trim().split('\n')).toHaveLength(1);
     expect(JSON.parse(stdout)).toMatchObject({ command: 'init', ok: true, exitCode: 0 });
     expect(stderr).toContain('learning telemetry off');
@@ -258,9 +258,31 @@ describe('cli telemetry lifecycle', () => {
 
     releaseHeldRequest();
     expect(await exited).toBe(0);
-    expect(requests).toHaveLength(1);
-    expect(startPayload.body.batch[1]!.properties.operation_id).toBe(startPayload.body.batch[0]!.properties.operation_id);
-    expect(new Set(startPayload.body.batch.map(event => event.uuid)).size).toBe(2);
+    const events = (await waitForTokenPayloads(token, 2)).flatMap(payload => payload.body.batch);
+    expect(events.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
+    expect(events[1]!.properties.operation_id).toBe(events[0]!.properties.operation_id);
+    expect(new Set(events.map(event => event.uuid)).size).toBe(2);
+  });
+
+  it('coalesces a command that finishes before the background flush', async () => {
+    const home = freshHome('learning-telemetry-coalesced-');
+    const token = 'phc_coalesced_fixture_token_123456789abcdef';
+    const previousEnv = process.env;
+    process.env = userEnv(home, { token });
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    try {
+      // No disk-backed init or subprocess startup between start and finish: those
+      // can exceed the batching interval on a loaded runner.
+      await startTelemetry(output, home, 'jobs list');
+      await finishTelemetry(output);
+      const payloads = await waitForTokenPayloads(token, 2);
+      expect(payloads).toHaveLength(1);
+      expect(payloads[0]!.body.batch.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
+    } finally {
+      await finishTelemetry(output);
+      output.close();
+      process.env = previousEnv;
+    }
   });
 
   it('still delivers the start of a long-running command before its outcome', async () => {

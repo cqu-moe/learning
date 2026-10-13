@@ -1,30 +1,30 @@
 # learning 安装指南
 
-本仓库为私有项目 cqu-moe/learning 的 SDK+CLI 阶段。Web 与云端部署已延期。
+本仓库为公开项目 cqu-moe/learning 的 SDK+CLI 阶段。Web 与云端部署已延期。
 
 ## 便携程序（推荐）
 
-登录有仓库读权限的 GitHub 账号，打开 [私有 Releases](https://github.com/cqu-moe/learning/releases)，直接下载对应系统/架构的程序和 `SHA256SUMS`。Windows 提供 x64 `.exe`；macOS 与 Linux 各提供 x64、arm64 无扩展名程序。无需解压或安装 Node、Bun、Python。第三方许可证集中在同一 Release 的独立附件 `LICENSES.txt`，程序运行不依赖该文件。
+打开 [Releases](https://github.com/cqu-moe/learning/releases)，直接下载对应系统/架构的程序和 `SHA256SUMS`。Windows 提供 x64 `.exe`；macOS 与 Linux 各提供 x64、arm64 无扩展名程序。无需解压或安装 Node、Bun、Python。第三方许可证集中在同一 Release 的独立附件 `LICENSES.txt`，程序运行不依赖该文件。
 
 ```bash
 # macOS / Linux：校验下载，按实际版本和架构替换文件名
-shasum -a 256 learning-0.2.4-macos-arm64
+shasum -a 256 learning-0.2.6-macos-arm64
 # 与 SHA256SUMS 对应行比较；Linux 可用 sha256sum
-chmod +x learning-0.2.4-macos-arm64
-./learning-0.2.4-macos-arm64 doctor
-./learning-0.2.4-macos-arm64 init
+chmod +x learning-0.2.6-macos-arm64
+./learning-0.2.6-macos-arm64 doctor
+./learning-0.2.6-macos-arm64 init
 ```
 
 Windows 下载后，在 PowerShell 中运行：
 
 ```powershell
-Get-FileHash .\learning-0.2.4-windows-x64.exe -Algorithm SHA256
+Get-FileHash .\learning-0.2.6-windows-x64.exe -Algorithm SHA256
 # 与 SHA256SUMS 对应行比较
-.\learning-0.2.4-windows-x64.exe doctor
-.\learning-0.2.4-windows-x64.exe init
+.\learning-0.2.6-windows-x64.exe doctor
+.\learning-0.2.6-windows-x64.exe init
 ```
 
-可将程序重命名为 `learning`（Windows 为 `learning.exe`），并把所在目录加入当前用户 PATH，之后直接使用 `learning` 命令。GitHub CLI 用户也可通过 `gh release download cli-v0.2.4 --repo cqu-moe/learning --pattern '*windows-x64.exe' --pattern SHA256SUMS --pattern LICENSES.txt` 下载；不提供携带私有 token 的公开安装脚本。
+可将程序重命名为 `learning`（Windows 为 `learning.exe`），并把所在目录加入当前用户 PATH，之后直接使用 `learning` 命令。GitHub CLI 用户也可通过 `gh release download cli-v0.2.6 --repo cqu-moe/learning --pattern '*windows-x64.exe' --pattern SHA256SUMS --pattern LICENSES.txt` 下载；不提供携带私有 token 的公开安装脚本。
 
 运行要求沿 Bun：Windows 10 1809+、macOS 13+、glibc 2.17+ 的 Linux，x64 需 SSE4.2；首版不提供 Alpine/musl 或 Windows ARM64 原生包。实际 CI 使用 Windows 2025、macOS 15、Ubuntu 24.04，最低版本系统未逐一真机验证。首版未使用开发者证书签名或 macOS 公证，系统可能提示未知发布者；请核对来源与校验和，遵循系统的应用审批流程。
 
@@ -34,7 +34,7 @@ Release 页面提供安装说明、构建提交和 Bun 版本；`SHA256SUMS` 同
 
 - Node.js 24.11.1（nvm：`nvm install 24.11.1`；`node -v` 必须 ≥24.11.1 且 <25）
 - pnpm 11.19.0（`corepack enable && corepack prepare pnpm@11.19.0 --activate`）
-- 仓库读权限（cqu-moe/learning；.reference 参考仓需要 cqu-moe/ykt-cli、cqu-moe/xuetang-cli、cqu-moe/zhs-cli 的读权限）
+- 常规安装和构建不需要 `.reference`；仅核对旧协议实现时需要三个私有参考仓库的固定 refs 和读取权限。
 
 ## 源码安装
 

@@ -85,7 +85,7 @@ HeavyRenderer.start/status/cancel 使用同进程任务对象和本机文件。�
 
 ## A05. 本机安装、升级与验收
 
-T31 编写 `docs/INSTALL.md`、`docs/USAGE.md`、`docs/FEATURE-STATUS.md`。至少覆盖 Node/pnpm 的固定版本、私有源码安装、构建后 CLI 调用、init/首次扫码、模型可选配置、显式本机浏览器/参考字体配置、数据备份/升级/回滚限制、遗留锁处理、Ctrl+C/resume/reconcile 和导出清理。
+T31 编写 `docs/INSTALL.md`、`docs/USAGE.md`、`docs/FEATURE-STATUS.md`。至少覆盖 Node/pnpm 的固定版本、公开源码安装、构建后 CLI 调用、init/首次扫码、模型可选配置、显式本机浏览器/参考字体配置、数据备份/升级/回滚限制、遗留锁处理、Ctrl+C/resume/reconcile 和导出清理。
 
 CI 只做两包静态边界、SDK/CLI 离线测试、Node 存储/网络适配测试、CLI 进程 E2E。渲染测试要区分 fake renderer 合同、真实浏览器集成与人工字体 golden；缺字体样本不假装该层通过，也不让云端账号缺失影响本期测试。
 

@@ -4,7 +4,7 @@
 
 ## 1. 准备与替换
 
-仓库保持私有 `cqu-moe/learning`。ZIP中的learning/内容放仓库根目录，AGENTS.md、README.md、docs/直接在根。只含文档/声明，工程由T01建立。
+仓库 `cqu-moe/learning` 已按 2026-10-14 用户确认改为公开。ZIP中的learning/内容放仓库根目录，AGENTS.md、README.md、docs/直接在根。只含文档/声明，工程由T01建立。
 
 只把本版1.1作为活动规范，不并列旧1.0/v0.1/v0.2。如果已有代码与进度：先保留原git diff/PROGRESS，按本版范围逐项合并，不重建已完成实现、不删除既有Web代码、不清空测试记录。旧Web内容标deferred并从当前构建/任务依赖移出即可；需要删除实际文件须单独授权。
 

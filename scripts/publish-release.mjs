@@ -13,7 +13,7 @@ assert.ok(repository);
 const sha = process.env.GITHUB_SHA;
 assert.match(sha ?? '', /^[a-f0-9]{40}$/);
 function gh(args) { return execFileSync('gh', args, { encoding: 'utf8' }).trim(); }
-assert.equal(JSON.parse(gh(['api', `repos/${repository}`])).private, true, 'private distribution must remain private');
+assert.equal(JSON.parse(gh(['api', `repos/${repository}`])).private, false, 'public distribution requires a public repository');
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), sha);
 execFileSync('git', ['merge-base', '--is-ancestor', sha, 'origin/main']);
 const tag = `cli-v${cliVersion}`;
@@ -48,7 +48,7 @@ if (lookup.status === 0) {
 } else {
   assert.ok(lookup.stderr.trim() === 'release not found', `release lookup failed: ${lookup.stderr}`);
   const notes = resolve(root, 'dist/release-notes.md');
-  writeFileSync(notes, `CLI ${cliVersion} 的 Windows、macOS、Linux 独立程序。下载与源码均需本私有仓库权限。
+  writeFileSync(notes, `CLI ${cliVersion} 的 Windows、macOS、Linux 独立程序。源码与程序均可公开访问，无需仓库成员权限。
 
 直接下载对应系统和架构的程序，无需解压或安装 Node/Bun：
 
