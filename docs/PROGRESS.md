@@ -712,3 +712,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 合并后 [main CI 38340768112](https://github.com/cqu-moe/learning/actions/runs/38340768112) 与 [自动发行 38340768463](https://github.com/cqu-moe/learning/actions/runs/38340768463) 均 success。[cli-v0.2.3](https://github.com/cqu-moe/learning/releases/tag/cli-v0.2.3) 已发布、非草稿、指向上述合并提交；附件实际读回为五个独立程序、LICENSES.txt（83,495 字节，含 Bun 与 56 项生产依赖许可）及 SHA256SUMS，没有发行 ZIP/tar.gz。
 - 实际从 Release 下载 macOS arm64 程序、许可证、校验清单，保留于主目录 `dist/release-check-0.2.3-20261013`。GitHub 下载中发生 EOF，改用附件 API 并通过 Range 补齐后才执行；程序完整 SHA256 `b776822924088c410e930d38869e50e7a27664866ae3176081220b3ee16e8f00`、许可证与清单摘要均匹配已发布值。程序单独复制到仓库外后，`test-binary.mjs` 与 `test-binary-terminal.mjs` 均 exit 0。
 - 主目录已干净快进至合并提交，Node 24.11.1 / pnpm 11.19.0 下 `pnpm build` 与本地 CLI `--version`（0.2.3）均 exit 0。仅补交此结果记录（[skip ci]）；原程序链接保持可用。任务 done，不继续开发其他 PLAN 项或 Web；前述真实平台、签名/公证和最低系统版本证据边界保持原状。
+
+## 2026-10-14 CLI 遥测 v2（发布验收待完成）
+
+0.2.4 在 CLI 装配层增加独立安装身份、命令/任务起止与有界异步发送。普通运行和用户脚本默认开启，首次 stderr 提示；`telemetry off`、环境变量、CI/测试开关可关闭。事件不包含参数、profile 名、课程内容或原始错误；逻辑任务、每次前台尝试、部分完成和未验证结果分开。
+
+本地 Node 24.11.1：150 项 CLI 常规测试、7 项端到端测试通过；lint/类型/边界/发行 manifest 检查通过。Bun 1.4.3 本机 macOS arm64 独立程序通过无运行时启动、SQLite、权限、锁、真实终端取消/退出验证；额外确认构建期 CI 不会把用户运行期默认上报冻结关闭。其余四平台与发布后的下载校验由 GitHub CI/Release 另验收，此处不声称已上线。新 PostHog 项目为 662666；历史项目保留到跨产品验收完成。

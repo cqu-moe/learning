@@ -12,6 +12,7 @@ import { resolve } from 'node:path';
 import { ensureDataDir } from '../data-dir.js';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
+import { trackJobCompleted, trackJobStarted } from '../telemetry.js';
 
 function openJobStore(program: Command): SqliteStateStore {
   const dataDir = ensureDataDir(program.opts<{ home?: string }>().home);
@@ -70,8 +71,10 @@ export function registerJobsCommands(program: Command): void {
           const client = createLearningClient({ scope: profile.scope, runtime });
         try {
           const current = await client.jobs.get(jobId);
+          if (runtime.output !== undefined) trackJobStarted(runtime.output, current);
           await confirmAction(program, `取消任务 ${jobId}（${current.status}）；已完成部分不会回滚。`, options.yes);
           const job = await client.jobs.cancel(jobId);
+          if (runtime.output !== undefined) trackJobCompleted(runtime.output, job);
           printResult(program, job, `${job.id}: ${job.status}`);
         } finally { await client.close(); }
       });

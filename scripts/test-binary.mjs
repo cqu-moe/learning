@@ -32,6 +32,19 @@ function json(args, expected = 0) {
 try {
   assert.equal(run(['--version']).trim(), version);
   assert.match(run(['--help']), /learning/);
+  const telemetryStatusText = run(['telemetry', 'status', '--json']);
+  assert.doesNotMatch(telemetryStatusText, /phc_[A-Za-z0-9_-]+/, 'telemetry status must not display the token');
+  const telemetryStatus = JSON.parse(telemetryStatusText).data;
+  assert.equal(telemetryStatus.tokenConfigured, true, 'official executable must embed a public telemetry token');
+  if (process.env.CI !== undefined && !['0', 'false'].includes(process.env.CI.toLowerCase())) {
+    assert.deepEqual(telemetryStatus, { enabled: false, reason: 'automatic', tokenConfigured: true });
+  }
+  const defaultStatus = spawnSync(binary, ['--home', home, 'telemetry', 'status', '--json'], {
+    cwd: root, encoding: 'utf8', timeout: 5000,
+    env: { ...env, CI: '0', VITEST: '0', NODE_ENV: 'production', LEARNING_TELEMETRY_ENVIRONMENT: 'production', LEARNING_TELEMETRY_DISABLED: '0', DO_NOT_TRACK: '0' },
+  });
+  assert.equal(defaultStatus.status, 0);
+  assert.deepEqual(JSON.parse(defaultStatus.stdout).data, { enabled: true, reason: 'active', tokenConfigured: true }, 'build-time CI must not freeze telemetry off in the shipped program');
   // Compile must not silently load local project config or dotenv files.
   writeFileSync(resolve(root, '.env'), 'LEARNING_MODEL_NAME=unwanted\nLEARNING_MODEL_BASE_URL=https://invalid.example\nLEARNING_MODEL_API_KEY=fixture-only\n');
   writeFileSync(resolve(root, 'bunfig.toml'), 'invalid = [');

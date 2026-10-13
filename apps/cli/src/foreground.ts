@@ -7,13 +7,24 @@ import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { LearningClient } from '@learning/sdk';
 import { LearningError } from '@learning/sdk';
+import { trackJobCompleted, trackJobStarted } from './telemetry.js';
 import { ActionInputSchema, CourseSchema } from '@learning/sdk/public';
 import type { Job, JobEvent } from '@learning/sdk/public';
 import type { CliRuntime } from './context.js';
 
 export async function runJobForeground(client: LearningClient, runtime: CliRuntime, id: string, callbacks: { onEvent?: (event: JobEvent) => void | Promise<void>; onState?: (job: Job) => void | Promise<void>; signal?: AbortSignal; study?: StudyDisplay } = {}): Promise<Job> {
   let study = callbacks.study;
-  if (!study && (await client.jobs.get(id)).kind === 'study') {
+  const abort = new AbortController();
+  const initialJob = await client.jobs.get(id);
+  const observeJob = (job: Job, newAttempt = false): Job => {
+    if (runtime.output !== undefined) {
+      trackJobStarted(runtime.output, job, { newAttempt });
+      trackJobCompleted(runtime.output, job, { canceled: abort.signal.aborted });
+    }
+    return job;
+  };
+  observeJob(initialJob, true);
+  if (!study && initialJob.kind === 'study') {
     const stored = await runtime.state.get(`job-input:${id}`);
     if (stored !== null) {
       const input = ActionInputSchema.parse(stored.value);
@@ -25,7 +36,6 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
       }
     }
   }
-  const abort = new AbortController();
   const onSignal = () => abort.abort();
   const signals = [callbacks.signal, runtime.output?.signal].filter((signal): signal is AbortSignal => signal !== undefined);
   for (const signal of signals) { signal.addEventListener('abort', onSignal, { once: true }); if (signal.aborted) onSignal(); }
@@ -45,6 +55,7 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
     const signature = JSON.stringify([job.id, job.status, job.completed, job.total, job.nextRunAtMs, latestProgress?.sequence]);
     if (event?.type !== 'progress' && signature === lastState) return;
     lastState = signature;
+    observeJob(job);
     await callbacks.onState?.(job);
     const live = latestProgress;
     await runtime.output?.progress({ jobId: id, resourceKey: live?.resourceKey ?? null, status: job.status, completed: job.completed, total: job.total, serverFraction: live?.serverFraction ?? null, estimatedSeconds: live?.estimatedSeconds ?? null, title: live?.title ?? null, durationSeconds: live?.durationSeconds ?? null, serverSeconds: live?.serverSeconds ?? null, sourceSequence: event?.sequence ?? null }, study ? { ...study, nextRunAtMs: job.nextRunAtMs, observedAtMs } : undefined);
@@ -67,12 +78,12 @@ export async function runJobForeground(client: LearningClient, runtime: CliRunti
     const job = await client.jobs.get(id);
     if (['queued', 'running', 'waiting'].includes(job.status)) await client.jobs.pause(id);
     process.exitCode = job.status === 'uncertain' ? 5 : 3;
-    return client.jobs.get(id);
+    return observeJob(await client.jobs.get(id));
   };
   process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
   try {
     for (;;) {
-      const job = await client.jobs.get(id);
+      const job = observeJob(await client.jobs.get(id));
       if (abort.signal.aborted) return await pause();
       await flushEvents(job); await report(job);
       if (abort.signal.aborted) return await pause();

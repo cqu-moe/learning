@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { captureWarnings } from './warnings.js';
+import { resolveDataDir } from './data-dir.js';
+import { finishTelemetry, startTelemetry } from './telemetry.js';
 import type { Command } from 'commander';
 
 const runtimeWarnings = captureWarnings();
@@ -25,6 +27,7 @@ try {
     const program = createProgram();
     process.exitCode = 0;
     let canceled = false;
+    let commandError: unknown;
     const output = createOutput(resolveOutputMode(flags));
     bindOutput(program, output);
     runtimeWarnings.attach(output.recordWarning);
@@ -34,13 +37,20 @@ try {
     if (!output.mode.color) { process.env.NO_COLOR = '1'; delete process.env.FORCE_COLOR; }
     let help = '';
     program.configureOutput({ writeOut: value => { help += value; }, writeErr: () => {} });
-    const trackCommand = (_root: Command, command: Command) => {
+    const commandPath = (command: Command) => {
       const names: string[] = [];
       for (let p: Command | null = command; p?.parent; p = p.parent) names.unshift(p.name());
-      output.setCommand(names.join(' ') || 'learning');
+      return names.join(' ') || 'learning';
+    };
+    const trackCommand = (_root: Command, command: Command) => {
+      const path = commandPath(command);
+      output.setCommand(path);
+      if (command.commands.length === 0 && path !== 'doctor' && !path.startsWith('telemetry ')) {
+        return startTelemetry(output, resolveDataDir(program.opts<{ home?: string }>().home), path).catch(() => {});
+      }
     };
     program.hook('preAction', trackCommand);
-    const trackSubcommands = (command: Command) => { command.hook('preSubcommand', trackCommand); command.commands.forEach(trackSubcommands); };
+    const trackSubcommands = (command: Command) => { command.hook('preSubcommand', (_root: Command, child: Command) => output.setCommand(commandPath(child))); command.commands.forEach(trackSubcommands); };
     trackSubcommands(program);
     try {
       if (flags.json && flags.outputFormat !== undefined && flags.outputFormat !== 'json') throw new CliError('INVALID_INPUT', '--json 与 --output-format 冲突。');
@@ -49,13 +59,19 @@ try {
       await runtimeWarnings.drain();
       await output.finish();
     } catch (error) {
+      commandError = error;
       canceled = error instanceof CliError && error.code === 'CANCELED';
       await runtimeWarnings.drain();
       if (error instanceof CommanderError && error.exitCode === 0) {
         output.set({ text: help.trim() }, help.trim());
         await output.finish();
       } else await output.finish(error instanceof CommanderError ? new CliError('INVALID_INPUT', error.message) : error);
-    } finally { process.off('SIGINT', output.markCanceled); process.off('SIGTERM', output.markCanceled); output.close(); }
+    } finally {
+      await finishTelemetry(output, commandError).catch(() => {});
+      process.off('SIGINT', output.markCanceled);
+      process.off('SIGTERM', output.markCanceled);
+      output.close();
+    }
     if (!returnsHome(program) || output.signal.aborted || canceled) break;
   }
 } finally { runtimeWarnings.close(); }

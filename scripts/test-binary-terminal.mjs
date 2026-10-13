@@ -27,7 +27,7 @@ try {
   assert.equal(existsSync(resolve(home, 'learning.lock')), false);
   const profiles = JSON.parse(execFileSync(binary, ['--home', home, 'profile', 'list', '--json'], { encoding: 'utf8' })).data.profiles;
   assert.equal(profiles.length, 1, 'canceled removal preserves account');
-  const menu = terminal(['--output-format', 'plain'], [{ wait: '请选择操作', send: '19\n' }]);
+  const menu = terminal(['--output-format', 'plain'], [{ wait: '请选择操作', send: '20\n' }]);
   assert.equal(menu.code, 0, menu.screen);
   assert.equal(menu.steps, 1);
   console.log('OK compiled CLI real PTY: Clack, Chinese narrow terminal, cancellation and lock cleanup, menu exit');
