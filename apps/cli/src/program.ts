@@ -18,6 +18,7 @@ import { registerAnswersCommands } from './commands/answers.js';
 import { registerDiscussCommands } from './commands/discuss.js';
 import { registerLiveCommand } from './commands/live.js';
 import { registerOperationsCommands } from './commands/operations.js';
+import { registerTelemetryCommand } from './commands/telemetry.js';
 
 export function createProgram(): Command {
 const program = new Command();
@@ -46,6 +47,7 @@ registerAnswersCommands(program);
 registerDiscussCommands(program);
 registerLiveCommand(program);
 registerOperationsCommands(program);
+registerTelemetryCommand(program);
 registerConfigCommands(program);
 const localizeHelp = (command: Command) => {
   command.helpOption('-h, --help', '显示帮助');

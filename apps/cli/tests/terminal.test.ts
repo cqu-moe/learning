@@ -25,7 +25,7 @@ describe('real terminal interaction', () => {
     const result = terminal(['--output-format','plain'], [
       { wait: '请选择操作', send: '2\n' },
       { wait: '请选择操作', occurrences: 2, send: '2\n' },
-      { wait: '请选择操作', occurrences: 3, send: '19\n' },
+      { wait: '请选择操作', occurrences: 3, send: '20\n' },
     ]);
     expect(result.code).toBe(0);
     expect(result.steps).toBe(3);
@@ -39,7 +39,7 @@ describe('real terminal interaction', () => {
       { wait: '请选择操作', occurrences: 2, send: '1\n' },
       { wait: '账号名称', send: 'plain-user\n' },
       { wait: '选择平台', send: '1\n' },
-      { wait: '请选择操作', occurrences: 3, send: '19\n' },
+      { wait: '请选择操作', occurrences: 3, send: '20\n' },
     ]);
     expect(result.code).toBe(0);
     expect(result.steps).toBe(5);
@@ -55,7 +55,7 @@ describe('real terminal interaction', () => {
       { wait: '请选择操作', occurrences: 4, send: '1\n' },
       { wait: '账号名称', occurrences: 2, send: 'home-second\n' },
       { wait: '选择平台', occurrences: 2, send: '2\n' },
-      { wait: '请选择操作', occurrences: 5, send: '19\n' },
+      { wait: '请选择操作', occurrences: 5, send: '20\n' },
     ]);
     expect(result.code).toBe(0);
     expect(result.steps).toBe(9);
@@ -96,7 +96,7 @@ it('presents Chinese help for every registered leaf command', async () => {
   for (const child of command.commands) visit(child,[...path,child.name()]);
  };
  for (const command of program.commands) visit(command,[command.name()]);
- expect(paths).toHaveLength(33);
+ expect(paths).toHaveLength(36);
  expect(paths.map(path=>path.join(' '))).toContain('exam draft');
  expect(paths.map(path=>path.join(' '))).toContain('operations reconcile');
  for (const path of paths) {

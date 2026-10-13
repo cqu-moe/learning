@@ -8,23 +8,23 @@
 
 ```bash
 # macOS / Linux：校验下载，按实际版本和架构替换文件名
-shasum -a 256 learning-0.2.3-macos-arm64
+shasum -a 256 learning-0.2.4-macos-arm64
 # 与 SHA256SUMS 对应行比较；Linux 可用 sha256sum
-chmod +x learning-0.2.3-macos-arm64
-./learning-0.2.3-macos-arm64 doctor
-./learning-0.2.3-macos-arm64 init
+chmod +x learning-0.2.4-macos-arm64
+./learning-0.2.4-macos-arm64 doctor
+./learning-0.2.4-macos-arm64 init
 ```
 
 Windows 下载后，在 PowerShell 中运行：
 
 ```powershell
-Get-FileHash .\learning-0.2.3-windows-x64.exe -Algorithm SHA256
+Get-FileHash .\learning-0.2.4-windows-x64.exe -Algorithm SHA256
 # 与 SHA256SUMS 对应行比较
-.\learning-0.2.3-windows-x64.exe doctor
-.\learning-0.2.3-windows-x64.exe init
+.\learning-0.2.4-windows-x64.exe doctor
+.\learning-0.2.4-windows-x64.exe init
 ```
 
-可将程序重命名为 `learning`（Windows 为 `learning.exe`），并把所在目录加入当前用户 PATH，之后直接使用 `learning` 命令。GitHub CLI 用户也可通过 `gh release download cli-v0.2.3 --repo cqu-moe/learning --pattern '*windows-x64.exe' --pattern SHA256SUMS --pattern LICENSES.txt` 下载；不提供携带私有 token 的公开安装脚本。
+可将程序重命名为 `learning`（Windows 为 `learning.exe`），并把所在目录加入当前用户 PATH，之后直接使用 `learning` 命令。GitHub CLI 用户也可通过 `gh release download cli-v0.2.4 --repo cqu-moe/learning --pattern '*windows-x64.exe' --pattern SHA256SUMS --pattern LICENSES.txt` 下载；不提供携带私有 token 的公开安装脚本。
 
 运行要求沿 Bun：Windows 10 1809+、macOS 13+、glibc 2.17+ 的 Linux，x64 需 SSE4.2；首版不提供 Alpine/musl 或 Windows ARM64 原生包。实际 CI 使用 Windows 2025、macOS 15、Ubuntu 24.04，最低版本系统未逐一真机验证。首版未使用开发者证书签名或 macOS 公证，系统可能提示未知发布者；请核对来源与校验和，遵循系统的应用审批流程。
 
@@ -54,6 +54,12 @@ node apps/cli/dist/index.js init --home ~/.learning
 ```
 
 首次 init 生成 `master.key` 与 SQLite 状态库；macOS/Linux 目录权限 0700，密钥和数据库 0600；Windows 使用系统自带 PowerShell 设置当前用户专用 ACL，并让新文件继承。数据目录应为 CLI 专用目录，已有目录打开时也会收紧权限。操作草稿正文使用 AES-GCM 保存；旧明文操作记录首次读取时原地迁移，保留不确定写入状态。密钥与数据库同机存储，不抵御整机失陷；可用 LEARNING_HOME 隔离多套数据。
+
+## 匿名使用统计
+
+独立程序默认开启匿名使用统计，用于聚合命令、平台、版本和任务结果分布。首次执行会在 stderr 提示一次，不污染 JSON/机器输出；随后在数据目录保存 0600 的 `telemetry.json`，其中包含随机安装 UUID 和持久开关。统计不包含命令参数、课程/资源标题或 key、账号/学校身份、profile 名、导出路径、终端输出、Cookie、API 响应或异常原文。
+
+可随时运行 `learning telemetry status`、`learning telemetry off` 或 `learning telemetry on`。进程环境 `LEARNING_TELEMETRY_DISABLED=1` 或 `DO_NOT_TRACK=1` 也会禁用本次发送；CI、Vitest、Node test 环境自动禁用。发送是单次、无重试、750 ms 超时、最多 16 个事件 / 16 KiB 的 best-effort 请求；断网、代理失败或缺少配置不改变命令 stdout、业务结果或退出码。独立程序在构建时嵌入公共采集 token，不包含私人 API key；源码运行可用 `LEARNING_TELEMETRY_TOKEN` 显式提供公共 token。
 
 Windows 同时收紧已有密钥、数据库、锁和默认 artifacts/exports 子树，并拒绝符号链接或 junction 跟随；放在数据目录外的自定义导出目录，请自行选择合适的访问权限。
 
