@@ -42,14 +42,18 @@ const home = join(tempRoot, '学习 数据 目录');
 const artifacts = join(home, 'artifacts');
 const artifactDirectory = join(artifacts, '内部 目录');
 const artifactFile = join(artifactDirectory, '导出 文件.txt');
+const exportDirectory = join(home, 'exports', '旧任务');
+const exportFile = join(exportDirectory, '课程.txt');
 const masterKeyPath = join(home, 'master.key');
 const stateDbPath = join(home, 'state.db');
 mkdirSync(home, { recursive: true });
 mkdirSync(artifactDirectory, { recursive: true });
+mkdirSync(exportDirectory, { recursive: true });
 const initialMasterKey = randomBytes(32);
 writeFileSync(masterKeyPath, initialMasterKey);
 writeFileSync(stateDbPath, Buffer.alloc(0));
 writeFileSync(artifactFile, 'existing artifact');
+writeFileSync(exportFile, 'existing export');
 
 const makeLooseAcl = `
 $ErrorActionPreference = 'Stop'
@@ -135,7 +139,7 @@ function assertOwnerOnly(label, path) {
 }
 
 try {
-  const looseTargets = [home, artifacts, artifactDirectory, artifactFile, masterKeyPath, stateDbPath];
+  const looseTargets = [home, artifacts, artifactDirectory, artifactFile, exportDirectory, exportFile, masterKeyPath, stateDbPath];
   for (const path of looseTargets) runPowerShell(makeLooseAcl, path);
 
   const loose = inspect(home);
@@ -161,7 +165,7 @@ try {
   }
 
   if (!readFileSync(masterKeyPath).equals(initialMasterKey)) fail('init replaced the existing master.key');
-  const reinitLooseTargets = [home, masterKeyPath, stateDbPath, artifactFile];
+  const reinitLooseTargets = [home, masterKeyPath, stateDbPath, artifactFile, exportFile];
   for (const suffix of ['state.db-wal', 'state.db-shm']) {
     const path = join(home, suffix);
     if (existsSync(path)) reinitLooseTargets.push(path);
@@ -188,6 +192,8 @@ try {
     ['artifacts directory', artifacts],
     ['artifacts nested directory', artifactDirectory],
     ['artifacts file', artifactFile],
+    ['exports directory', exportDirectory],
+    ['exports file', exportFile],
   ]);
   for (const suffix of ['state.db-wal', 'state.db-shm']) {
     const path = join(home, suffix);

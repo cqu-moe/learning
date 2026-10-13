@@ -65,14 +65,15 @@ foreach ($coreName in @('master.key', 'state.db', 'state.db-wal', 'state.db-shm'
   Clear-And-GrantAcl $candidate $false
 }
 
-$artifacts = Assert-ApplicationPath ([System.IO.Path]::Combine($root, 'artifacts'))
-if (Test-Path -LiteralPath $artifacts) {
-  $artifactsItem = Get-SafeItem $artifacts
-  if (-not $artifactsItem.PSIsContainer) { throw "Private artifacts path is not a directory: $artifacts" }
-  Clear-And-GrantAcl $artifacts $true
+foreach ($subtree in @('artifacts', 'exports')) {
+  $directory = Assert-ApplicationPath ([System.IO.Path]::Combine($root, $subtree))
+  if (-not (Test-Path -LiteralPath $directory)) { continue }
+  $directoryItem = Get-SafeItem $directory
+  if (-not $directoryItem.PSIsContainer) { throw "Private output path is not a directory: $directory" }
+  Clear-And-GrantAcl $directory $true
 
   $pending = [System.Collections.Generic.Stack[string]]::new()
-  $pending.Push($artifacts)
+  $pending.Push($directory)
   while ($pending.Count -gt 0) {
     $current = $pending.Pop()
     foreach ($entry in [System.IO.Directory]::EnumerateFileSystemEntries($current)) {
