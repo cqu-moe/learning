@@ -240,6 +240,18 @@ try {
   }
   if (!existsSync(join(junctionTarget, 'marker.txt'))) fail('CLI modified the rejected junction target');
 
+  const externalDatabase = join(junctionTarget, 'state.db');
+  writeFileSync(externalDatabase, Buffer.alloc(0));
+  const inferred = spawnSync(binary, ['jobs', 'show', 'missing-job', '--home', junction, '--json'], {
+    encoding: 'utf8', maxBuffer, timeout, windowsHide: true,
+  });
+  if (inferred.error) fail(inferred.error.message);
+  const inferenceError = JSON.parse(inferred.stdout).error;
+  if (inferred.status !== 1 || inferenceError.code !== 'STORAGE' || !inferenceError.message.includes('junction')) {
+    fail(`account inference bypassed directory protection: ${inferred.stdout.slice(0, 4096)}`);
+  }
+  if (readFileSync(externalDatabase).length !== 0) fail('account inference touched the external SQLite database');
+
   console.log('Windows owner-only data directory ACL verified');
 } catch (error) {
   console.error(`windows permissions: ${error instanceof Error ? error.message : String(error)}`);
