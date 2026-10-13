@@ -79,7 +79,7 @@ try {
   let cancellationRemoved = false;
   try { await artifacts.open(canceledArtifactId); } catch { cancellationRemoved = true; }
 
-  const result = { source: 'bun', seed, runtime: 'Bun', http, websocket, conflictRolledBack, cancellationRemoved, artifact: { id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256 }, canceledArtifactId };
+  const result = { source: 'bun', seed, runtime: 'Bun', runtimeArch: process.arch, http, websocket, conflictRolledBack, cancellationRemoved, artifact: { id: artifact.id, bytes: artifact.bytes, sha256: artifact.sha256 }, canceledArtifactId };
   const revision = (await state.get('probe:state'))?.revision;
   assert.equal(await state.commit({ expected: [{ key: 'probe:state', revision }], changes: [{ key: 'probe:state', value: { encrypted: await encryptJson(key, JSON.stringify(result), aad) } }] }), true);
 } finally {

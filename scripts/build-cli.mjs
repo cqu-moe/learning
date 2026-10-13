@@ -9,15 +9,23 @@ export const root = fileURLToPath(new URL('..', import.meta.url));
 export const bunVersion = readFileSync(resolve(root, '.bun-version'), 'utf8').trim();
 export const cliVersion = JSON.parse(readFileSync(resolve(root, 'apps/cli/package.json'))).version;
 export const targets = ['windows-x64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64'];
-export const target = `${{ win32: 'windows', darwin: 'macos', linux: 'linux' }[process.platform]}-${process.arch}`;
-export const executable = `learning-${cliVersion}-${target}${process.platform === 'win32' ? '.exe' : ''}`;
+export function resolveTarget(requested, platform = process.platform, arch = process.arch) {
+  const native = `${{ win32: 'windows', darwin: 'macos', linux: 'linux' }[platform]}-${arch}`;
+  const selected = requested ?? native;
+  assert.ok(targets.includes(selected), `unsupported release target: ${selected}`);
+  assert.ok(selected === native || (native === 'macos-arm64' && selected === 'macos-x64'),
+    `cannot validate ${selected} on ${native}; only macOS x64 under Rosetta is supported`);
+  return selected;
+}
+export const target = resolveTarget(process.env.LEARNING_BUILD_TARGET);
+export const executable = `learning-${cliVersion}-${target}${target === 'windows-x64' ? '.exe' : ''}`;
 export const releaseDirectory = resolve(root, 'dist/releases');
 const publicTokenPattern = /^phc_[A-Za-z0-9_-]{20,}$/;
 
 export function compile(entry, outfile, options = {}) {
   const bun = process.env.BUN_BINARY ?? 'bun';
   assert.equal(execFileSync(bun, ['--version'], { encoding: 'utf8' }).trim(), bunVersion, 'use the pinned Bun version');
-  const args = ['build', '--compile', '--minify', '--bytecode', '--format=esm',
+  const args = ['build', '--compile', `--target=bun-${target.replace('macos-', 'darwin-')}`, '--minify', '--bytecode', '--format=esm',
     '--env=disable', '--no-compile-autoload-dotenv', '--no-compile-autoload-bunfig'];
   if (options.bundledTelemetryToken !== undefined) {
     args.push('--define', `process.env.LEARNING_BUNDLED_TELEMETRY_TOKEN=${JSON.stringify(options.bundledTelemetryToken)}`);

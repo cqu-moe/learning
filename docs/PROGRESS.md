@@ -726,3 +726,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 ### 2026-10-14 · CLI 遥测发行验收修正（0.2.6）
 
 0.2.5 五平台下载大小与 SHA256 已通过，但生产回读只有 quick command 的 started；开始/结束的两次请求争用 750ms 关闭窗口。增加 100ms 后台合批，快速命令退出前一次发送起止，长命令仍提前发 started；关闭时取消待发计时器并清队列。旧实现对合批回归按预期失败；Node24 遥测+终端24项通过，另补长命令提前送达回归。最终私有发行、下载和真实终态入库仍待验收。未操作真实学习平台。
+
+### 2026-10-14 Blacksmith 与 Intel macOS 交叉验证
+
+用户明确选择 ARM runner 上交叉编译 macOS x64 并用 Rosetta 验证。自动迁移把两个 macOS 目标映射到同一个 ARM runner，但旧脚本按宿主架构命名，会漏掉 Intel 程序。现将矩阵目标传入 LEARNING_BUILD_TARGET，Bun 显式选择对应 target；限制跨架构例外为 macOS ARM→x64，验证 Mach-O 头与真实探针进程架构。CI 先确认 Rosetta 可用，不自动安装或接受新许可。五目标仍分别运行独立程序与持久化/终端验收；Intel 项明确记录为 Rosetta 而非原生 Intel。
+
+本机验证：目标选择回归在修复前因缺少显式目标解析失败；修复后通过。Bun1.4.3实际交叉编译macOS x64，探针运行架构断言、SQLite/AES-GCM/PDF/PNG+JPEG/HTTP/WebSocket互通通过；完整x64程序的Mach-O头、隔离目录、状态/权限/锁/失败清理及真实PTY流程全部通过。root lint exit0。等待Blacksmith远端五目标检查。

@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import pdfLib from '../packages/sdk/node_modules/pdf-lib/cjs/index.js';
 import { NodeArtifactStore, SqliteStateStore } from '../packages/sdk/dist/runtime/node/index.js';
 import { decryptJson, encryptJson } from '../packages/sdk/dist/session/crypto.js';
-import { compile } from './build-cli.mjs';
+import { compile, target } from './build-cli.mjs';
 const { PDFDocument } = pdfLib; const execFileAsync = promisify(execFile);
 const aad = '["bun-runtime","probe","local","p1","test"]'; const masterKey = new Uint8Array(32).fill(23);
 const cwd = mkdtempSync(join(tmpdir(), 'learning-bun-runtime-')); let server; let state;
@@ -80,6 +80,7 @@ try {
   assert.ok(typeof saved === 'object' && saved !== null && !Array.isArray(saved));
   const result = JSON.parse(await decryptJson(masterKey, saved.encrypted, aad));
   assert.equal(result.source, 'bun'); assert.equal(result.seed, seed); assert.equal(result.runtime, 'Bun');
+  assert.equal(result.runtimeArch, target.split('-')[1], 'the probe must execute the requested binary architecture');
   assert.equal(result.http.body, 'alpha-beta-gamma'); assert.equal(result.http.header, 'headers'); assert.equal(result.http.abortError, true); assert.equal(result.conflictRolledBack, true);
   assert.equal(result.websocket, 'ws-ok');
   assert.equal((await state.get('probe:stable'))?.value, 'node'); assert.equal(await state.get('probe:rollback'), null);
