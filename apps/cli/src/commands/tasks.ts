@@ -9,12 +9,12 @@ import { createLearningClient } from '@learning/sdk';
 import { SqliteStateStore } from '@learning/sdk/node';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { resolveDataDir } from '../runtime.js';
+import { ensureDataDir } from '../data-dir.js';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 
 function openJobStore(program: Command): SqliteStateStore {
-  const dataDir = resolveDataDir(program.opts<{ home?: string }>().home);
+  const dataDir = ensureDataDir(program.opts<{ home?: string }>().home);
   const dbPath = resolve(dataDir, 'state.db');
   if (!existsSync(dbPath)) {
     throw new CliError('INTERACTION_REQUIRED', '本地尚未初始化。', 3, [], [`learning --home ${shellQuote(dataDir)} init`]);

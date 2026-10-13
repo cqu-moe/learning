@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, statSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -82,6 +82,39 @@ describe('cli basics (T25, A251/A252)', () => {
     const run = runCli(['doctor']);
     expect(run.exitCode).toBe(0);
     expect(run.stdout).toContain('浏览器：未配置');
+  });
+
+  it('doctor uses the OS home instead of the working directory when HOME is unset', () => {
+    const cwd = mkdtempSync(resolve(tmpdir(), 'learning-no-home-'));
+    tempRoots.push(cwd);
+    const env = { ...process.env };
+    delete env.HOME;
+    delete env.LEARNING_HOME;
+    const osHome = execFileSync(process.execPath, ['--input-type=module', '-e', "import { homedir } from 'node:os'; process.stdout.write(homedir());"], {
+      cwd, env, encoding: 'utf8',
+    });
+    const stdout = execFileSync(process.execPath, [cliEntry, 'doctor', '--json'], {
+      cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    expect(JSON.parse(stdout).data.home).toBe(resolve(osHome, '.learning'));
+    expect(existsSync(resolve(cwd, '.learning'))).toBe(false);
+  });
+
+  it('doctor and init agree on an absolute path for a relative --home', () => {
+    const cwd = realpathSync(mkdtempSync(resolve(tmpdir(), 'learning-relative-home-')));
+    tempRoots.push(cwd);
+    const relative = '账号 数据';
+    const home = resolve(cwd, relative);
+    const run = (command: string) => JSON.parse(execFileSync(process.execPath, [cliEntry, command, '--home', relative, '--json'], {
+      cwd, env: { ...process.env, LEARNING_HOME: resolve(cwd, 'ignored-env') },
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    })).data;
+    expect(run('doctor')).toMatchObject({ home, initialized: false });
+    expect(existsSync(home)).toBe(false);
+    expect(run('init')).toMatchObject({ home, initialized: true });
+    expect(run('doctor')).toMatchObject({ home, initialized: true });
+    expect(existsSync(resolve(home, 'state.db'))).toBe(true);
+    expect(existsSync(resolve(cwd, 'ignored-env'))).toBe(false);
   });
 
   it('doctor JSON reports actual local state and renderer limits in one result', () => {
