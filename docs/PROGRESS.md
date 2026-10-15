@@ -749,3 +749,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 验证：pnpm lint/typecheck/build、pnpm test（SDK 278、CLI 152）、pnpm test:e2e（7）、check-boundaries、test-release、test-distribution（含真实 PTY）、固定 BUN_BINARY 的 test-bun-runtime 均 exit 0。新 catalog 正向与 controls exit 0；controls 内故意失败均检查 exit 1。首轮全套 CLI 的 ffprobe 可用性断言失败，单独 5 项与整套 152 项重跑通过；保留首败记录，未修改该超时或放宽断言。
 - CI：保留五目标构建/运行与 tarball 门禁，在各原生程序 job 新增目录旅程和负例、always 上传脱敏证据；本机仅 macOS arm64 已执行，其他平台与远端 CI 未运行。真实账号/学校服务未访问，live 属 LEARNING-05。
 - 详细验收及最终签名提交见根工作区 docs/e2e/results/LEARNING-01.md。未 push、不关闭 issue，不代替主代理合并 integration。
+
+### 2026-10-15 · LEARNING-01 Windows 清理分段修复
+
+- PR #19 首个 Windows job `38722826869/job/116381339601` 在 `test-binary-catalog.mjs` 清理读回失败：第一轮报告无业务命令、`cleaned=false`，首败保留为远端 artifact `catalog-evidence-windows-x64`（Artifact ID 11967221941）。这不是正向业务断言失败；不删除目录存在性检查。
+- 修复仅覆盖确定的生命周期/删除时序：每个正式 CLI 子进程等待 `close`（进程退出且 stdio 关闭）后再继续；代理关闭后，Windows 上 `rmSync` 遇仍存在目录或删除错误时以 100ms 间隔最多重试 50 次（总计约 5 秒），非 Windows 不等待。最终仍要求 `!existsSync(directory)`，并把清理尝试次数/最后安全错误码写入脱敏报告。
+- Node v24.11.1 本机 macOS arm64 复验：`node scripts/test-binary-catalog.mjs` exit 0，两轮各 44 个命令、37 个 HTTPS 请求/22 个 CONNECT，均 `cleaned=true`；`node scripts/test-binary-catalog-controls.mjs` exit 0，四个故意失败控制和代理未知目的地拒绝均保持非零/拒绝。`pnpm exec eslint scripts/test-binary-catalog.mjs`、`git diff --check` exit 0。
+- 边界：macOS 通过不证明 Windows 已修复；本条需推送到 PR 后由同一 Windows job 远端复验。学堂独立 WS 扫码与 WS 出站隔离仍是后续独立缺口，不因 HTTP proxy 环境变量存在而推断通过。

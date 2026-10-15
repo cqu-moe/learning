@@ -13,6 +13,22 @@ const reportDir = resolve(root, 'dist/e2e');
 mkdirSync(reportDir, { recursive: true });
 const report = { schemaVersion: 1, control, sourceDirty: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), artifact: { name: executable, sha256: existsSync(binary) ? createHash('sha256').update(readFileSync(binary)).digest('hex') : null }, runs: [] };
 const failures = [];
+
+async function removeIsolatedDirectory(directory) {
+  let lastError;
+  for (let attempt = 1; attempt <= 50; attempt += 1) {
+    try {
+      rmSync(directory, { recursive: true, force: true });
+      if (!existsSync(directory)) return { cleaned: true, attempts: attempt };
+    } catch (error) {
+      lastError = error;
+    }
+    if (process.platform !== 'win32') break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return { cleaned: !existsSync(directory), attempts: 50, error: lastError?.code ?? lastError?.name };
+}
+
 try {
   assert.ok(existsSync(binary), 'standalone artifact missing');
   const { platformProxy } = await import('./helpers/platform-proxy.mjs');
@@ -40,7 +56,7 @@ try {
         child.stdout.on('data', chunk => { stdout += chunk; });
         child.stderr.on('data', chunk => { stderr += chunk; });
         const timer = setTimeout(() => child.kill('SIGKILL'), 20_000);
-        const code = await new Promise((res, rej) => { child.once('error', rej); child.once('exit', res); }).finally(() => clearTimeout(timer));
+        const code = await new Promise((res, rej) => { child.once('error', rej); child.once('close', res); }).finally(() => clearTimeout(timer));
         record.commands.push({ profile: args.includes('--profile') ? args[args.indexOf('--profile') + 1] : undefined, command: args[0] + (['profile','config','telemetry'].includes(args[0]) ? ' ' + args[1] : ''), code });
         // Do not include raw output in failure reports: login traffic contains synthetic secrets.
         const envelope = JSON.parse(stdout || stderr);
@@ -177,8 +193,10 @@ try {
     } finally {
       record.network = proxy?.evidence();
       try { await proxy?.close(); } finally {
-        rmSync(directory, { recursive: true, force: true });
-        record.cleaned = !existsSync(directory);
+        const cleanup = await removeIsolatedDirectory(directory);
+        record.cleaned = cleanup.cleaned;
+        record.cleanupAttempts = cleanup.attempts;
+        record.cleanupError = cleanup.error;
         assert.equal(record.cleaned, true);
       }
     }
