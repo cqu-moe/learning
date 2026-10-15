@@ -13,7 +13,7 @@ const output = resolve(root, 'dist/e2e');
 mkdirSync(output, { recursive: true });
 const directory = mkdtempSync(resolve(root, 'dist/权限 诊断 '));
 const report = { diagnosticOnly: true, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), probes: [], cleaned: false };
-let proxy, asciiDirectory;
+let proxy;
 const failures = [];
 try {
   proxy = await platformProxy(directory);
@@ -84,37 +84,34 @@ try {
   }
   // Pure startup controls: no ACL/data path or trust-policy change. Bracket
   // these with the same baseline so a warm-up or runner-load shift is visible.
-  asciiDirectory = mkdtempSync(resolve(root, 'dist/windows-ps-'));
-  if (!/^[\x20-\x7e]+$/.test(asciiDirectory)) {
-    throw Object.assign(new Error('ASCII startup control needs an ASCII checkout parent'), { code: 'ASCII_CONTROL_UNAVAILABLE' });
-  }
-  // Both path classes start with the same empty layout; do not compare the
-  // previous CLI/TLS fixture contents with a fresh ASCII profile directory.
-  for (const parent of [directory, asciiDirectory]) {
-    for (const name of ['startup-profile', 'startup-temp', 'startup-cwd']) mkdirSync(join(parent, name));
-  }
+  for (const name of ['startup-profile', 'startup-temp', 'startup-cwd']) mkdirSync(join(directory, name));
   const startup = {
     ...minimal, HOME: join(directory, 'startup-profile'), USERPROFILE: join(directory, 'startup-profile'),
     TMPDIR: join(directory, 'startup-temp'), TMP: join(directory, 'startup-temp'), TEMP: join(directory, 'startup-temp'),
   };
   const cwd = join(directory, 'startup-cwd');
-  const osDiscovery = { ...startup };
-  // Only these non-secret OS values from the disposable Windows CI runner.
-  // A grouped improvement needs a later one-variable bisection, not a fix.
-  for (const name of ['ProgramData', 'ALLUSERSPROFILE', 'COMPUTERNAME']) {
-    if (!process.env[name]) throw Object.assign(new Error('OS startup control is unavailable'), { code: 'OS_CONTROL_UNAVAILABLE' });
-    osDiscovery[name] = process.env[name];
+  // Previous native controls ruled out ASCII profile/temp/cwd and three OS
+  // discovery variables. Distinguish shell startup from command autoload,
+  // and compare only non-secret OS metadata. These are diagnostics, not a
+  // relaxation of the empty-PATH standalone gate.
+  const consoleArgs = ['-NoProfile', '-NonInteractive', '-Command', "[Console]::WriteLine('DIAG:ready')"];
+  const systemMetadata = { ...startup, ...windows, HOME: startup.HOME, USERPROFILE: startup.USERPROFILE, TMPDIR: startup.TMPDIR, TMP: startup.TMP, TEMP: startup.TEMP };
+  for (const name of ['ProgramData', 'ALLUSERSPROFILE', 'COMPUTERNAME', 'USERNAME',
+    'USERDOMAIN', 'USERDOMAIN_ROAMINGPROFILE', 'PROCESSOR_ARCHITECTURE',
+    'PROCESSOR_IDENTIFIER', 'PROCESSOR_LEVEL', 'PROCESSOR_REVISION',
+    'NUMBER_OF_PROCESSORS', 'OS', 'ProgramFiles', 'ProgramFiles(x86)',
+    'ProgramW6432', 'CommonProgramFiles', 'CommonProgramFiles(x86)', 'CommonProgramW6432']) {
+    if (process.env[name]) systemMetadata[name] = process.env[name];
   }
   const startupArgs = ['-NoProfile', '-NonInteractive', '-Command', "Write-Output 'DIAG:ready'"];
-  for (const [name, env, workingDirectory] of [
-    ['baseline-before', startup, cwd],
-    ['os-discovery-variables', osDiscovery, cwd],
-    ['ascii-profile-only', { ...startup, HOME: join(asciiDirectory, 'startup-profile'), USERPROFILE: join(asciiDirectory, 'startup-profile') }, cwd],
-    ['ascii-temp-only', { ...startup, TMPDIR: join(asciiDirectory, 'startup-temp'), TMP: join(asciiDirectory, 'startup-temp'), TEMP: join(asciiDirectory, 'startup-temp') }, cwd],
-    ['ascii-cwd-only', startup, join(asciiDirectory, 'startup-cwd')],
-    ['baseline-after', startup, cwd],
+  for (const [name, env, args] of [
+    ['baseline-console-before', startup, consoleArgs],
+    ['system-metadata-console', systemMetadata, consoleArgs],
+    ['system-path-console', { ...startup, PATH: join(systemRoot, 'System32') }, consoleArgs],
+    ['system-metadata-write-output', systemMetadata, startupArgs],
+    ['baseline-console-after', startup, consoleArgs],
   ]) {
-    await probe(`startup:${name}`, powershell, startupArgs, env, 35_000, workingDirectory);
+    await probe(`startup:${name}`, powershell, args, env, 35_000, cwd);
   }
   const network = proxy.evidence();
   report.network = { requests: network.requests, tunnels: network.tunnels };
@@ -123,7 +120,7 @@ try {
   report.failure = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : error.name;
 } finally {
   try { await proxy?.close(); } catch (error) { failures.push(error); }
-  const directories = [directory, asciiDirectory].filter(Boolean);
+  const directories = [directory];
   for (const owned of directories) {
     try {
       await rm(owned, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
