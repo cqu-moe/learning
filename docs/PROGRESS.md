@@ -756,3 +756,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - Node 24.11.1 / pnpm 11.19.0：冻结离线安装、build、lint、typecheck、test（SDK 278/278、CLI 152/152）、test:e2e（7/7）、test-release、check-boundaries、git diff --check 全部 exit 0；遥测专项 11/11。默认构建对缺失/空/非法 token 的三个负例与未知参数检查通过。
 - 官方 Bun 1.4.3 下载与 SHA256 校验通过。本机 macOS arm64 的无 token PR 模式，以及仅使用虚构 fixture token 的默认模式，分别真实编译并通过仓库外独立程序、SQLite/账号/权限/锁及真实 PTY 验收，exit 0；设置 CI 禁止实际遥测上传，无生产 token 或账号调用。
 - 五目标远端 CI、合并和 #18 的新检查待后续执行；不把本机 macOS 结果视为其他四平台通过，不触发同版本 Release。下一任务仍为完成用户指定 CI 修复交付，不推进其他 PLAN 项或 Web。
+
+### 2026-10-15 · CI 修复交付与 #18 重新验收（done）
+
+- [修复 PR #20](https://github.com/cqu-moe/learning/pull/20) 的精确 head `302c5d877aa49432be3cc4c791d2a5a1c57edd81` 在 [CI 38724472631](https://github.com/cqu-moe/learning/actions/runs/38724472631) 六项全 success 后合并；合并提交 `4f0919e5fa905767131e26eb9a01856ae41fec68`，合并后 [main CI 38724900152](https://github.com/cqu-moe/learning/actions/runs/38724900152) 六项也全部 success。两轮独立审查已完成，最终无阻塞问题。
+- 旧运行重跑沿用旧 SHA，因此用 GitHub update-branch 将已验证 main 合入 #18，原 head `082193f` 更新为 `5a927db0ee6021899533d6abc730117f89f0d7fe`。新 fork 运行经维护者批准后，[CI 38724940508](https://github.com/cqu-moe/learning/actions/runs/38724940508) Node 门禁与五个原生二进制检查全部 success，Windows 权限实际验收也通过。#18 保持 OPEN，未获授权合并它。
+- 已读回 #18 相对 main 仍只有原 private-directory.ts、profile.test.ts 与其进度记录三个文件；没有改写其业务补丁。本地主工作区快进至上述修复合并提交；本条为文档验收记录，以 `[skip ci]` 提交，不更改已验证源码或 CLI 版本、不发布 Release。用户指定任务完成，不继续其他 PLAN 项或 Web。
