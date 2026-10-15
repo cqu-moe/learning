@@ -43,11 +43,11 @@ try {
   const start = source.indexOf('const secureDirectoryScript = `') + 'const secureDirectoryScript = `'.length;
   const end = source.indexOf('`;', start);
   assert.ok(start >= 'const secureDirectoryScript = `'.length && end > start);
-  const script = "Write-Output 'DIAG:start'\n" + source.slice(start, end)
-    .replace('$ancestor = $root', "Write-Output 'DIAG:ancestors'\n$ancestor = $root")
-    .replace('[void][System.IO.Directory]::CreateDirectory($root)', "Write-Output 'DIAG:create'\n[void][System.IO.Directory]::CreateDirectory($root)")
-    .replace('Clear-And-GrantAcl $root $true', "Write-Output 'DIAG:acl'\nClear-And-GrantAcl $root $true\nWrite-Output 'DIAG:acl-done'")
-    + "\nWrite-Output 'DIAG:done'";
+  const script = "[Console]::WriteLine('DIAG:start')\n" + source.slice(start, end)
+    .replace('$ancestor = $root', "[Console]::WriteLine('DIAG:ancestors')\n$ancestor = $root")
+    .replace('[void][System.IO.Directory]::CreateDirectory($root)', "[Console]::WriteLine('DIAG:create')\n[void][System.IO.Directory]::CreateDirectory($root)")
+    .replace('Clear-And-GrantAcl $root $true', "[Console]::WriteLine('DIAG:acl')\nClear-And-GrantAcl $root $true\n[Console]::WriteLine('DIAG:acl-done')")
+    + "\n[Console]::WriteLine('DIAG:done')";
   async function probe(name, command, args, env, timeoutMs, cwd = directory) {
     const started = Date.now();
     let stdout = '', stderrBytes = 0, spawnError, timedOut = false;
