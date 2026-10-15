@@ -13,7 +13,7 @@ const output = resolve(root, 'dist/e2e');
 mkdirSync(output, { recursive: true });
 const directory = mkdtempSync(resolve(root, 'dist/权限 诊断 '));
 const report = { diagnosticOnly: true, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), probes: [], cleaned: false };
-let proxy;
+let proxy, asciiDirectory;
 const failures = [];
 try {
   proxy = await platformProxy(directory);
@@ -48,11 +48,20 @@ try {
     .replace('[void][System.IO.Directory]::CreateDirectory($root)', "Write-Output 'DIAG:create'\n[void][System.IO.Directory]::CreateDirectory($root)")
     .replace('Clear-And-GrantAcl $root $true', "Write-Output 'DIAG:acl'\nClear-And-GrantAcl $root $true\nWrite-Output 'DIAG:acl-done'")
     + "\nWrite-Output 'DIAG:done'";
-  async function probe(name, command, args, env, timeoutMs) {
+  async function probe(name, command, args, env, timeoutMs, cwd = directory) {
     const started = Date.now();
     let stdout = '', stderrBytes = 0, spawnError, timedOut = false;
-    const child = spawn(command, args, { cwd: directory, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.on('data', chunk => { if (stdout.length < 16_384) stdout += chunk.toString(); });
+    const markerTimings = [];
+    const child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', chunk => {
+      stdout = (stdout + chunk.toString()).slice(0, 16_384);
+      for (const line of stdout.split(/\r?\n/).slice(0, -1)) {
+        const marker = line.trim();
+        if (/^DIAG:(start|ready|ancestors|create|acl|acl-done|done)$/.test(marker) && !markerTimings.some(item => item.marker === marker)) {
+          markerTimings.push({ marker, elapsedMs: Date.now() - started });
+        }
+      }
+    });
     child.stderr.on('data', chunk => { stderrBytes += chunk.length; });
     child.once('error', error => { spawnError = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : 'SPAWN_ERROR'; });
     const timer = setTimeout(() => {
@@ -65,13 +74,47 @@ try {
     const markers = stdout.split(/\r?\n/).map(line => line.trim()).filter(line => /^DIAG:(start|ready|ancestors|create|acl|acl-done|done)$/.test(line));
     let errorCode;
     try { const code = JSON.parse(stdout).error?.code; if (/^[A-Z0-9_]+$/.test(code ?? '')) errorCode = code; } catch { /* PowerShell marker output is not JSON. */ }
-    report.probes.push({ name, elapsedMs: Date.now() - started, timeoutMs, timedOut, ...result, ...(spawnError ? { spawnError } : {}), markers, ...(errorCode ? { errorCode } : {}), stdoutBytes: Buffer.byteLength(stdout), stderrBytes });
+    report.probes.push({ name, elapsedMs: Date.now() - started, timeoutMs, timedOut, ...result, ...(spawnError ? { spawnError } : {}), markers, markerTimings, ...(errorCode ? { errorCode } : {}), stdoutBytes: Buffer.byteLength(stdout), stderrBytes });
     writeFileSync(join(output, 'windows-private-directory-diagnostic.json'), JSON.stringify(report, null, 2));
   }
   for (const [name, env] of [['minimal', minimal], ['windows-system-and-isolated-profile', windows]]) {
     await probe(`${name}:powershell-start`, powershell, ['-NoProfile', '-NonInteractive', '-Command', "Write-Output 'DIAG:ready'"], env, 35_000);
     await probe(`${name}:production-acl-script`, powershell, ['-NoProfile', '-NonInteractive', '-Command', script], { ...env, LEARNING_PRIVATE_DIRECTORY_PATH: join(directory, `${name} 权限`) }, 35_000);
     await probe(`${name}:compiled-cli-init`, program, ['--home', join(directory, `${name} 账号`), 'init', '--json', '--no-interactive'], env, 75_000);
+  }
+  // Pure startup controls: no ACL/data path or trust-policy change. Bracket
+  // these with the same baseline so a warm-up or runner-load shift is visible.
+  asciiDirectory = mkdtempSync(resolve(root, 'dist/windows-ps-'));
+  if (!/^[\x20-\x7e]+$/.test(asciiDirectory)) {
+    throw Object.assign(new Error('ASCII startup control needs an ASCII checkout parent'), { code: 'ASCII_CONTROL_UNAVAILABLE' });
+  }
+  // Both path classes start with the same empty layout; do not compare the
+  // previous CLI/TLS fixture contents with a fresh ASCII profile directory.
+  for (const parent of [directory, asciiDirectory]) {
+    for (const name of ['startup-profile', 'startup-temp', 'startup-cwd']) mkdirSync(join(parent, name));
+  }
+  const startup = {
+    ...minimal, HOME: join(directory, 'startup-profile'), USERPROFILE: join(directory, 'startup-profile'),
+    TMPDIR: join(directory, 'startup-temp'), TMP: join(directory, 'startup-temp'), TEMP: join(directory, 'startup-temp'),
+  };
+  const cwd = join(directory, 'startup-cwd');
+  const osDiscovery = { ...startup };
+  // Only these non-secret OS values from the disposable Windows CI runner.
+  // A grouped improvement needs a later one-variable bisection, not a fix.
+  for (const name of ['ProgramData', 'ALLUSERSPROFILE', 'COMPUTERNAME']) {
+    if (!process.env[name]) throw Object.assign(new Error('OS startup control is unavailable'), { code: 'OS_CONTROL_UNAVAILABLE' });
+    osDiscovery[name] = process.env[name];
+  }
+  const startupArgs = ['-NoProfile', '-NonInteractive', '-Command', "Write-Output 'DIAG:ready'"];
+  for (const [name, env, workingDirectory] of [
+    ['baseline-before', startup, cwd],
+    ['os-discovery-variables', osDiscovery, cwd],
+    ['ascii-profile-only', { ...startup, HOME: join(asciiDirectory, 'startup-profile'), USERPROFILE: join(asciiDirectory, 'startup-profile') }, cwd],
+    ['ascii-temp-only', { ...startup, TMPDIR: join(asciiDirectory, 'startup-temp'), TMP: join(asciiDirectory, 'startup-temp'), TEMP: join(asciiDirectory, 'startup-temp') }, cwd],
+    ['ascii-cwd-only', startup, join(asciiDirectory, 'startup-cwd')],
+    ['baseline-after', startup, cwd],
+  ]) {
+    await probe(`startup:${name}`, powershell, startupArgs, env, 35_000, workingDirectory);
   }
   const network = proxy.evidence();
   report.network = { requests: network.requests, tunnels: network.tunnels };
@@ -80,13 +123,14 @@ try {
   report.failure = /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : error.name;
 } finally {
   try { await proxy?.close(); } catch (error) { failures.push(error); }
-  try {
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  } catch (error) { failures.push(error); }
-  finally {
-    report.cleaned = !existsSync(directory);
-    writeFileSync(join(output, 'windows-private-directory-diagnostic.json'), JSON.stringify(report, null, 2));
-    if (!report.cleaned) failures.push(new Error('Windows diagnostic left its isolated directory'));
+  const directories = [directory, asciiDirectory].filter(Boolean);
+  for (const owned of directories) {
+    try {
+      await rm(owned, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) { failures.push(error); }
   }
+  report.cleaned = directories.every(owned => !existsSync(owned));
+  writeFileSync(join(output, 'windows-private-directory-diagnostic.json'), JSON.stringify(report, null, 2));
+  if (!report.cleaned) failures.push(new Error('Windows diagnostic left its isolated directory'));
 }
 if (failures.length) throw new AggregateError(failures, 'Windows diagnostic setup or cleanup failed');
