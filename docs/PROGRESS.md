@@ -738,3 +738,21 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 此前耗时假设修复继续保留：进程启动耗时不决定是否单批，业务输出在 HTTP 响应前产生；连续 start/finish 的单批保证由独立测试验证。等待本 PR 的原生五平台 CI 与 Node 门禁。
 
 公开后的首轮原生 CI 38451785866：五个实际二进制目标全部通过；Node 门禁的作业离线 fixture 用例耗时 5.8 秒，超过默认 5 秒，全部业务断言未报差异。CLI Vitest 限制最多两个文件 worker，给真实 CLI 子进程保留 CPU；不增加超时、不删除断言。Node24 本地 141 项常规测试通过；遥测 11 项初次因沙箱禁止 localhost listen 未运行，允许本地 fixture 监听后 11/11 通过；root lint、diff check 通过。最终远端结果后续读回。
+
+### 2026-10-15 · PR #18 CI 失败诊断（诊断完成，修复未实施）
+
+- 用户指定排查 [PR #18](https://github.com/cqu-moe/learning/pull/18)。只读查询 `gh pr view 18 --repo cqu-moe/learning`、`gh run view 38712188494 --repo cqu-moe/learning --log-failed` 与 Actions 变量元数据，exit 0；未输出变量值。PR head 为 `082193fb6ecc141ea83f34e0d748110b5db40686`，来自 `yong0510zhao/learning`；仅修改 Windows 私有目录、profile 测试与进度文档。
+- 五个 binary job 都在 `Compile official standalone executable` 失败：此次 fork PR 的 `POSTHOG_PROJECT_TOKEN` 环境值为空，构建脚本第 34 行拒绝；主仓库变量存在且格式有效。未改动的本地 main `e9e8860` 上，`env -u POSTHOG_PROJECT_TOKEN /Users/uu/.nvm/versions/node/v24.11.1/bin/node scripts/build-cli.mjs` 同样报错，exit 1。现有 PR 校验流程依赖发布配置，是这五项失败的共同原因。
+- verify 的 lint/typecheck、SDK 278 项通过，CLI 152 项通过、1 项失败：`telemetry.test.ts:340` 将 init 的两条事件限定为一次 HTTP 请求，实际收到两次。使用 Node 24.11.1 的 `--input-type=module` stdin 最小探针，调用现有 dist 的 startTelemetry/finishTelemetry，仅连接本机 localhost fixture：间隔 0ms 得到 1 次请求；间隔 200ms 连续两次均得到 2 次请求，原断言 exit 1。两种情况均验证 started/completed 完整且 operation_id 相同，证明请求数受 100ms 合批时序影响。临时数据已清理，无源码插桩。
+- 本次仅增加诊断记录；未修改 workflow、产品或测试，未提交、推送、重跑远端 CI、合并或发行。修复方向：PR 校验构建不依赖生产遥测变量，正式发行继续校验配置；opt-out 测试验证两条事件及关闭后无新增上报，不限定 init 的请求批次数。另一个 default-on 进程测试也含同类单批假设，应一并检查。
+- 证据边界：没有完成 PR #18 Windows 权限修复的原生验收；不能据此宣称 PR 可合并。下一步为上述 CI 修复与五目标重新验收，不推进其他 PLAN 项或延期 Web。
+
+### 2026-10-15 · fork PR 构建与遥测测试修复（本地通过，远端待验收）
+
+- 用户授权修复上述两项 CI 问题、开 PR、全部门禁通过后合并，再重跑 #18。隔离分支 `codex/fix-fork-ci` 基于 `e9e8860`；未修改 #18 的 Windows 产品实现或 CLI 版本。
+- PR 构建与独立程序验收显式传入 `--without-telemetry`，不读取生产 token，验证程序确实未内置 token；main/release 默认模式仍严格要求有效 token、验证内置配置与用户运行时默认开启。未知参数直接拒绝。验收清除外部 token 覆盖，防止把环境变量误认为二进制内置配置；发行文档同步。
+- 遥测 default-on 与 opt-out 进程测试改为聚合事件断言，保留 started/completed 顺序、唯一标识和 operation_id、开关状态及关闭后无新增请求。测试子进程改为异步等待，使本机 HTTP fixture 能响应和及时观察异常上报；短命令单批、长命令提前发送 started 的既有专项测试保留。产品遥测逻辑未改变。
+- 红灯证据：旧 `build-cli.mjs --without-telemetry` 在缺 token 时 exit 1；上一条最小探针在 200ms 间隔下稳定触发旧单批断言。首轮新编译程序暴露验收仍强制要求 token，实际 test-distribution exit 1；独立审查同样指出该缺口，已修复传参和精确预期。
+- Node 24.11.1 / pnpm 11.19.0：冻结离线安装、build、lint、typecheck、test（SDK 278/278、CLI 152/152）、test:e2e（7/7）、test-release、check-boundaries、git diff --check 全部 exit 0；遥测专项 11/11。默认构建对缺失/空/非法 token 的三个负例与未知参数检查通过。
+- 官方 Bun 1.4.3 下载与 SHA256 校验通过。本机 macOS arm64 的无 token PR 模式，以及仅使用虚构 fixture token 的默认模式，分别真实编译并通过仓库外独立程序、SQLite/账号/权限/锁及真实 PTY 验收，exit 0；设置 CI 禁止实际遥测上传，无生产 token 或账号调用。
+- 五目标远端 CI、合并和 #18 的新检查待后续执行；不把本机 macOS 结果视为其他四平台通过，不触发同版本 Release。下一任务仍为完成用户指定 CI 修复交付，不推进其他 PLAN 项或 Web。

@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -128,14 +128,22 @@ async function waitForTokenEvents(apiKey: string, predicate: (events: TelemetryE
   }
 }
 
-function runUserCli(args: string[], home: string, env = userEnv(home)) {
-  const result = spawnSync(process.execPath, [cliEntry, ...args, '--home', home, '--json'], {
-    env,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 5000,
+async function runUserCli(args: string[], home: string, env = userEnv(home)) {
+  // Keep the fixture server responsive while the real CLI sends and exits.
+  const child = spawn(process.execPath, [cliEntry, ...args, '--home', home, '--json'], {
+    env, stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000,
   });
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  const status = await new Promise<number | null>((resolveExit, rejectExit) => {
+    child.once('error', rejectExit);
+    child.once('close', resolveExit);
+  });
+  return { status, stdout, stderr };
 }
 
 beforeAll(async () => {
@@ -160,7 +168,7 @@ afterAll(async () => {
 describe('cli telemetry lifecycle', () => {
   it('is default-on, notices once on stderr, and sends only allowlisted command facts', async () => {
     const home = freshHome('learning-telemetry-live-');
-    const first = runUserCli(['init'], home);
+    const first = await runUserCli(['init'], home);
     expect(first.status).toBe(0);
     expect(existsSync(resolve(home, 'telemetry.json')), `test endpoint ${baseUrl}`).toBe(true);
     expect(first.stderr).toContain('learning telemetry off');
@@ -170,9 +178,11 @@ describe('cli telemetry lifecycle', () => {
     expect(statSync(resolve(home, 'telemetry.json')).mode & 0o777).toBe(0o600);
 
     const payloads = await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 2);
-    expect(payloads.map(payload => payload.url)).toEqual(['/batch']);
-    expect(payloads.map(payload => payload.body.api_key)).toEqual(['phc_public_fixture_token_1234567890abcdef']);
-    expect(payloads.map(payload => payload.body.batch.map(event => event.event))).toEqual([['cli_command_started', 'cli_command_completed']]);
+    for (const payload of payloads) {
+      expect(payload.url).toBe('/batch');
+      expect(payload.body.api_key).toBe('phc_public_fixture_token_1234567890abcdef');
+    }
+    expect(payloads.flatMap(payload => payload.body.batch.map(event => event.event))).toEqual(['cli_command_started', 'cli_command_completed']);
     expect(new Set(payloads.flatMap(payload => payload.body.batch.map(event => event.uuid))).size).toBe(2);
     for (const uuid of payloads.flatMap(payload => payload.body.batch.map(event => event.uuid))) {
       expect(uuid).toMatch(/^[0-9a-f-]{36}$/);
@@ -209,7 +219,7 @@ describe('cli telemetry lifecycle', () => {
     });
     expect(JSON.stringify(payloads)).not.toContain(home);
 
-    const second = runUserCli(['init'], home);
+    const second = await runUserCli(['init'], home);
     expect(second.status).toBe(0);
     expect(second.stderr).toBe('');
     await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 4);
@@ -218,9 +228,9 @@ describe('cli telemetry lifecycle', () => {
   it('keeps a failing command result and exit code unchanged without uploading its argument', async () => {
     const home = freshHome('learning-telemetry-sensitive-');
     const token = 'phc_sensitive_fixture_token_1234567890abcdef';
-    expect(runUserCli(['init'], home, userEnv(home, { token })).status).toBe(0);
+    expect((await runUserCli(['init'], home, userEnv(home, { token }))).status).toBe(0);
     await waitForTokenPayloads(token, 2);
-    const failed = runUserCli(['jobs', 'show', 'SECRET_JOB_ARGUMENT'], home, userEnv(home, { token }));
+    const failed = await runUserCli(['jobs', 'show', 'SECRET_JOB_ARGUMENT'], home, userEnv(home, { token }));
     expect(failed.status).toBe(2);
     expect(JSON.parse(failed.stdout)).toMatchObject({ ok: false, exitCode: 2, error: { code: 'INVALID_INPUT' } });
     const payloads = await waitForTokenPayloads(token, 4);
@@ -305,62 +315,64 @@ describe('cli telemetry lifecycle', () => {
     }
   });
 
-  it('keeps command result and exit code unchanged when sending fails', () => {
+  it('keeps command result and exit code unchanged when sending fails', async () => {
     const home = freshHome('learning-telemetry-network-');
     const env = userEnv(home);
     env.LEARNING_TELEMETRY_HOST = 'http://127.0.0.1:9';
     const before = requests.length;
-    const failed = runUserCli(['init'], home, env);
+    const failed = await runUserCli(['init'], home, env);
     expect(failed.status).toBe(0);
     expect(failed.stderr).toContain('learning telemetry off');
     expect(JSON.parse(failed.stdout)).toMatchObject({ ok: true, exitCode: 0 });
     expect(requests).toHaveLength(before);
   });
 
-  it('works with no token configured and still creates only the local installation state', () => {
+  it('works with no token configured and still creates only the local installation state', async () => {
     const home = freshHome('learning-telemetry-no-token-');
     const before = requests.length;
-    const first = runUserCli(['init'], home, userEnv(home, { telemetry: false }));
+    const first = await runUserCli(['init'], home, userEnv(home, { telemetry: false }));
     expect(first.status).toBe(0);
     expect(first.stderr).toContain('learning telemetry off');
     expect(existsSync(resolve(home, 'telemetry.json'))).toBe(true);
-    expect(runUserCli(['init'], home, userEnv(home, { telemetry: false })).stderr).toBe('');
+    expect((await runUserCli(['init'], home, userEnv(home, { telemetry: false }))).stderr).toBe('');
     expect(requests).toHaveLength(before);
   });
 
   it('honors persistent and environment opt-out without touching stdout', async () => {
     const home = freshHome('learning-telemetry-off-');
-    expect(runUserCli(['init'], home).status).toBe(0);
-    await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 2);
+    expect((await runUserCli(['init'], home)).status).toBe(0);
+    const initial = (await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 2)).flatMap(payload => payload.body.batch);
+    expect(initial.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
+    expect(new Set(initial.map(event => event.properties.operation_id)).size).toBe(1);
+    const beforeOff = requests.length;
 
-    const disabled = runUserCli(['telemetry', 'off'], home);
+    const disabled = await runUserCli(['telemetry', 'off'], home);
     expect(disabled.status).toBe(0);
     expect(JSON.parse(disabled.stdout).data).toEqual({ enabled: false, reason: 'persistent' });
     const afterOff = requests.length;
-    expect(afterOff).toBe(1);
-    expect(requests[0]!.body.batch).toHaveLength(2);
-    expect(runUserCli(['init'], home).status).toBe(0);
+    expect(afterOff).toBe(beforeOff);
+    expect((await runUserCli(['init'], home)).status).toBe(0);
     expect(requests).toHaveLength(afterOff);
 
-    const enabled = runUserCli(['telemetry', 'on'], home);
+    const enabled = await runUserCli(['telemetry', 'on'], home);
     expect(enabled.status).toBe(0);
     expect(JSON.parse(enabled.stdout).data).toEqual({ enabled: true, reason: 'persistent' });
     expect(requests).toHaveLength(afterOff);
-    expect(runUserCli(['init'], home).status).toBe(0);
+    expect((await runUserCli(['init'], home)).status).toBe(0);
     await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 4);
     const afterEnable = requests.length;
 
     const envOff = userEnv(home);
     envOff.LEARNING_TELEMETRY_DISABLED = '1';
-    expect(runUserCli(['init'], home, envOff).status).toBe(0);
+    expect((await runUserCli(['init'], home, envOff)).status).toBe(0);
     expect(requests).toHaveLength(afterEnable);
   });
 
-  it('is automatically disabled by CI and does not run for help or version', () => {
+  it('is automatically disabled by CI and does not run for help or version', async () => {
     const before = requests.length;
     for (const overrides of [{ CI: '1' }, { VITEST: '1' }, { NODE_ENV: 'test' }, { NODE_ENV: 'development' }]) {
       const ciHome = freshHome('learning-telemetry-ci-');
-      const disabled = runUserCli(['init'], ciHome, { ...userEnv(ciHome), ...overrides });
+      const disabled = await runUserCli(['init'], ciHome, { ...userEnv(ciHome), ...overrides });
       expect(disabled.status).toBe(0);
       expect(disabled.stderr).toBe('');
       expect(existsSync(resolve(ciHome, 'telemetry.json'))).toBe(false);
@@ -369,7 +381,7 @@ describe('cli telemetry lifecycle', () => {
 
     const helpHome = freshHome('learning-telemetry-help-');
     for (const args of [['--help'], ['--version']]) {
-      const result = runUserCli(args, helpHome);
+      const result = await runUserCli(args, helpHome);
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
     }
@@ -472,9 +484,9 @@ describe('telemetry job outcomes', () => {
 
   it('maps a warning-driven successful resume to command exit 4 and a local cancel to canceled', async () => {
     const home = freshHome('learning-telemetry-resume-');
-    expect(runUserCli(['init'], home).status).toBe(0);
+    expect((await runUserCli(['init'], home)).status).toBe(0);
     await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 2);
-    const added = runUserCli(['profile', 'add', 'fixture', '--platform', 'ykt'], home);
+    const added = await runUserCli(['profile', 'add', 'fixture', '--platform', 'ykt'], home);
     expect(added.status).toBe(0);
     await waitForTokenEvents('phc_public_fixture_token_1234567890abcdef', events =>
       events.some(event => event.event === 'cli_command_completed' && events.some(other => other.event === 'cli_command_started' && other.properties.operation_id === event.properties.operation_id)));
@@ -500,7 +512,7 @@ describe('telemetry job outcomes', () => {
       state.close();
     }
 
-    const resumed = runUserCli(['jobs', 'resume', warningJob.id, '--profile', 'fixture'], home);
+    const resumed = await runUserCli(['jobs', 'resume', warningJob.id, '--profile', 'fixture'], home);
     expect(resumed.status, resumed.stderr).toBe(4);
     expect(JSON.parse(resumed.stdout)).toMatchObject({ ok: false, exitCode: 4 });
     const resumedEvents = await waitForTokenEvents('phc_public_fixture_token_1234567890abcdef', events =>
@@ -515,7 +527,7 @@ describe('telemetry job outcomes', () => {
     });
     expect(JSON.stringify(resumedEvents)).not.toContain('SECRET_');
 
-    const canceled = runUserCli(['jobs', 'cancel', canceledJob.id, '--profile', 'fixture', '--yes'], home);
+    const canceled = await runUserCli(['jobs', 'cancel', canceledJob.id, '--profile', 'fixture', '--yes'], home);
     expect(canceled.status, canceled.stderr).toBe(0);
     const cancelEvents = await waitForTokenEvents('phc_public_fixture_token_1234567890abcdef', events =>
       events.filter(event => event.properties.job_id === canceledJob.id).length === 2

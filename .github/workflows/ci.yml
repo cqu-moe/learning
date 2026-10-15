@@ -70,12 +70,12 @@ jobs:
       - run: pnpm build
       - name: Verify runtime compatibility
         run: node scripts/test-bun-runtime.mjs
-      - name: Compile official standalone executable
-        run: node scripts/build-cli.mjs
+      - name: Compile standalone executable
+        run: node scripts/build-cli.mjs ${{ github.event_name == 'pull_request' && '--without-telemetry' || '' }}
         env:
-          POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
-      - name: Run standalone release executable
-        run: node scripts/test-distribution.mjs
+          POSTHOG_PROJECT_TOKEN: ${{ github.event_name != 'pull_request' && vars.POSTHOG_PROJECT_TOKEN || '' }}
+      - name: Run standalone executable
+        run: node scripts/test-distribution.mjs ${{ github.event_name == 'pull_request' && '--without-telemetry' || '' }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-${{ matrix.target }}
