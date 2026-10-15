@@ -39,6 +39,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 
 ## 每次实际记录
 
+### 2026-10-15 · Windows 专用目录 ACL 修复
+
+- 复现：Windows 中已初始化目录再次打开时，Set-Acl 请求 SeSecurityPrivilege，导致 init 和 profile 命令报 STORAGE；目录所有者为当前用户且已有 FullControl。
+- 修复：private-directory.ts 使用新建 DirectorySecurity/FileSecurity 和 .NET SetAccessControl，仅设置 owner/DACL，不请求审计权限；保留用户专用 FullControl、继承控制、路径边界和 reparse point 检查。
+- 回归：profile.test.ts 新增重复 init 不替换 master.key、随后能读取账号列表的用例。Windows / Node 24.11.1 执行 `vitest run --root apps/cli tests/profile.test.ts --testTimeout 20000`，4/4 exit 0；使用工作区 TEMP/TMP 和系统 Windows PowerShell 模块目录。默认 5 秒不足以完成本机多次 PowerShell 子进程，测试源码未放宽超时。
+- 验证：SDK/CLI 两个 tsconfig.build.json 编译、目标源码/测试 ESLint、连续 init 两次、doctor、profile list --json 均 exit 0；目录与 master.key ACL 仅当前用户 FullControl。
+- 未跑完整测试集；doctor.test.ts 的可用 ffprobe fixture 使用 Unix shebang，在 Windows 失败，未修改该无关用例。尚未验证独立 Bun 程序及其他操作系统，等待 CI。未执行真实平台或付费模型操作。
+
 ### 2026-09-23 · T00 固定源码与证据目录（done）
 
 - 仓库初始化：git init -b main；创建 GitHub 私有仓库 cqu-moe/learning 并推送初始文档提交（用户明确授权）。Git 身份使用已有全局配置，未改动。

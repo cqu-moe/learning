@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -27,6 +27,17 @@ function run(dir: string, ...args: string[]) {
 afterAll(() => { for (const dir of homes) rmSync(dir, { recursive: true, force: true }); });
 
 describe('local profiles', () => {
+  it('reopens an initialized directory without replacing its master key', () => {
+    const dir = home();
+    expect(run(dir, 'init').code).toBe(0);
+    const key = readFileSync(resolve(dir, 'master.key'));
+    expect(run(dir, 'init').code).toBe(0);
+    expect(readFileSync(resolve(dir, 'master.key')).equals(key)).toBe(true);
+    const listed = run(dir, 'profile', 'list', '--json');
+    expect(listed.code).toBe(0);
+    expect(JSON.parse(listed.stdout).data).toEqual({ profiles: [] });
+  });
+
   it('requires initialization before adding a profile', () => {
     const dir = home();
     const add = run(dir, 'profile', 'add', 'alpha', '--platform', 'ykt', '--json');
