@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "b9dedb033554bd5815706a37884e4cb2ce6c2151",
+  "sourceDirty": false,
+  "artifact": {
+    "name": "learning-0.2.7-macos-arm64",
+    "sha256": "3d7e4751b6562f853add428566e2b7576513b3dea6309959682e00ad6f52d8a0"
+  },
+  "platform": "darwin-arm64",
+  "egressBoundary": "sandbox: proxy loopback port only",
+  "control": null,
+  "runs": [],
+  "failure": "nonempty known scenario selection required"
+}

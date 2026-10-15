@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "b9dedb033554bd5815706a37884e4cb2ce6c2151",
+  "sourceDirty": false,
+  "artifact": {
+    "name": "learning-0.2.7-macos-arm64",
+    "sha256": "306c6ca7407560340797866e077e053627ad409277d1b9da58106fce4cf717cb"
+  },
+  "platform": "darwin-arm64",
+  "egressBoundary": "sandbox: proxy loopback port only",
+  "control": null,
+  "runs": [
+    {
+      "pass": 1,
+      "cases": [],
+      "commands": [
+        {
+          "command": [
+            "init"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 0,
+          "stderrBytes": 0
+        }
+      ],
+      "artifacts": [],
+      "cleaned": true,
+      "failures": [
+        {
+          "phase": "setup",
+          "code": "ERR_ASSERTION"
+        }
+      ],
+      "status": "failed",
+      "childrenClosed": true,
+      "platform": {
+        "requests": 0,
+        "mutations": [],
+        "rejected": 0,
+        "tunnels": 0
+      },
+      "listenersClosed": true,
+      "cleanupAttempts": 1
+    }
+  ]
+}

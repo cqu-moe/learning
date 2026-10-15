@@ -1,0 +1,10 @@
+✔ negative child report is readable with POSIX and Windows separators and CRLF (137.746959ms)
+✔ positive native matching child is rejected as a negative control (4927.385875ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5106.878959

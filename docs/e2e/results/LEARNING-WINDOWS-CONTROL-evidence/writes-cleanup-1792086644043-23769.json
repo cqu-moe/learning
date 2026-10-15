@@ -1,0 +1,411 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "b9dedb033554bd5815706a37884e4cb2ce6c2151",
+  "sourceDirty": false,
+  "artifact": {
+    "name": "learning-0.2.7-macos-arm64",
+    "sha256": "3d7e4751b6562f853add428566e2b7576513b3dea6309959682e00ad6f52d8a0"
+  },
+  "platform": "darwin-arm64",
+  "egressBoundary": "sandbox: proxy loopback port only",
+  "control": "cleanup",
+  "runs": [
+    {
+      "pass": 1,
+      "cases": [
+        {
+          "name": "matching",
+          "status": "passed",
+          "mutations": 0
+        }
+      ],
+      "commands": [
+        {
+          "command": [
+            "init"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 283,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "ykt",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 230,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/ykt-cookies.json"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "xt",
+            "--platform",
+            "xuetang"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 233,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/xt-cookies.json"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 436,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 352,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "other",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 232,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/other-cookies.json"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 802,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "e7c7dd69b3f1a7fc0be9b36ea826d411307a6008c409162a7d1f78b58b563c61"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 3529,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 881,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "11b1859108628a25d26dea4e659a48226839ff680241b113c7f0d2d47e3179f2"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 3242,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "homework",
+            "draft",
+            "3a69c6c18ab68861c120ee5338a6c47fc702b92777a57d3c04ec7e74aae174ba",
+            "-o",
+            "<isolated-directory>/作业.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 311,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json",
+            "-o",
+            "<isolated-directory>/匹配.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 779,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/冲突乙.json",
+            "-o",
+            "<isolated-directory>/歧义.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 753,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/相同字母不同含义.json",
+            "-o",
+            "<isolated-directory>/冲突正序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 759,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/相同字母不同含义.json",
+            "<isolated-directory>/冲突甲.json",
+            "-o",
+            "<isolated-directory>/冲突反序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 759,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/不同字母相同含义.json",
+            "-o",
+            "<isolated-directory>/一致正序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 761,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/不同字母相同含义.json",
+            "<isolated-directory>/冲突甲.json",
+            "-o",
+            "<isolated-directory>/一致反序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 761,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/不存在选项.json"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 608,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/建议.json",
+            "-o",
+            "<isolated-directory>/建议.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 777,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json"
+          ],
+          "profile": "other",
+          "code": 3,
+          "stdoutBytes": 252,
+          "stderrBytes": 0,
+          "errorCode": "FORBIDDEN"
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/坏反馈.json"
+          ],
+          "profile": "ykt",
+          "code": 2,
+          "stdoutBytes": 299,
+          "stderrBytes": 0,
+          "errorCode": "INVALID_INPUT"
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json",
+            "-o",
+            "<isolated-directory>/匹配.yaml"
+          ],
+          "profile": "ykt",
+          "code": 3,
+          "stdoutBytes": 341,
+          "stderrBytes": 0,
+          "errorCode": "CONFLICT"
+        }
+      ],
+      "artifacts": [
+        {
+          "name": "作业.yaml",
+          "sha256": "d51d9c388a67a323334caf037f21c425ef9171d42a11af281912775cf676238a",
+          "bytes": 1199
+        },
+        {
+          "name": "匹配.yaml",
+          "sha256": "0856dfc3d41c7741553c4a790a8bf7eaa30d6d1d0ead82f7c944d3c0d786a109",
+          "bytes": 1377
+        },
+        {
+          "name": "歧义.yaml",
+          "sha256": "b412113d279033e331eec02f364d92eadd2aef521a497a3de823e3878c60339e",
+          "bytes": 1207
+        },
+        {
+          "name": "冲突正序.yaml",
+          "sha256": "b412113d279033e331eec02f364d92eadd2aef521a497a3de823e3878c60339e",
+          "bytes": 1207
+        },
+        {
+          "name": "冲突反序.yaml",
+          "sha256": "b412113d279033e331eec02f364d92eadd2aef521a497a3de823e3878c60339e",
+          "bytes": 1207
+        },
+        {
+          "name": "一致正序.yaml",
+          "sha256": "17cb6564f9f3a7571c8a212ff2ba20103b09c7343c2fc4f5f952f8edc17a1359",
+          "bytes": 1377
+        },
+        {
+          "name": "一致反序.yaml",
+          "sha256": "17cb6564f9f3a7571c8a212ff2ba20103b09c7343c2fc4f5f952f8edc17a1359",
+          "bytes": 1377
+        }
+      ],
+      "cleaned": false,
+      "failures": [
+        {
+          "phase": "matching",
+          "code": "ERR_ASSERTION"
+        },
+        {
+          "phase": "directory-cleanup",
+          "code": "EACCES"
+        }
+      ],
+      "status": "failed",
+      "childrenClosed": true,
+      "platform": {
+        "requests": 20,
+        "mutations": [],
+        "rejected": 0,
+        "tunnels": 17
+      },
+      "listenersClosed": true,
+      "cleanupAttempts": 1,
+      "controlRecoveryCleaned": true
+    }
+  ]
+}
