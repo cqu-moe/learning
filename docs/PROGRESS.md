@@ -792,3 +792,4 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户授权发布新版；CLI 从 0.2.6 递增至 0.2.7，包含已合入 main 的 Windows owner/DACL 修复及 CI 修复。仅修改 CLI package.json 版本并补交前两轮审查/合并记录，不修改 SDK 版本或运行时逻辑。
 - 发布沿现有流程：PR 六项 CI 通过后合入 main，版本变更触发 cli-release；该流程重新执行 Node 检查和五目标原生验收，全部通过后才公开发布五个独立程序、LICENSES.txt、SHA256SUMS。远端结果与下载验收待后续记录，不覆盖旧版本。
 - 本机 Node v24.11.1：`node scripts/test-release.mjs`、`node scripts/check-boundaries.mjs`、`git diff --check` 均 exit 0。此次仅版本和文档变更，不新增测试；完整测试及五平台独立程序交由该版本远端 CI 实际执行。
+- 首次 PR CI 38729404758 的五目标程序全部通过，但 verify 在 telemetry.test.ts 失败：实际 release=0.2.7，旧断言写死 0.2.6（SDK 278/278、CLI 152/153）。改为读取 CLI package.json 的版本进行严格匹配，保留真实进程/HTTP fixture 验证，不修改生产代码或放宽断言。修后 Node 24.11.1 / pnpm 11.19.0 下冻结依赖安装、CLI build、telemetry 11/11、lint、typecheck 全部 exit 0。
