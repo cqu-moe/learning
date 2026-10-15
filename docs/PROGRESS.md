@@ -39,6 +39,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 
 ## 每次实际记录
 
+### 2026-10-15 · Windows 专用目录 ACL 修复
+
+- 复现：Windows 中已初始化目录再次打开时，Set-Acl 请求 SeSecurityPrivilege，导致 init 和 profile 命令报 STORAGE；目录所有者为当前用户且已有 FullControl。
+- 修复：private-directory.ts 使用新建 DirectorySecurity/FileSecurity 和 .NET SetAccessControl，仅设置 owner/DACL，不请求审计权限；保留用户专用 FullControl、继承控制、路径边界和 reparse point 检查。
+- 回归：profile.test.ts 新增重复 init 不替换 master.key、随后能读取账号列表的用例。Windows / Node 24.11.1 执行 `vitest run --root apps/cli tests/profile.test.ts --testTimeout 20000`，4/4 exit 0；使用工作区 TEMP/TMP 和系统 Windows PowerShell 模块目录。默认 5 秒不足以完成本机多次 PowerShell 子进程，测试源码未放宽超时。
+- 验证：SDK/CLI 两个 tsconfig.build.json 编译、目标源码/测试 ESLint、连续 init 两次、doctor、profile list --json 均 exit 0；目录与 master.key ACL 仅当前用户 FullControl。
+- 未跑完整测试集；doctor.test.ts 的可用 ffprobe fixture 使用 Unix shebang，在 Windows 失败，未修改该无关用例。尚未验证独立 Bun 程序及其他操作系统，等待 CI。未执行真实平台或付费模型操作。
+
 ### 2026-09-23 · T00 固定源码与证据目录（done）
 
 - 仓库初始化：git init -b main；创建 GitHub 私有仓库 cqu-moe/learning 并推送初始文档提交（用户明确授权）。Git 身份使用已有全局配置，未改动。
@@ -796,3 +804,33 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 只将 OpenSSL 的 config/key/cert 参数改为 ASCII 相对文件名 `openssl.cnf`、`test-key.pem`、`test-ca.pem`，由 Node 通过 `cwd: directory` 指定原中文空格目录；不搬移目录、不关闭 TLS 校验、不升级工具链。双失败外部控制改为对 `process.cwd()` 设置 POSIX 000，仍实际触发 setup status 37 与 cleanup EACCES，并在控制完成后恢复权限、删除和读回不存在。
 - 固定 Node v24.11.1、原 Bun1.4.3 编译的 macOS arm64 正式产物：`node scripts/test-binary-catalog.mjs` exit 0，两轮各 44 命令、37 HTTPS/22 CONNECT，均 cleaned=true、attempts=1；证据 `dist/e2e/catalog-journey-1792065243372-52947.json`。`node scripts/test-binary-catalog-controls.mjs` exit 0，原四个失败控制、目的地拒绝与双错误保留均通过；双失败证据 `catalog-setup-cleanup-failure-1792065266177-57477.json`。两文件定向 ESLint 和 `git diff --check` exit 0，未重复无关产品测试。
 - 本机验证时 sourceRevision=9705201、sourceDirty=true；产品二进制未变，SHA256 `e81fd8023aa86a966139529a8ca0a544f6f002eb3d223faf806ed47208ac88f7`。此 OpenSSL 修正仍需 Windows 新 CI；不声明整个 Windows catalog 已通过。WS 恢复内容另存 stash `d884617056d10f7686aa79244eda845f049680b6`，未混入本次分段；无 push、PR 编辑或 integration 修改。
+### 2026-10-15 · PR #18 双轴代码审查（完成，未合并）
+
+- 固定范围：`git diff 221cd949b0b62b0da9fb590fb1874ab1d6bac747...5a927db0ee6021899533d6abc730117f89f0d7fe`，三个文件、32 行新增/6 行删除；`git diff --check` exit 0。Standards 与 Spec 使用用户授权的 zhipu/glm-5.3 / max 独立并行审查。
+- Standards：确定性规范违例 0、baseline smell 0；非阻塞证据建议 1：新增重复 init 用例没有单独记录旧实现上的红灯运行。提交顺序不能证明实际测试先后，不能据此认定违反测试先行规范。Spec：缺失/部分需求、额外范围、实现错误均 0。
+- 核对新 ACL 的 owner/DACL、当前用户 FullControl、继承控制，以及保持不变的路径/reparse point 边界；查阅微软 .NET Framework SetAccessControl 文档。新增回归覆盖重复 init 保留 master.key 和 profile list，既有 Windows 独立程序验收覆盖宽松 ACL 收紧、目录/核心文件/导出权限和 junction 拒绝。
+- 本轮重新读取 run 38724940508，head 确认为上述 5a927db，结论 success；Windows 日志含 owner-only ACL verified，Node 日志为 SDK 278/278、CLI 153/153（profile 4/4）、E2E 7/7。本轮不重新执行产品测试，未补充非管理员且无审计特权 Windows 账户实测；PR 元数据接口返回404，不能以此猜测线上PR状态变化。
+- 本轮仅追加本机审查记录，未改产品代码、未推送评审或代码、未合并 PR。当前没有审查阻塞项；后续操作等待用户指定，不推进其他 PLAN 或 Web。
+
+### 2026-10-15 · PR #18 合入 main 与合并后 CI（代码合并及 CI 完成）
+
+- 用户明确授权合并 #18 并确认 main CI。PR REST/GraphQL 详情、合并接口及 GitHub 网页均返回 404，但 `refs/pull/18/head` 仍为已审查且六项 CI 通过的 `5a927db0ee6021899533d6abc730117f89f0d7fe`；未据 404 推断 PR 被删除或已关闭。
+- 在隔离 worktree 中按现有 Git 身份执行 `git merge --no-ff --no-commit 5a927db0ee6021899533d6abc730117f89f0d7fe`，无冲突，暂存差异仍仅原三个文件；`git diff --cached --check` exit 0，apps/packages/scripts/.github 与已审查 head 无额外差异。提交后正常 `git push origin HEAD:main` exit 0，无强推。
+- 合并提交 `9845907efc5de629b194d172572735a5f45e4e7d` 的两个父提交为 main 原头 `221cd949b0b62b0da9fb590fb1874ab1d6bac747` 和 #18 原头 `5a927db0ee6021899533d6abc730117f89f0d7fe`；`git merge-base --is-ancestor` exit 0。远程与本机 main 均核对为该合并提交，上一轮本机审查记录已完整恢复。
+- [main CI 38728268640](https://github.com/cqu-moe/learning/actions/runs/38728268640) 对上述精确合并 SHA 完成，verify、Linux x64/arm64、macOS x64/arm64、Windows x64 六项全部 success；独立读取该 SHA 的 check-runs，仍为六项全部 completed/success。使用仓库冻结工具链，由 GitHub 原生 runner 实际执行；本轮未另跑本机产品测试。
+- 证据边界：代码已实际合入 main，GitHub #18 页面仍 404，无法确认 PR 界面的 merged 标记。本条与上一轮审查记录仅保留在本机 PROGRESS，未新增远程文档提交，远程 main 保持上述六项全绿的 SHA。隔离 worktree 已提交归档；不推进其他 PLAN、Web 或 Release。
+
+### 2026-10-15 · CLI 0.2.7 发布准备
+
+- 用户授权发布新版；CLI 从 0.2.6 递增至 0.2.7，包含已合入 main 的 Windows owner/DACL 修复及 CI 修复。仅修改 CLI package.json 版本并补交前两轮审查/合并记录，不修改 SDK 版本或运行时逻辑。
+- 发布沿现有流程：PR 六项 CI 通过后合入 main，版本变更触发 cli-release；该流程重新执行 Node 检查和五目标原生验收，全部通过后才公开发布五个独立程序、LICENSES.txt、SHA256SUMS。远端结果与下载验收待后续记录，不覆盖旧版本。
+- 本机 Node v24.11.1：`node scripts/test-release.mjs`、`node scripts/check-boundaries.mjs`、`git diff --check` 均 exit 0。此次仅版本和文档变更，不新增测试；完整测试及五平台独立程序交由该版本远端 CI 实际执行。
+- 首次 PR CI 38729404758 的五目标程序全部通过，但 verify 在 telemetry.test.ts 失败：实际 release=0.2.7，旧断言写死 0.2.6（SDK 278/278、CLI 152/153）。改为读取 CLI package.json 的版本进行严格匹配，保留真实进程/HTTP fixture 验证，不修改生产代码或放宽断言。修后 Node 24.11.1 / pnpm 11.19.0 下冻结依赖安装、CLI build、telemetry 11/11、lint、typecheck 全部 exit 0。
+
+### 2026-10-15 · LEARNING-01 同步固定 main 3d559ed
+
+- 在 cb92eba 上合并 `3d559ed95b1989b52cec80662c63d9c1ed8c3554`；仅 PROGRESS 冲突，双方所有记录保留。上游 private-directory、profile/telemetry 测试和 CLI 0.2.7 package 文件与目标提交无差异；本票两次诊断、OpenSSL 相对路径、catalog/controls/CI 上传均保留。未改版本或重实施 ACL，未纳入其他未合并 PR。
+- WS 未提交内容完整保存为 stash `29b0fac1baac1e20865c995433cfa6d23d5a17b0`，不在合并中。此前只完成本机 sandbox 代理端口允许/其他 loopback 端口拒绝与 .invalid 原生 TLS/WS 探针；binary WS 取消仍有红灯（CANCELED envelope 已输出、socket 未关闭，最终被超时终止），下一轮再处理，不声称完整 WS 已通过。
+- 固定 Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结安装、SDK/CLI 重建、lint、两包 typecheck、边界检查通过；profile+telemetry 15/15 通过。`build-cli.mjs --without-telemetry` 编译 0.2.7，`test-distribution.mjs --without-telemetry` 含真实 PTY 通过；catalog 两轮各 44 命令/37 HTTPS/22 CONNECT，均 cleaned=true/attempts=1；controls 四项故意失败、未知目的地及 setup+cleanup 双错误保留全部通过。
+- 本机 pnpm 自动依赖检查先报无 TTY 拒绝重装；离线安装缺缓存，随后按原 lockfile 冻结安装成功，未改依赖。验证直接以固定 Node 执行同版本本地 tsc/eslint/vitest，未更换工具或放宽检查。
+- 实跑证据 `dist/e2e/catalog-journey-1792065942567-49812.json`，sourceRevision=cb92eba、sourceDirty=true（合并暂存态）；产物 SHA256 `0df69c6f1913e269fbd6194f61a76a8761c9186cf77adc96c47eccf150908cf6`。本机仅 macOS arm64；Windows OpenSSL 修正及新集成 CI 待父代理跟踪。签名合并后交 merger，本代理无 push、PR 编辑或 integration 修改。

@@ -29,12 +29,15 @@ function Get-SafeItem([string]$candidate) {
 function Clear-And-GrantAcl([string]$candidate, [bool]$isDirectory) {
   $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
   if ($null -eq $identity.User) { throw 'Windows current user SID is unavailable' }
-  $acl = Get-Acl -LiteralPath $candidate
+  # Build only the owner and access sections. Set-Acl can request audit
+  # privileges even when the application only needs to replace the DACL.
+  $acl = if ($isDirectory) {
+    [System.Security.AccessControl.DirectorySecurity]::new()
+  } else {
+    [System.Security.AccessControl.FileSecurity]::new()
+  }
   $acl.SetOwner($identity.User)
   $acl.SetAccessRuleProtection($true, $false)
-  foreach ($existingRule in @($acl.Access)) {
-    [void]$acl.RemoveAccessRuleSpecific($existingRule)
-  }
   $rights = [System.Security.AccessControl.FileSystemRights]::FullControl
   $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
   if ($isDirectory) {
@@ -44,7 +47,11 @@ function Clear-And-GrantAcl([string]$candidate, [bool]$isDirectory) {
   $type = [System.Security.AccessControl.AccessControlType]::Allow
   $rule = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList @($identity.User, $rights, $inheritance, $propagation, $type)
   [void]$acl.AddAccessRule($rule)
-  Set-Acl -LiteralPath $candidate -AclObject $acl
+  if ($isDirectory) {
+    [System.IO.Directory]::SetAccessControl($candidate, $acl)
+  } else {
+    [System.IO.File]::SetAccessControl($candidate, $acl)
+  }
 }
 
 $ancestor = $root
