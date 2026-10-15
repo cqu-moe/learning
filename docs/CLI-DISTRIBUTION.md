@@ -31,7 +31,7 @@ Bun 内置运行时，用户无需安装 Node/Bun；比把当前含顶层 await 
 
 ## CI 与公开 Release
 
-`.github/workflows/ci.yml` 在 PR/main 执行，也可被 release 工作流复用。`.github/workflows/release.yml` 监听 main 上 CLI package.json 的版本变化；版本实际没变时不发布。也可在 main 手动运行，恢复中断流程。
+`.github/workflows/ci.yml` 在 PR/main 执行，也可被 release 工作流复用。PR（含外部 fork）使用 `build-cli.mjs --without-telemetry` 生成不内置 token 的测试程序，不读取生产遥测变量；独立程序验收也传入 `--without-telemetry`，明确验证 token 未内置，其余运行、权限与终端检查照常执行。main 与正式发行不传该选项，仍要求有效 token，并验证用户运行时默认开启上报。`.github/workflows/release.yml` 监听 main 上 CLI package.json 的版本变化；版本实际没变时不发布。也可在 main 手动运行，恢复中断流程。
 
 更新 `apps/cli/package.json` 版本并按正常 PR 流程合并。流水线重跑完整门禁后创建 `cli-v<版本>` 公开 Release，先创建草稿、上传五个程序、LICENSES.txt 和 SHA256SUMS，检查资产齐全，最后发布。许可证由 Node 门禁任务统一收集，包含 Bun 许可说明及冻结生产依赖的许可全文；安装说明、提交与运行时版本放在 Release 页面。构建任务只有 contents:read，发布任务才有 contents:write；发布时再次检查仓库确实是 public、当前提交与工作流 SHA 相同且属于 main。
 
@@ -57,7 +57,7 @@ node scripts/test-distribution.mjs
 node scripts/test-release.mjs
 ```
 
-`build-cli.mjs` 需要 `POSTHOG_PROJECT_TOKEN`；本地复现官方二进制时从受控环境显式传入，不在 shell 历史、源码或日志中展开 token。CI 的 `test-bun-runtime.mjs` 探针不要求该 token，正式 `build-cli.mjs` 必需。
+`build-cli.mjs` 需要 `POSTHOG_PROJECT_TOKEN`；本地复现官方二进制时从受控环境显式传入，不在 shell 历史、源码或日志中展开 token。CI 的 `test-bun-runtime.mjs` 探针不要求该 token，正式 `build-cli.mjs` 必需。本地复现 PR 构建时，对 `build-cli.mjs` 与 `test-distribution.mjs` 都传 `--without-telemetry`；该模式的产物仅用于测试，不作为正式发行。
 
 `BUN_BINARY` 可指定固定 Bun 可执行文件路径。产物在 dist/releases；构建脚本生成当前目标程序与 SHA256，许可证脚本独立生成 LICENSES.txt 与 SHA256。CI 汇总五个原生目标和许可证后生成 SHA256SUMS。本机单系统只能验证对应目标，不能运行完整发布。测试环境与实际命令结果持续记入 [PROGRESS.md](PROGRESS.md)，真实平台账号验收仍单独记录。
 

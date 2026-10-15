@@ -4,15 +4,19 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { parseArgs } from 'node:util';
 
-const binary = resolve(process.argv[2]);
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { 'without-telemetry': { type: 'boolean', default: false } } });
+assert.equal(positionals.length, 1, 'provide one executable path');
+const binary = resolve(positionals[0]);
+const tokenConfigured = !values['without-telemetry'];
 const version = JSON.parse(readFileSync(new URL('../apps/cli/package.json', import.meta.url))).version;
 const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'learning-binary-')));
 const home = resolve(root, '账号 数据');
 const env = { ...process.env, PATH: '', LEARNING_HOME: resolve(root, 'ignored-home') };
 // Windows requires its system PowerShell for the owner-only ACL, not Node/Bun.
 for (const key of Object.keys(env)) {
-  if (/^(path|bun_options|node_options|learning_model_.+)$/i.test(key)) delete env[key];
+  if (/^(path|bun_options|node_options|learning_model_.+|learning_telemetry_token|learning_bundled_telemetry_token)$/i.test(key)) delete env[key];
 }
 env.PATH = '';
 function run(args, expected = 0) {
@@ -35,16 +39,16 @@ try {
   const telemetryStatusText = run(['telemetry', 'status', '--json']);
   assert.doesNotMatch(telemetryStatusText, /phc_[A-Za-z0-9_-]+/, 'telemetry status must not display the token');
   const telemetryStatus = JSON.parse(telemetryStatusText).data;
-  assert.equal(telemetryStatus.tokenConfigured, true, 'official executable must embed a public telemetry token');
+  assert.equal(telemetryStatus.tokenConfigured, tokenConfigured, 'verify the expected embedded telemetry configuration');
   if (process.env.CI !== undefined && !['0', 'false'].includes(process.env.CI.toLowerCase())) {
-    assert.deepEqual(telemetryStatus, { enabled: false, reason: 'automatic', tokenConfigured: true });
+    assert.deepEqual(telemetryStatus, { enabled: false, reason: 'automatic', tokenConfigured });
   }
   const defaultStatus = spawnSync(binary, ['--home', home, 'telemetry', 'status', '--json'], {
     cwd: root, encoding: 'utf8', timeout: 5000,
     env: { ...env, CI: '0', VITEST: '0', NODE_ENV: 'production', LEARNING_TELEMETRY_ENVIRONMENT: 'production', LEARNING_TELEMETRY_DISABLED: '0', DO_NOT_TRACK: '0' },
   });
   assert.equal(defaultStatus.status, 0);
-  assert.deepEqual(JSON.parse(defaultStatus.stdout).data, { enabled: true, reason: 'active', tokenConfigured: true }, 'build-time CI must not freeze telemetry off in the shipped program');
+  assert.deepEqual(JSON.parse(defaultStatus.stdout).data, { enabled: tokenConfigured, reason: tokenConfigured ? 'active' : 'configuration', tokenConfigured }, 'runtime telemetry must match the explicit build mode');
   // Compile must not silently load local project config or dotenv files.
   writeFileSync(resolve(root, '.env'), 'LEARNING_MODEL_NAME=unwanted\nLEARNING_MODEL_BASE_URL=https://invalid.example\nLEARNING_MODEL_API_KEY=fixture-only\n');
   writeFileSync(resolve(root, 'bunfig.toml'), 'invalid = [');

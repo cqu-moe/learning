@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 export const root = fileURLToPath(new URL('..', import.meta.url));
 export const bunVersion = readFileSync(resolve(root, '.bun-version'), 'utf8').trim();
@@ -29,8 +30,10 @@ export function compile(entry, outfile, options = {}) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   assert.ok(targets.includes(target), `unsupported release target: ${target}`);
   assert.match(cliVersion, /^\d+\.\d+\.\d+$/);
-  const buildToken = process.env.POSTHOG_PROJECT_TOKEN?.trim();
-  if (buildToken === undefined || !publicTokenPattern.test(buildToken)) {
+  const { values } = parseArgs({ options: { 'without-telemetry': { type: 'boolean', default: false } } });
+  // PR artifacts must build without repository configuration; release builds stay strict.
+  const buildToken = values['without-telemetry'] ? '' : process.env.POSTHOG_PROJECT_TOKEN?.trim();
+  if (!values['without-telemetry'] && (buildToken === undefined || !publicTokenPattern.test(buildToken))) {
     throw new Error('POSTHOG_PROJECT_TOKEN must be configured as a valid public PostHog token');
   }
   mkdirSync(releaseDirectory, { recursive: true });
