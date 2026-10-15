@@ -66,6 +66,12 @@ try {
         LEARNING_TELEMETRY_DISABLED: '1', HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url, ALL_PROXY: proxy.url,
         NODE_EXTRA_CA_CERTS: proxy.ca,
       };
+      if (process.platform === 'win32') {
+        // Compare presence only: never copy or record inherited credential values.
+        record.windowsEnvironment = Object.fromEntries(['SystemRoot', 'WINDIR', 'SystemDrive', 'ComSpec', 'PATHEXT', 'APPDATA', 'LOCALAPPDATA', 'PSModulePath'].map(name => [name, {
+          inherited: process.env[name] !== undefined, passed: env[name] !== undefined,
+        }]));
+      }
       let activeChild;
       const waitForQr = async file => {
         for (let i = 0; i < 200; i++) {
@@ -97,23 +103,36 @@ try {
         proxy.use([http[0], ...(control === 'ws-missing-fixture' ? [] : [ws]), ...(['success', 'exchange-denied'].includes(outcome) ? [http[1]] : [])]);
       };
       async function run(args, expected = 0) {
+        // Some commands validate the private directory both while resolving the
+        // target and while opening it. Each production PowerShell has a 30s bound.
+        const timeoutMs = process.platform === 'win32' ? 75_000 : 20_000;
+        const startedAt = Date.now();
         const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json', '--no-interactive'], proxy.url);
         const child = spawn(command, argv, { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] });
         activeChild = child;
-        let stdout = '', stderr = '';
-        child.stdout.on('data', chunk => { stdout += chunk; });
-        child.stderr.on('data', chunk => { stderr += chunk; });
-        const timer = setTimeout(() => child.kill('SIGKILL'), 20_000);
-        const code = await new Promise((res, rej) => { child.once('error', rej); child.once('close', res); }).finally(() => clearTimeout(timer));
-        record.commands.push({ profile: args.includes('--profile') ? args[args.indexOf('--profile') + 1] : undefined, command: args[0] + (['profile','config','telemetry'].includes(args[0]) ? ' ' + args[1] : ''), code });
+        let stdout = '', stderr = '', stdoutBytes = 0, stderrBytes = 0, timedOut = false, spawnErrorCode;
+        child.stdout.on('data', chunk => { stdout += chunk; stdoutBytes += chunk.length; });
+        child.stderr.on('data', chunk => { stderr += chunk; stderrBytes += chunk.length; });
+        child.once('error', error => { spawnErrorCode = error.code ?? error.name; });
+        const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
+        const result = await new Promise(res => { child.once('close', (code, signal) => res({ code, signal })); }).finally(() => clearTimeout(timer));
+        record.commands.push({ profile: args.includes('--profile') ? args[args.indexOf('--profile') + 1] : undefined, command: args[0] + (['profile','config','telemetry'].includes(args[0]) ? ' ' + args[1] : ''), ...result,
+          elapsedMs: Date.now() - startedAt, timeoutMs, timedOut, stdoutBytes, stderrBytes, ...(spawnErrorCode ? { spawnErrorCode } : {}) });
+        if (timedOut) throw Object.assign(new Error('standalone command timed out (' + timeoutMs + 'ms)'), { code: 'BINARY_TIMEOUT' });
+        assert.equal(spawnErrorCode, undefined, 'standalone command could not launch');
+        proxy.assertHealthy();
+        assert.equal(result.signal, null, 'standalone command terminated by signal');
+        assert.equal(result.code, expected, 'standalone command exit mismatch');
+        assert.ok(stdoutBytes + stderrBytes > 0, 'standalone command returned no JSON output');
         // Do not include raw output in failure reports: login traffic contains synthetic secrets.
-        const envelope = JSON.parse(stdout || stderr);
+        let envelope;
+        try { envelope = JSON.parse(stdout || stderr); }
+        catch { throw Object.assign(new Error('standalone command returned invalid JSON'), { code: 'BINARY_JSON' }); }
         record.commands.at(-1).errorCode = envelope.error?.code;
         proxy.assertHealthy();
-        assert.equal(code, expected, `command ${record.commands.at(-1).command} exit mismatch (${envelope.error?.code ?? 'none'})`);
         for (const secret of proxy.secrets) assert.ok(!(stdout + stderr).includes(secret), 'sensitive output');
         proxy.assertHealthy();
-        return JSON.parse(stdout || stderr);
+        return envelope;
       }
       const doctor = await run(['doctor']);
       assert.equal(doctor.data.initialized, false);

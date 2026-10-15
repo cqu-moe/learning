@@ -852,3 +852,11 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 最终暂存前实跑：Node24.11.1，两包 typecheck、根 ESLint、check-boundaries、SDK auth-flow+xuetang-catalog 23/23、固定 Bun1.4.3 编译、catalog+controls、test-ws-proxy、diff check 全通过。两轮各60命令/47HTTPS/37CONNECT/7WS Upgrade及消息/7WS close，cleaned=true/attempts=1；`catalog-journey-1792067288034-28177.json`，产物 SHA256 `44abcac324bdb270a99fd6e4926e8f4b8d157ef11ec7c1ab12195942f2fcebc7`。源码记录2d37089、dirty=true；最终提交见根结果报告。
 - 三项新增 binary 控制（WS路径不匹配、未登记Upgrade、请求消息不匹配）均导致 runner 非零，实际CLI分别NETWORK/1、NETWORK/1、AUTH_REQUIRED/3，且各自读回清理成功；原HTTP/缺fixture/错断言/双错误控制保留。探针证据 `ws-proxy-1792067338224.json` 含Bun版本/源码/产物摘要、OS端口拒绝和四模式结果。
 - 边界：仅本机 macOS arm64 全路径通过；其余原生平台新CI待跑，Windows console Ctrl+C 未模拟（Windows kill不是控制台取消），报告明确not-run；Windows仍执行其他全部WS正负例。QR过期检查针对迟到成功消息，未增加无消息时主动计时退出；既有10分钟总预算的惰性语义保留。没有真实平台账号/扫码/网络验证，不宣称五平台或真实平台全部通过。本代理无push、PR编辑、merge回integration。
+
+### 2026-10-15 · LEARNING-02 前置 Windows catalog 进程诊断补修
+
+- 按用户新证据单独交付 runner 修正，基线 e9cd8a6；未修改产品 ACL、环境白名单、安全验证、中文路径或空 PATH。原 Windows run38736547147/job116427182002 的 artifact11973287771 实际 sourceRevision=ced4938e8bee09c24241af0eafae566dc8782665（集成运行），doctor0、init code=null、0网络、cleanup=true/attempts1；空输出被 JSON.parse 误报 SyntaxError。原始日志和 artifact 只读核验，未用新猜测覆盖首败。
+- catalog 在解析 JSON 前记录 code/signal、elapsedMs、timeoutMs、timedOut、stdoutBytes/stderrBytes、启动错误码；先判超时、信号、退出与空输出，再解析，错误 JSON 仅报告 BINARY_JSON，绝不记录原输出。Windows 命令上限75s覆盖最多两个各有30s生产上限的 ACL 入口，其他平台仍20s；这是 runner 的诊断预算，不更改 ACL 安全边界。
+- 查明环境差异：test-binary 继承大部分父环境；catalog 仅传白名单，原本未传 APPDATA/LOCALAPPDATA/PSModulePath/WINDIR 等。Windows 报告新增这些系统变量的 inherited/passed 布尔值，不读取或保存其内容。CI/遥测关闭路径中 init 只调用一次 ensureDataDir/ACL；目标参数解析加后续运行时装配的其他命令可能两次。尚无 Windows 逐调用耗时证据，不认定环境缺项或双 ACL 为本次根因，也不盲目补继承个人环境。
+- 固定 Node24.11.1，基线 Bun1.4.3 真实0.2.7程序：catalog 两轮各60命令/47HTTPS/37CONNECT/7WS，全通过、清理成功（dist/e2e/catalog-journey-1792068689685-58572.json）。原 controls 加真实外部可执行程序的超时/空输出/坏JSON控制全部通过；20秒实际超时记录SIGKILL、elapsed20010ms、stdout0B/stderr36B、BINARY_TIMEOUT，另两项按精确原因失败且无原文泄漏，均cleaned=true（catalog-journey-1792068793099-68040.json、1792068793703-69241.json、1792068794294-69271.json）。首次控制 shim 被 Node 扩展名规则拒绝，未计作通过；修为真实 POSIX shell 启动 Node stdin 后重跑通过。
+- 定向 ESLint 与 git diff --check exit0。此验证使用原 baseline platform-proxy（本票导出扩展暂存到忽略目录，没有混入此补修）；导出源码仍未提交。当前仅 macOS 实跑，Windows 尚待新原生CI；不宣称已修复其init阻塞。无push/PR/integration修改。
