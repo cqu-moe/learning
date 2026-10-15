@@ -14,11 +14,12 @@ export class LiveMailbox {
   private readonly seen = new Set<string>();
   private disconnected = false;
 
-  push(event: LiveQuestionEvent): void {
-    const key = `${event.phaseId}:${event.questionId}:${event.closesAtMs}`;
-    if (this.seen.has(key)) return;
+  push(event: LiveQuestionEvent): boolean {
+    const key = JSON.stringify([event.phaseId, event.questionId]);
+    if (this.seen.has(key)) return false;
     this.seen.add(key);
     this.queue.push(event);
+    return true;
   }
 
   noteDisconnect(): void {
@@ -77,9 +78,9 @@ export class YktLiveSession {
             if (questionId !== '') {
               const phaseId = String(data.msgid ?? data.phaseId ?? questionId);
               const closesAtMs = typeof problem.limit === 'number' && problem.limit > 0 ? this.input.clock.nowMs() + problem.limit * 1000 : null;
-              if (problem.problemType !== undefined) this.openQuestions.set(questionId, { phaseId, problemType: problem.problemType, closesAtMs });
-              this.mailbox.push({ type: 'question', phaseId, questionId, closesAtMs,
+              const accepted = this.mailbox.push({ type: 'question', phaseId, questionId, closesAtMs,
                 ...(problem.problemType === undefined ? {} : { problemType: problem.problemType }) });
+              if (accepted && problem.problemType !== undefined) this.openQuestions.set(questionId, { phaseId, problemType: problem.problemType, closesAtMs });
             }
           } else if (data.op === 'problemfinished') {
             const problem = (data.problem ?? {}) as { prob?: number | string };

@@ -9,7 +9,7 @@ import { WebSocketServer } from 'ws';
 
 const fixtures = new URL('../../packages/sdk/tests/fixtures/', import.meta.url);
 // An explicit allowlist: this proxy NEVER forwards a request to the Internet.
-const hosts = ['fixture.invalid', 'www.yuketang.cn', 'www.xuetangx.com', 'examination.xuetangx.com', 'passport.zhihuishu.com', 'onlineservice-api.zhihuishu.com', 'hikeservice.zhihuishu.com', 'studyservice-api.zhihuishu.com', 'open.weixin.qq.com', 'lp.open.weixin.qq.com', 'user.zhihuishu.com'];
+const hosts = ['fixture.invalid', 'www.yuketang.cn', 'www.xuetangx.com', 'examination.xuetangx.com', 'passport.zhihuishu.com', 'onlineservice-api.zhihuishu.com', 'hikeservice.zhihuishu.com', 'studyresources.zhihuishu.com', 'hike-teaching.zhihuishu.com', 'studyservice-api.zhihuishu.com', 'open.weixin.qq.com', 'lp.open.weixin.qq.com', 'user.zhihuishu.com'];
 const tlsClientErrorCodes = new Set(['ERR_SSL_TLSV1_ALERT_UNKNOWN_CA', 'ERR_SSL_TLSV1_ALERT_CERTIFICATE_UNKNOWN', 'ERR_SSL_SSLV3_ALERT_UNKNOWN_CA', 'ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN', 'ERR_SSL_TLSV1_ALERT_HANDSHAKE_FAILURE', 'ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE', 'ERR_SSL_UNEXPECTED_EOF_WHILE_READING', 'ERR_SSL_DECODE_ERROR', 'ERR_SSL_BAD_PACKET', 'ECONNRESET', 'EPROTO']);
 
 export async function platformProxy(directory) {
@@ -29,16 +29,20 @@ export async function platformProxy(directory) {
     throw Object.assign(new Error(`platform TLS certificate setup failed (${error.code ?? error.status})`), { code: 'PLATFORM_TLS_SETUP', diagnostic });
   }
   let interactions = [], cookie, fault;
-  const evidence = { requests: 0, tunnels: 0, deniedHosts: 0, rejectedRequests: 0, wsUpgrades: 0, wsMessages: 0, wsClosed: 0, tlsClientErrors: {} };
+  const evidence = { requests: 0, tunnels: 0, deniedHosts: 0, rejectedRequests: 0, wsUpgrades: 0, wsMessages: 0, wsClosed: 0, tlsClientErrors: {}, requestLog: [], interactionShifts: { secure: 0, upgrade: 0 } };
   const sockets = new Set();
-  const secrets = ['beta-session-fixture', 'synthetic-zhs-cookie', 'sess-fixture', 'auth-secret-fixture', 'fixture.jwt.token', 'xtx-sess-fixture', 'uuid-fixture', 'qt-fixture', 'op-fixture', 'CODE1', 'fixture-token', 'xtx-csrf-fixture', 'ws-qr-fixture'];
+  const secrets = ['beta-session-fixture', 'synthetic-zhs-cookie', 'sess-fixture', 'auth-secret-fixture', 'fixture.jwt.token', 'xtx-sess-fixture', 'uuid-fixture', 'qt-fixture', 'op-fixture', 'CODE1', 'fixture-token', 'xtx-csrf-fixture', 'ws-qr-fixture', 'fixture-lesson-token', 'fixture-jwt'];
   const secure = createTlsServer({ cert: readFileSync(ca), key: readFileSync(key) }, async (request, response) => {
     evidence.requests++;
+    let loggedRequest;
     try {
       const expected = interactions.shift();
+      evidence.interactionShifts.secure += 1;
       assert.ok(expected, 'undeclared platform request');
       assert.notEqual(expected.kind, 'websocket', 'expected WebSocket upgrade');
       const url = new URL(request.url, 'https://' + request.headers.host);
+      loggedRequest = { method: request.method, host: url.hostname, path: url.pathname, tag: expected.tag ?? null, expectedIndex: evidence.requestLog.length };
+      evidence.requestLog.push(loggedRequest);
       const match = expected.request;
       assert.equal(request.method, match.method, 'platform method mismatch');
       assert.equal(url.hostname, match.host, 'platform host mismatch');
@@ -49,6 +53,8 @@ export async function platformProxy(directory) {
       let body = '';
       for await (const chunk of request) body += chunk;
       if (match.body !== undefined) assert.deepEqual(typeof match.body === 'string' ? body : JSON.parse(body), match.body, 'platform body mismatch');
+      if (match.bodyValidator !== undefined) match.bodyValidator(body !== '' && (request.headers['content-type'] ?? '').includes('json') ? JSON.parse(body) : body);
+      if (match.queryValidator !== undefined) match.queryValidator(url.searchParams);
       if (match.strict) {
         assert.deepEqual([...url.searchParams.keys()].sort(), Object.keys(match.query ?? {}).sort(), 'platform query keys mismatch');
         if (match.body === undefined) assert.equal(body, '', 'unexpected platform request body');
@@ -63,6 +69,7 @@ export async function platformProxy(directory) {
       else response.end(expected.response.base64 ? Buffer.from(expected.response.base64, 'base64') : typeof expected.response.body === 'string' ? expected.response.body : JSON.stringify(expected.response.body ?? {}));
     } catch (error) {
       evidence.rejectedRequests++;
+      if (loggedRequest) loggedRequest.rejected = true;
       fault ??= 'Platform traffic rejected: ' + error.message.split('\n')[0];
       if (!response.headersSent) response.writeHead(599);
       response.end('{}');
@@ -77,8 +84,10 @@ export async function platformProxy(directory) {
   secure.on('upgrade', (request, socket, head) => {
     try {
       const expected = interactions.shift();
+      evidence.interactionShifts.upgrade += 1;
       assert.equal(expected?.kind, 'websocket', 'undeclared WebSocket request');
       assert.equal(request.method, 'GET');
+      evidence.requestLog.push({ method: 'GET', host: request.headers.host, path: new URL(request.url, 'https://' + request.headers.host).pathname, tag: expected.tag ?? null });
       assert.equal(request.headers.host, expected.request.host, 'WebSocket host mismatch');
       assert.equal(request.url, expected.request.path, 'WebSocket path mismatch');
       for (const [name, value] of Object.entries(expected.request.headers ?? {})) assert.equal(request.headers[name], value, 'WebSocket header mismatch');
@@ -144,6 +153,8 @@ export async function platformProxy(directory) {
     use(name, options = {}) {
       assert.equal(interactions.length, 0, 'previous platform interactions unconsumed');
       interactions = (Array.isArray(name) ? name : [name]).flatMap(item => typeof item === 'string' ? JSON.parse(readFileSync(new URL(item + '.json', fixtures), 'utf8')).interactions : [item]);
+      evidence.queueStartedAtRequest = evidence.requests;
+      evidence.queuedTags = interactions.map(item => item.tag ?? null);
       cookie = options.cookie;
     },
     assertHealthy() { assert.equal(fault, undefined, fault); },
