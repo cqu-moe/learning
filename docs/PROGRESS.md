@@ -770,3 +770,25 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - [修复 PR #20](https://github.com/cqu-moe/learning/pull/20) 的精确 head `302c5d877aa49432be3cc4c791d2a5a1c57edd81` 在 [CI 38724472631](https://github.com/cqu-moe/learning/actions/runs/38724472631) 六项全 success 后合并；合并提交 `4f0919e5fa905767131e26eb9a01856ae41fec68`，合并后 [main CI 38724900152](https://github.com/cqu-moe/learning/actions/runs/38724900152) 六项也全部 success。两轮独立审查已完成，最终无阻塞问题。
 - 旧运行重跑沿用旧 SHA，因此用 GitHub update-branch 将已验证 main 合入 #18，原 head `082193f` 更新为 `5a927db0ee6021899533d6abc730117f89f0d7fe`。新 fork 运行经维护者批准后，[CI 38724940508](https://github.com/cqu-moe/learning/actions/runs/38724940508) Node 门禁与五个原生二进制检查全部 success，Windows 权限实际验收也通过。#18 保持 OPEN，未获授权合并它。
 - 已读回 #18 相对 main 仍只有原 private-directory.ts、profile.test.ts 与其进度记录三个文件；没有改写其业务补丁。本地主工作区快进至上述修复合并提交；本条为文档验收记录，以 `[skip ci]` 提交，不更改已验证源码或 CLI 版本、不发布 Release。用户指定任务完成，不继续其他 PLAN 项或 Web。
+
+### 2026-10-15 · PR #18 双轴代码审查（完成，未合并）
+
+- 固定范围：`git diff 221cd949b0b62b0da9fb590fb1874ab1d6bac747...5a927db0ee6021899533d6abc730117f89f0d7fe`，三个文件、32 行新增/6 行删除；`git diff --check` exit 0。Standards 与 Spec 使用用户授权的 zhipu/glm-5.3 / max 独立并行审查。
+- Standards：确定性规范违例 0、baseline smell 0；非阻塞证据建议 1：新增重复 init 用例没有单独记录旧实现上的红灯运行。提交顺序不能证明实际测试先后，不能据此认定违反测试先行规范。Spec：缺失/部分需求、额外范围、实现错误均 0。
+- 核对新 ACL 的 owner/DACL、当前用户 FullControl、继承控制，以及保持不变的路径/reparse point 边界；查阅微软 .NET Framework SetAccessControl 文档。新增回归覆盖重复 init 保留 master.key 和 profile list，既有 Windows 独立程序验收覆盖宽松 ACL 收紧、目录/核心文件/导出权限和 junction 拒绝。
+- 本轮重新读取 run 38724940508，head 确认为上述 5a927db，结论 success；Windows 日志含 owner-only ACL verified，Node 日志为 SDK 278/278、CLI 153/153（profile 4/4）、E2E 7/7。本轮不重新执行产品测试，未补充非管理员且无审计特权 Windows 账户实测；PR 元数据接口返回404，不能以此猜测线上PR状态变化。
+- 本轮仅追加本机审查记录，未改产品代码、未推送评审或代码、未合并 PR。当前没有审查阻塞项；后续操作等待用户指定，不推进其他 PLAN 或 Web。
+
+### 2026-10-15 · PR #18 合入 main 与合并后 CI（代码合并及 CI 完成）
+
+- 用户明确授权合并 #18 并确认 main CI。PR REST/GraphQL 详情、合并接口及 GitHub 网页均返回 404，但 `refs/pull/18/head` 仍为已审查且六项 CI 通过的 `5a927db0ee6021899533d6abc730117f89f0d7fe`；未据 404 推断 PR 被删除或已关闭。
+- 在隔离 worktree 中按现有 Git 身份执行 `git merge --no-ff --no-commit 5a927db0ee6021899533d6abc730117f89f0d7fe`，无冲突，暂存差异仍仅原三个文件；`git diff --cached --check` exit 0，apps/packages/scripts/.github 与已审查 head 无额外差异。提交后正常 `git push origin HEAD:main` exit 0，无强推。
+- 合并提交 `9845907efc5de629b194d172572735a5f45e4e7d` 的两个父提交为 main 原头 `221cd949b0b62b0da9fb590fb1874ab1d6bac747` 和 #18 原头 `5a927db0ee6021899533d6abc730117f89f0d7fe`；`git merge-base --is-ancestor` exit 0。远程与本机 main 均核对为该合并提交，上一轮本机审查记录已完整恢复。
+- [main CI 38728268640](https://github.com/cqu-moe/learning/actions/runs/38728268640) 对上述精确合并 SHA 完成，verify、Linux x64/arm64、macOS x64/arm64、Windows x64 六项全部 success；独立读取该 SHA 的 check-runs，仍为六项全部 completed/success。使用仓库冻结工具链，由 GitHub 原生 runner 实际执行；本轮未另跑本机产品测试。
+- 证据边界：代码已实际合入 main，GitHub #18 页面仍 404，无法确认 PR 界面的 merged 标记。本条与上一轮审查记录仅保留在本机 PROGRESS，未新增远程文档提交，远程 main 保持上述六项全绿的 SHA。隔离 worktree 已提交归档；不推进其他 PLAN、Web 或 Release。
+
+### 2026-10-15 · CLI 0.2.7 发布准备
+
+- 用户授权发布新版；CLI 从 0.2.6 递增至 0.2.7，包含已合入 main 的 Windows owner/DACL 修复及 CI 修复。仅修改 CLI package.json 版本并补交前两轮审查/合并记录，不修改 SDK 版本或运行时逻辑。
+- 发布沿现有流程：PR 六项 CI 通过后合入 main，版本变更触发 cli-release；该流程重新执行 Node 检查和五目标原生验收，全部通过后才公开发布五个独立程序、LICENSES.txt、SHA256SUMS。远端结果与下载验收待后续记录，不覆盖旧版本。
+- 本机 Node v24.11.1：`node scripts/test-release.mjs`、`node scripts/check-boundaries.mjs`、`git diff --check` 均 exit 0。此次仅版本和文档变更，不新增测试；完整测试及五平台独立程序交由该版本远端 CI 实际执行。
