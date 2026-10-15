@@ -12,6 +12,7 @@ import { createOutput } from '../src/output.js';
 import { createCliRuntime } from '../src/runtime.js';
 import { runJobForeground } from '../src/foreground.js';
 import { finishTelemetry, startTelemetry } from '../src/telemetry.js';
+import pkg from '../package.json' with { type: 'json' };
 
 const cliEntry = resolve(import.meta.dirname, '../dist/index.js');
 const tempRoots: string[] = [];
@@ -206,7 +207,7 @@ describe('cli telemetry lifecycle', () => {
       product: 'learning',
       surface: 'cli',
       environment: 'production',
-      release: '0.2.6',
+      release: pkg.version,
       actor_type: 'installation',
       trigger: 'user',
       operation: 'init',
