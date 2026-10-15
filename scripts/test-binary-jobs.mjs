@@ -914,10 +914,11 @@ try {
         for (const scenario of pauses) {
           const before = new Set((await jobList()).map(job => job.id));
           let id;
-          const waiting = until(() => {
+          const beforeRequests = proxy.evidence().requests;
+          const waiting = until(() => proxy.evidence().requests > beforeRequests, 'study transport ready').then(() => until(() => {
             id = records(home, 'job:').find(row => !before.has(row.value.id) && row.value.status === 'waiting')?.value.id;
             return id;
-          }, 'study ready for graceful pause');
+          }, 'study ready for graceful pause'));
           proxy.use(scenario.initial);
           const result = await command(scenario.profile, ['run', '--resource', scenario.resource.ref.key, '--speed', scenario.speed, '--target', scenario.target, '--yes'], 3, {
             kill: { signal: scenario.signal, when: waiting },
@@ -994,10 +995,11 @@ try {
       for (const signal of process.platform === 'win32' ? ['SIGKILL'] : ['SIGINT', 'SIGTERM', 'SIGKILL']) {
         const before = new Set((await jobList()).map(job => job.id));
         let id;
-        const ready = until(() => {
+        const beforeUpgrades = proxy.evidence().wsUpgrades;
+        const ready = until(() => proxy.evidence().wsUpgrades > beforeUpgrades, 'live transport ready').then(() => until(() => {
           id = records(home, 'job:').find(row => !before.has(row.value.id) && row.value.status === 'waiting')?.value.id;
           return id;
-        }, 'live session persisted and waiting');
+        }, 'live session persisted and waiting'));
         const closedBefore = proxy.evidence().wsClosed;
         proxy.use([checkin, liveSocket(async socket => {
           socket.send(JSON.stringify({ op: 'unlockproblem', problem: { prob: 13, problemType: 1, limit: 30 }, msgid: 4 }));
@@ -1030,7 +1032,9 @@ try {
       const beforeCancel = new Set((await jobList()).map(job => job.id));
       let cancelJobId;
       let activeLockConflict;
-      const cancelWait = until(() => records(home, 'job:').find(row => !beforeCancel.has(row.value.id) && row.value.status === 'waiting')?.value.id, 'live waiting job');
+      const upgradesBeforeCancel = proxy.evidence().wsUpgrades;
+      const cancelWait = until(() => proxy.evidence().wsUpgrades > upgradesBeforeCancel, 'cancel transport ready')
+        .then(() => until(() => records(home, 'job:').find(row => !beforeCancel.has(row.value.id) && row.value.status === 'waiting')?.value.id, 'live waiting job'));
       const cancelGate = (async () => {
         cancelJobId = await cancelWait;
         assert.ok(cancelJobId, 'live cancellation job did not become waiting');
