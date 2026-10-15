@@ -83,9 +83,10 @@ function records(home, prefix) {
   }
 }
 
-async function until(observe, label, timeout = process.platform === 'win32' ? 75_000 : 10_000) {
+async function until(observe, label, timeout = process.platform === 'win32' ? 75_000 : 10_000, signal) {
   const startedAt = Date.now();
   for (;;) {
+    signal?.throwIfAborted();
     let value;
     try { value = observe(); }
     catch (error) {
@@ -94,7 +95,7 @@ async function until(observe, label, timeout = process.platform === 'win32' ? 75
     }
     if (value) return value;
     if (Date.now() - startedAt >= timeout) assert.fail('timed out observing ' + label);
-    await delay(10);
+    await delay(10, undefined, { signal });
   }
 }
 
@@ -151,12 +152,16 @@ try {
         ALL_PROXY: proxy.url,
         NODE_EXTRA_CA_CERTS: relative(directory, proxy.ca),
       };
+      const commandTimeoutMs = process.platform === 'win32' ? 75_000 : 30_000;
       async function run(args, expected = 0, options = {}) {
+        options.signal?.throwIfAborted();
         const startedAt = Date.now();
-        const timeout = Math.max(options.timeout ?? 0, process.platform === 'win32' ? 75_000 : 30_000);
+        const timeout = Math.max(options.timeout ?? 0, commandTimeoutMs);
         const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json', '--no-interactive'], proxy.url);
         const child = spawn(command, argv, { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] });
         children.add(child);
+        const abortChild = () => child.kill('SIGKILL');
+        options.signal?.addEventListener('abort', abortChild, { once: true });
         let stdout = '';
         let stderr = '';
         let stdoutBytes = 0;
@@ -173,7 +178,7 @@ try {
         }
         const result = await new Promise(resolveClose => {
           child.once('close', (code, signal) => { children.delete(child); resolveClose({ code, signal }); });
-        }).finally(() => clearTimeout(timer));
+        }).finally(() => { clearTimeout(timer); options.signal?.removeEventListener('abort', abortChild); });
         const event = {
           command: args.slice(0, args[0] === 'jobs' ? 2 : 1).join(' '),
           ...result,
@@ -210,8 +215,8 @@ try {
       async function command(profile, args, expected, options) {
         return run([...args, '--profile', profile], expected, options);
       }
-      async function jobList() { return (await run(['jobs', 'list'])).data.jobs; }
-      async function jobShow(id, profile) { return (await command(profile, ['jobs', 'show', id])).data; }
+      async function jobList(options) { return (await run(['jobs', 'list'], 0, options)).data.jobs; }
+      async function jobShow(id, profile, options) { return (await command(profile, ['jobs', 'show', id], 0, options)).data; }
       function jobRecord(homeDir, id) { return records(homeDir, 'job:' + id)[0]?.value; }
       function waitForJobStatus(id, status) {
         return until(() => jobRecord(home, id)?.status === status, 'job status ' + status, 10_000);
@@ -1033,27 +1038,43 @@ try {
       let cancelJobId;
       let activeLockConflict;
       const upgradesBeforeCancel = proxy.evidence().wsUpgrades;
-      const cancelWait = until(() => proxy.evidence().wsUpgrades > upgradesBeforeCancel, 'cancel transport ready')
-        .then(() => until(() => records(home, 'job:').find(row => !beforeCancel.has(row.value.id) && row.value.status === 'waiting')?.value.id, 'live waiting job'));
+      const cancelController = new globalThis.AbortController();
+      const { signal } = cancelController;
+      const readinessTimeoutMs = process.platform === 'win32' ? 75_000 : 10_000;
+      // Two readiness waits, four serial commands, then one command budget to exit.
+      // Only this owner's lifetime includes the nested checks; child limits stay unchanged.
+      const activeLockLifetimeMs = 2 * readinessTimeoutMs + 100 + 4 * commandTimeoutMs + commandTimeoutMs;
+      let cancelGateCompleted = false;
+      const cancelWait = until(() => proxy.evidence().wsUpgrades > upgradesBeforeCancel, 'cancel transport ready', readinessTimeoutMs, signal)
+        .then(() => until(() => records(home, 'job:').find(row => !beforeCancel.has(row.value.id) && row.value.status === 'waiting')?.value.id, 'live waiting job', readinessTimeoutMs, signal));
       const cancelGate = (async () => {
         cancelJobId = await cancelWait;
         assert.ok(cancelJobId, 'live cancellation job did not become waiting');
-        await delay(100);
+        await delay(100, undefined, { signal });
         const lockBefore = readFileSync(resolve(home, 'learning.lock'), 'utf8');
-        assert.equal((await jobShow(cancelJobId, 'ykt')).status, 'waiting');
-        assert.equal((await jobList()).find(job => job.id === cancelJobId).status, 'waiting');
-        activeLockConflict = await command('ykt', ['jobs', 'resume', cancelJobId], 3);
+        assert.equal((await jobShow(cancelJobId, 'ykt', { signal })).status, 'waiting');
+        assert.equal((await jobList({ signal })).find(job => job.id === cancelJobId).status, 'waiting');
+        activeLockConflict = await command('ykt', ['jobs', 'resume', cancelJobId], 3, { signal });
         assert.equal(activeLockConflict.error.code, 'CONFLICT');
-        assert.equal((await command('ykt', ['jobs', 'cancel', cancelJobId, '--yes'], 3)).error.code, 'CONFLICT');
+        assert.equal((await command('ykt', ['jobs', 'cancel', cancelJobId, '--yes'], 3, { signal })).error.code, 'CONFLICT');
         assert.equal(readFileSync(resolve(home, 'learning.lock'), 'utf8'), lockBefore, 'contenders must preserve the active owner token');
         assert.equal(existsSync(resolve(home, 'learning.lock')), true, 'active writer lock must not be deleted');
+        cancelGateCompleted = true;
         return cancelJobId;
       })();
-      const canceledInvocation = await command('ykt', ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--yes'], process.platform === 'win32' ? 0 : 3, {
-        killed: process.platform === 'win32',
-        kill: { signal: process.platform === 'win32' ? 'SIGKILL' : 'SIGINT', when: cancelGate },
-        timeout: 30_000,
-      });
+      let canceledInvocation;
+      try {
+        canceledInvocation = await command('ykt', ['live', 'https://www.yuketang.cn/lesson?lesson_id=9000', '--yes'], process.platform === 'win32' ? 0 : 3, {
+          killed: process.platform === 'win32',
+          kill: { signal: process.platform === 'win32' ? 'SIGKILL' : 'SIGINT', when: cancelGate },
+          timeout: activeLockLifetimeMs,
+        });
+        assert.equal(cancelGateCompleted, true, 'live owner exited before its active-lock checks completed');
+      } finally {
+        cancelController.abort();
+        // Join the aborted observer/contender before outer cleanup can remove its files.
+        await cancelGate.catch(() => {});
+      }
       if (process.platform === 'win32') assert.equal(canceledInvocation.event.signal, 'SIGKILL');
       else assert.equal(canceledInvocation.error.code, 'CANCELED');
       await waitForJobStatus(cancelJobId, process.platform === 'win32' ? 'waiting' : 'paused');
@@ -1065,6 +1086,7 @@ try {
         name: 'jobs-list-show-cancel-active-lock',
         status: 'passed',
         activeLockConflict: 'CONFLICT',
+        readinessTimeoutMs, childTimeoutMs: commandTimeoutMs, lifetimeTimeoutMs: activeLockLifetimeMs,
         signal: process.platform === 'win32' ? 'SIGKILL' : 'SIGINT',
       });
       assert.equal(existsSync(env.LEARNING_HOME), false);
