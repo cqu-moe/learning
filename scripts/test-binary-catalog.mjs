@@ -16,6 +16,38 @@ mkdirSync(reportDir, { recursive: true });
 const report = { schemaVersion: 1, control, egressBoundary, sourceDirty: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), artifact: { name: executable, sha256: existsSync(binary) ? createHash('sha256').update(readFileSync(binary)).digest('hex') : null }, runs: [] };
 const failures = [];
 
+function safeEnvelopeDiagnostic(envelope, source) {
+  if (envelope === null || typeof envelope !== 'object' || Array.isArray(envelope)) {
+    return { json: 'valid', source, shape: Array.isArray(envelope) ? 'array' : typeof envelope };
+  }
+  const error = envelope.error;
+  const retryAfterMs = error !== null && typeof error === 'object' && error !== undefined &&
+    typeof error.retryAfterMs === 'number' && Number.isSafeInteger(error.retryAfterMs) ? error.retryAfterMs : null;
+  const message = error !== null && typeof error === 'object' && typeof error.message === 'string' ? error.message : '';
+  const code = error !== null && typeof error === 'object' && typeof error.code === 'string' && /^[A-Z0-9_]+$/.test(error.code) ? error.code : 'INVALID_OR_MISSING';
+  return {
+    json: 'valid',
+    source,
+    schemaVersionType: typeof envelope.schemaVersion,
+    okType: typeof envelope.ok,
+    status: ['success', 'error', 'uncertain', 'partial', 'canceled', 'needs-input'].includes(envelope.status) ? envelope.status : 'unexpected',
+    exitCodeType: typeof envelope.exitCode,
+    error: error === null || error === undefined ? null : {
+      code,
+      retryable: retryAfterMs !== null && retryAfterMs > 0,
+      retryAfterMs,
+      operationIdPresent: typeof error.operationId === 'string' && error.operationId !== '',
+      fieldCount: Array.isArray(error.fields) ? error.fields.length : null,
+      hintCount: Array.isArray(error.hint) ? error.hint.length : null,
+      messageKind: /(?:certificate|cert|tls|ssl)/i.test(message) ? 'tls'
+        : /proxy|connect/i.test(message) ? 'proxy'
+        : /timeout|timed out/i.test(message) ? 'timeout'
+        : /network|fetch|econn|socket/i.test(message) ? 'network'
+        : message === '' ? 'empty' : 'other',
+    },
+  };
+}
+
 async function removeIsolatedDirectory(directory) {
   let lastError;
   let attempts = 0;
@@ -120,14 +152,19 @@ try {
           elapsedMs: Date.now() - startedAt, timeoutMs, timedOut, stdoutBytes, stderrBytes, ...(spawnErrorCode ? { spawnErrorCode } : {}) });
         if (timedOut) throw Object.assign(new Error('standalone command timed out (' + timeoutMs + 'ms)'), { code: 'BINARY_TIMEOUT' });
         assert.equal(spawnErrorCode, undefined, 'standalone command could not launch');
+        assert.ok(stdoutBytes + stderrBytes > 0, 'standalone command returned no JSON output');
+        const source = stdout !== '' ? 'stdout' : stderr !== '' ? 'stderr' : 'none';
+        let envelope;
+        try { envelope = JSON.parse(stdout || stderr); } catch {
+          const diagnostic = { json: 'invalid', source, parseError: 'BINARY_JSON' };
+          record.commands.at(-1).envelope = diagnostic;
+          throw Object.assign(new Error('standalone command returned invalid JSON'), { code: 'BINARY_JSON', diagnostic });
+        }
+        record.commands.at(-1).envelope = safeEnvelopeDiagnostic(envelope, source);
         proxy.assertHealthy();
         assert.equal(result.signal, null, 'standalone command terminated by signal');
-        assert.equal(result.code, expected, 'standalone command exit mismatch');
-        assert.ok(stdoutBytes + stderrBytes > 0, 'standalone command returned no JSON output');
-        // Do not include raw output in failure reports: login traffic contains synthetic secrets.
-        let envelope;
-        try { envelope = JSON.parse(stdout || stderr); }
-        catch { throw Object.assign(new Error('standalone command returned invalid JSON'), { code: 'BINARY_JSON' }); }
+        try { assert.equal(result.code, expected, 'standalone command exit mismatch'); }
+        catch (error) { error.diagnostic = record.commands.at(-1).envelope; throw error; }
         record.commands.at(-1).errorCode = envelope.error?.code;
         proxy.assertHealthy();
         for (const secret of proxy.secrets) assert.ok(!(stdout + stderr).includes(secret), 'sensitive output');

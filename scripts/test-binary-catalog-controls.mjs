@@ -21,12 +21,13 @@ console.log('OK catalog negative controls: wrong result, missing fixture and bin
 if (process.platform !== 'win32') {
   const directory = mkdtempSync(resolve(root, 'dist/catalog-process-controls-'));
   try {
-    for (const mode of ['timeout', 'empty', 'invalid']) {
+    for (const mode of ['timeout', 'empty', 'invalid', 'valid-mismatch']) {
       const reportsBefore = new Set(readdirSync(resolve(root, 'dist/e2e')));
       const tool = resolve(directory, 'external-command');
       writeFileSync(tool, '#!/bin/sh\nexec "' + process.execPath + '" --input-type=commonjs - "$@" <<\'SCRIPT\'\n' +
         "if (process.argv.includes('doctor')) { process.stdout.write(JSON.stringify({data:{initialized:false}})); process.exit(0); }\n" +
         (mode === 'timeout' ? "process.stderr.write('synthetic-output-must-remain-private'); setInterval(() => {}, 1000);\n"
+          : mode === 'valid-mismatch' ? "process.stdout.write(JSON.stringify({schemaVersion:1,ok:false,status:'error',exitCode:1,error:{code:'TRANSPORT',message:'synthetic network error',hint:[],fields:[],operationId:null,retryAfterMs:null}})); process.exit(1);\n"
           : mode === 'invalid' ? "process.stdout.write('invalid-json-must-remain-private');\n" : '') + 'SCRIPT\n');
       chmodSync(tool, 0o755);
       const result = spawnSync(process.execPath, [resolve(root, 'scripts/test-binary-catalog.mjs'), tool], { encoding: 'utf8', timeout: 30_000 });
@@ -53,10 +54,18 @@ if (process.platform !== 'win32') {
       } else {
         assert.equal(command.timedOut, false);
         assert.equal(command.signal, null);
-        assert.equal(command.code, 0);
+        assert.equal(command.code, mode === 'valid-mismatch' ? 1 : 0);
         assert.equal(command.stderrBytes, 0);
-        assert.equal(command.stdoutBytes, mode === 'empty' ? 0 : Buffer.byteLength('invalid-json-must-remain-private'));
+        assert.equal(command.stdoutBytes, mode === 'empty' ? 0 : mode === 'valid-mismatch' ? 186 : Buffer.byteLength('invalid-json-must-remain-private'));
         assert.equal(run.failure, mode === 'invalid' ? 'BINARY_JSON' : 'ERR_ASSERTION');
+        if (mode === 'valid-mismatch') {
+          assert.equal(command.envelope.json, 'valid');
+          assert.equal(command.envelope.source, 'stdout');
+          assert.equal(command.envelope.error.code, 'TRANSPORT');
+          assert.equal(command.envelope.error.retryable, false);
+          assert.equal(command.envelope.error.messageKind, 'network');
+          assert.deepEqual(run.failures[0].diagnostic, command.envelope);
+        }
       }
       assert.doesNotMatch(contents + result.stderr, /must-remain-private|SyntaxError/);
     }

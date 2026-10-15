@@ -10,6 +10,7 @@ import { WebSocketServer } from 'ws';
 const fixtures = new URL('../../packages/sdk/tests/fixtures/', import.meta.url);
 // An explicit allowlist: this proxy NEVER forwards a request to the Internet.
 const hosts = ['fixture.invalid', 'www.yuketang.cn', 'www.xuetangx.com', 'examination.xuetangx.com', 'passport.zhihuishu.com', 'onlineservice-api.zhihuishu.com', 'hikeservice.zhihuishu.com', 'studyservice-api.zhihuishu.com', 'open.weixin.qq.com', 'lp.open.weixin.qq.com', 'user.zhihuishu.com'];
+const tlsClientErrorCodes = new Set(['ERR_SSL_TLSV1_ALERT_UNKNOWN_CA', 'ERR_SSL_TLSV1_ALERT_CERTIFICATE_UNKNOWN', 'ERR_SSL_SSLV3_ALERT_UNKNOWN_CA', 'ERR_SSL_SSLV3_ALERT_CERTIFICATE_UNKNOWN', 'ERR_SSL_TLSV1_ALERT_HANDSHAKE_FAILURE', 'ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE', 'ERR_SSL_UNEXPECTED_EOF_WHILE_READING', 'ERR_SSL_DECODE_ERROR', 'ERR_SSL_BAD_PACKET', 'ECONNRESET', 'EPROTO']);
 
 export async function platformProxy(directory) {
   const ca = resolve(directory, 'test-ca.pem');
@@ -28,7 +29,7 @@ export async function platformProxy(directory) {
     throw Object.assign(new Error(`platform TLS certificate setup failed (${error.code ?? error.status})`), { code: 'PLATFORM_TLS_SETUP', diagnostic });
   }
   let interactions = [], cookie, fault;
-  const evidence = { requests: 0, tunnels: 0, deniedHosts: 0, rejectedRequests: 0, wsUpgrades: 0, wsMessages: 0, wsClosed: 0 };
+  const evidence = { requests: 0, tunnels: 0, deniedHosts: 0, rejectedRequests: 0, wsUpgrades: 0, wsMessages: 0, wsClosed: 0, tlsClientErrors: {} };
   const sockets = new Set();
   const secrets = ['beta-session-fixture', 'synthetic-zhs-cookie', 'sess-fixture', 'auth-secret-fixture', 'fixture.jwt.token', 'xtx-sess-fixture', 'uuid-fixture', 'qt-fixture', 'op-fixture', 'CODE1', 'fixture-token', 'xtx-csrf-fixture', 'ws-qr-fixture'];
   const secure = createTlsServer({ cert: readFileSync(ca), key: readFileSync(key) }, async (request, response) => {
@@ -66,6 +67,11 @@ export async function platformProxy(directory) {
       if (!response.headersSent) response.writeHead(599);
       response.end('{}');
     }
+  });
+  secure.on('tlsClientError', error => {
+    // Observe only recognized Node/OpenSSL codes; messages can contain paths or peer details.
+    const code = tlsClientErrorCodes.has(error.code) ? error.code : 'UNWHITELISTED';
+    evidence.tlsClientErrors[code] = (evidence.tlsClientErrors[code] ?? 0) + 1;
   });
   const websocket = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
   secure.on('upgrade', (request, socket, head) => {

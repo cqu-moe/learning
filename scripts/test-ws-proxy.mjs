@@ -55,7 +55,8 @@ try {
       ...(mode === 'untrusted-ca' ? {} : { NODE_EXTRA_CA_CERTS: proxy.ca }),
     }, proxy.url);
     const after = proxy.evidence();
-    Object.assign(result, { mode, connects: after.tunnels - before.tunnels, upgrades: after.wsUpgrades - before.wsUpgrades, denied: after.deniedHosts - before.deniedHosts });
+    const tlsClientErrors = Object.fromEntries(Object.keys(after.tlsClientErrors).map(code => [code, after.tlsClientErrors[code] - (before.tlsClientErrors[code] ?? 0)]).filter(([, count]) => count > 0));
+    Object.assign(result, { mode, connects: after.tunnels - before.tunnels, upgrades: after.wsUpgrades - before.wsUpgrades, denied: after.deniedHosts - before.deniedHosts, tlsClientErrors });
     report.results.push(result);
     assert.equal(result.code, mode === 'explicit' ? 0 : 1, 'native transport proxy result: ' + mode);
     assert.equal(result.result, mode === 'explicit' ? 'connected' : 'rejected');
