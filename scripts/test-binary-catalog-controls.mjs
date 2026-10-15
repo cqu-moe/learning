@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { platformProxy } from './helpers/platform-proxy.mjs';
 import { spawnSync } from 'node:child_process';
@@ -14,6 +14,44 @@ for (const control of ['wrong-expectation', 'missing-fixture', 'unregistered-hos
   assert.match(result.stderr, messages[control]);
 }
 console.log('OK catalog negative controls: wrong result, missing fixture and binary host/route rejection exit nonzero');
+
+// Use a real failing external executable and real POSIX permission denial.
+// This guards error reporting; Windows cleanup is exercised by the full journey.
+if (process.platform !== 'win32') {
+  const shim = mkdtempSync(resolve(root, 'dist/openssl-failure-'));
+  const before = new Set(readdirSync(resolve(root, 'dist')));
+  const reportsBefore = new Set(readdirSync(resolve(root, 'dist/e2e')));
+  try {
+    const tool = resolve(shim, 'openssl');
+    writeFileSync(tool, `#!${process.execPath}\nimport { chmodSync } from 'node:fs';\nimport { dirname } from 'node:path';\nchmodSync(dirname(process.argv[process.argv.indexOf('-config') + 1]), 0o000);\nprocess.stderr.write('synthetic OpenSSL setup rejection\\n');\nprocess.exit(37);\n`);
+    chmodSync(tool, 0o755);
+    const result = spawnSync(process.execPath, [resolve(root, 'scripts/test-binary-catalog.mjs'), ...(process.argv[2] ? [process.argv[2]] : []), '--setup-cleanup-failure'], {
+      env: { ...process.env, PATH: `${shim}:${process.env.PATH ?? ''}` }, encoding: 'utf8', timeout: 15_000,
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /platform-proxy-setup: platform TLS certificate setup failed \(37\)/);
+    assert.match(result.stderr, /directory-cleanup: isolated directory still exists/);
+    const reports = readdirSync(resolve(root, 'dist/e2e')).filter(name => !reportsBefore.has(name));
+    assert.equal(reports.length, 1);
+    const [run] = JSON.parse(readFileSync(resolve(root, 'dist/e2e', reports[0]), 'utf8')).runs;
+    assert.deepEqual(run.commands, []);
+    assert.deepEqual(run.failures.map(failure => failure.phase), ['platform-proxy-setup', 'directory-cleanup']);
+    assert.equal(run.failures[0].diagnostic.status, 37);
+    assert.equal(run.failures[0].diagnostic.stderr, 'synthetic OpenSSL setup rejection\n');
+    assert.equal(run.cleaned, false);
+    assert.equal(run.cleanupError, 'EACCES');
+  } finally {
+    for (const name of readdirSync(resolve(root, 'dist')).filter(name => name.startsWith('独立目录 ') && !before.has(name))) {
+      const path = resolve(root, 'dist', name);
+      chmodSync(path, 0o700);
+      rmSync(path, { recursive: true, force: true });
+      assert.equal(existsSync(path), false);
+    }
+    rmSync(shim, { recursive: true, force: true });
+  }
+  console.log('OK setup and cleanup errors survive together in stderr and evidence');
+}
 
 const directory = mkdtempSync(resolve(root, 'dist/proxy-denial-'));
 let proxy;

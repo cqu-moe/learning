@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { setTimeout, clearTimeout } from 'node:timers';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { executable, releaseDirectory, root } from './build-cli.mjs';
 
 // This journey deliberately uses the shipped program, never a preload or SDK import.
 const binary = resolve(process.argv.slice(2).find(arg => !arg.startsWith('--')) ?? resolve(releaseDirectory, executable));
-const control = ['wrong-expectation', 'missing-fixture', 'unregistered-host', 'unregistered-route'].find(name => process.argv.includes('--' + name)) ?? 'journey';
+const control = ['wrong-expectation', 'missing-fixture', 'unregistered-host', 'unregistered-route', 'setup-cleanup-failure'].find(name => process.argv.includes('--' + name)) ?? 'journey';
 const reportDir = resolve(root, 'dist/e2e');
 mkdirSync(reportDir, { recursive: true });
 const report = { schemaVersion: 1, control, sourceDirty: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), artifact: { name: executable, sha256: existsSync(binary) ? createHash('sha256').update(readFileSync(binary)).digest('hex') : null }, runs: [] };
@@ -16,17 +17,22 @@ const failures = [];
 
 async function removeIsolatedDirectory(directory) {
   let lastError;
-  for (let attempt = 1; attempt <= 50; attempt += 1) {
+  let attempts = 0;
+  for (; attempts < 50;) {
+    attempts++;
     try {
-      rmSync(directory, { recursive: true, force: true });
-      if (!existsSync(directory)) return { cleaned: true, attempts: attempt };
+      // Node 24.11.1 rmSync uses std::filesystem's narrow Windows paths;
+      // async rm uses libuv and preserves Chinese directory names (nodejs/node#61108).
+      await rm(directory, { recursive: true, force: true });
+      if (!existsSync(directory)) return { cleaned: true, attempts };
     } catch (error) {
       lastError = error;
+      if (!['EBUSY', 'ENOTEMPTY', 'EPERM', 'EMFILE', 'ENFILE'].includes(error.code)) break;
     }
     if (process.platform !== 'win32') break;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  return { cleaned: !existsSync(directory), attempts: 50, error: lastError?.code ?? lastError?.name };
+  return { cleaned: !existsSync(directory), attempts, error: lastError?.code ?? lastError?.name };
 }
 
 try {
@@ -35,14 +41,23 @@ try {
   for (let pass = 1; pass <= 2; pass++) {
     const directory = mkdtempSync(resolve(root, 'dist/独立目录 '));
     const home = resolve(directory, '账号 数据');
-    const record = { pass, commands: [], cleaned: false, status: 'running' };
+    const record = { pass, commands: [], cleaned: false, status: 'running', failures: [] };
     report.runs.push(record);
     let proxy;
+    let stage = 'artifact-copy';
+    const fail = (error, phase) => {
+      record.status = 'failed';
+      failures.push(new Error(`${phase}: ${error.message}`));
+      record.failure ??= error.code ?? error.name;
+      record.failures.push({ phase, code: error.code ?? error.name, ...(error.diagnostic ? { diagnostic: error.diagnostic } : {}) });
+    };
     try {
       const program = resolve(directory, executable);
       copyFileSync(binary, program);
       if (process.platform !== 'win32') chmodSync(program, 0o755);
+      stage = 'platform-proxy-setup';
       proxy = await platformProxy(directory);
+      stage = 'commands';
       const env = {
         PATH: '', HOME: directory, USERPROFILE: directory, TMPDIR: directory, TMP: directory, TEMP: directory,
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
@@ -187,22 +202,21 @@ try {
       assert.ok(proxy.evidence().requests > 0, 'binary must use the actual local proxy');
       record.status = 'passed';
     } catch (error) {
-      record.status = 'failed';
-      failures.push(error);
-      record.failure = error.code ?? error.name;
+      fail(error, stage);
     } finally {
       record.network = proxy?.evidence();
-      try { await proxy?.close(); } finally {
+      try { await proxy?.close(); } catch (error) { fail(error, 'proxy-close'); }
+      try {
         const cleanup = await removeIsolatedDirectory(directory);
         record.cleaned = cleanup.cleaned;
         record.cleanupAttempts = cleanup.attempts;
         record.cleanupError = cleanup.error;
-        assert.equal(record.cleaned, true);
-      }
+        assert.equal(record.cleaned, true, 'isolated directory still exists after cleanup');
+      } catch (error) { fail(error, 'directory-cleanup'); }
     }
     if (failures.length) break;
   }
-  assert.equal(failures.length, 0, failures[0]?.message);
+  if (failures.length) throw new AggregateError(failures, 'standalone catalog failed; all failures retained');
 } finally {
   writeFileSync(resolve(reportDir, `catalog-${control}-${Date.now()}-${process.pid}.json`), JSON.stringify(report, null, 2) + '\n');
 }

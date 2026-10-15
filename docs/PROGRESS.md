@@ -780,3 +780,12 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - [修复 PR #20](https://github.com/cqu-moe/learning/pull/20) 的精确 head `302c5d877aa49432be3cc4c791d2a5a1c57edd81` 在 [CI 38724472631](https://github.com/cqu-moe/learning/actions/runs/38724472631) 六项全 success 后合并；合并提交 `4f0919e5fa905767131e26eb9a01856ae41fec68`，合并后 [main CI 38724900152](https://github.com/cqu-moe/learning/actions/runs/38724900152) 六项也全部 success。两轮独立审查已完成，最终无阻塞问题。
 - 旧运行重跑沿用旧 SHA，因此用 GitHub update-branch 将已验证 main 合入 #18，原 head `082193f` 更新为 `5a927db0ee6021899533d6abc730117f89f0d7fe`。新 fork 运行经维护者批准后，[CI 38724940508](https://github.com/cqu-moe/learning/actions/runs/38724940508) Node 门禁与五个原生二进制检查全部 success，Windows 权限实际验收也通过。#18 保持 OPEN，未获授权合并它。
 - 已读回 #18 相对 main 仍只有原 private-directory.ts、profile.test.ts 与其进度记录三个文件；没有改写其业务补丁。本地主工作区快进至上述修复合并提交；本条为文档验收记录，以 `[skip ci]` 提交，不更改已验证源码或 CLI 版本、不发布 Release。用户指定任务完成，不继续其他 PLAN 项或 Web。
+
+### 2026-10-15 · LEARNING-01 Windows 第二轮：Unicode 删除与双错误保留
+
+- 远端 `38727584135/job/116397155981`（artifact `11968775820`，实际 sourceRevision `5efd244c9fee8a42457641d1824d09cb2edb379b`）再次在目录存在性断言失败：`commands=[]`、`failure=Error`、`cleanupAttempts=50`，无 cleanupError。原日志和 zip 均保留；50 次等待未解决问题，不能把 setup Error 归因于子进程 close race。
+- 固定 Node 24.11.1 的 `src/node_file.cc:1628` 将 UTF-8 `ToStringView()` 传入 Windows `std::filesystem::path`，随后 not_found 直接返回；与 [Node #61067](https://github.com/nodejs/node/issues/61067) 的中文路径静默不删除、[#61108](https://github.com/nodejs/node/pull/61108) 修复吻合。改用同一固定 Node 的 `fs/promises.rm`，其 JS rimraf → libuv 路径不经过该同步实现；保留最终目录不存在断言，不升级运行时、不缩减中文路径。既有有限等待只重试指定可重试错误，并修正实际尝试次数。
+- setup、代理关闭、目录清理分别收集错误，最后以 AggregateError 失败；JSON 同时保留各阶段错误。OpenSSL 保留退出状态、信号、错误码及限长/路径脱敏 stderr；不写私钥或平台流量。初始化 listen 失败等待已启动服务关闭。OpenSSL Unicode 绝对路径仍是待证假设，本次不凭猜测修改它的参数。
+- 错误覆盖红绿：真实外部 OpenSSL 替身退出 37，同时把其隔离目录设为 POSIX 000。旧 runner 只显示 cleanup false（证据 `catalog-journey-1792064462585-46172.json`）；新 runner 同时报 setup status=37 和 cleanup EACCES，仍 exit 1、cleaned=false（`catalog-journey-1792064598112-66807.json`）。controls 恢复权限后实际删除残留并读回不存在。此 POSIX 权限控制不冒充 Windows 复现；Windows 原有完整旅程和严格清理仍执行。
+- Node24.11.1 本机 macOS 两轮 catalog 均 44 命令/37 HTTPS/22 CONNECT、cleaned=true（`catalog-journey-1792064589378-62723.json`）；controls 全部 exit 0；定向 ESLint 与 diff check exit 0。pnpm exec 首次因暂停 WS 的依赖清单与已安装额外开发包不同而拒绝自动重装，直接用固定 Node 执行现有同版本 ESLint 通过；未升级依赖或重复无关测试。
+- 仅交付已定位同步删除缺陷的规避与诊断修复，不能声称 Windows 整体已修好。需远端复验异步删除，并由新报告确定 setup 原因。WS 工作完整保存于命名 stash，未混入此提交。

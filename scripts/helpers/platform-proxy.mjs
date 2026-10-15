@@ -15,7 +15,16 @@ export async function platformProxy(directory) {
   const key = resolve(directory, 'test-key.pem');
   const config = resolve(directory, 'openssl.cnf');
   writeFileSync(config, `[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=Learning synthetic platforms\n[ext]\nsubjectAltName=${hosts.map(h => 'DNS:' + h).join(',')}\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyEncipherment,keyCertSign\n`);
-  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-config', config, '-keyout', key, '-out', ca], { stdio: 'ignore' });
+  try {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-config', config, '-keyout', key, '-out', ca], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 15_000 });
+  } catch (error) {
+    // Only certificate setup diagnostics: no platform traffic or private key output.
+    const diagnostic = {
+      tool: 'openssl', status: error.status, signal: error.signal, code: error.code,
+      stderr: String(error.stderr ?? '').split(directory).join('<isolated-directory>').slice(-4000),
+    };
+    throw Object.assign(new Error(`platform TLS certificate setup failed (${error.code ?? error.status})`), { code: 'PLATFORM_TLS_SETUP', diagnostic });
+  }
   let interactions = [], cookie, fault;
   const evidence = { requests: 0, tunnels: 0, deniedHosts: 0, rejectedRequests: 0 };
   const sockets = new Set();
@@ -73,7 +82,11 @@ export async function platformProxy(directory) {
   });
   try {
     for (const server of [secure, proxy]) await new Promise((res, rej) => { server.once('error', rej); server.listen(0, '127.0.0.1', res); });
-  } catch (error) { for (const server of [secure, proxy]) server.close(); throw error; }
+  } catch (error) {
+    for (const socket of sockets) socket.destroy();
+    await Promise.all([secure, proxy].filter(server => server.listening).map(server => new Promise(res => server.close(res))));
+    throw error;
+  }
   return {
     url: 'http://127.0.0.1:' + proxy.address().port, ca, secrets,
     evidence() { return { ...evidence, rejection: fault }; },
