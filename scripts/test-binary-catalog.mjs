@@ -4,7 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, relative } from 'node:path';
 import { executable, releaseDirectory, root } from './build-cli.mjs';
 import { egressBoundary, loopbackCommand } from './helpers/loopback-command.mjs';
 
@@ -96,7 +96,9 @@ try {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         CI: '1', LEARNING_HOME: resolve(directory, 'ignored-env'),
         LEARNING_TELEMETRY_DISABLED: '1', HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url, ALL_PROXY: proxy.url,
-        NODE_EXTRA_CA_CERTS: proxy.ca,
+        // Child cwd is this isolated Unicode directory. Keep the CRT-read
+        // certificate environment value ASCII without moving the real data.
+        NODE_EXTRA_CA_CERTS: relative(directory, proxy.ca),
       };
       if (process.platform === 'win32') {
         // Compare presence only: never copy or record inherited credential values.

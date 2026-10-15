@@ -4,12 +4,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { resolve } from 'node:path';
+import { resolve, relative } from 'node:path';
 import { bunVersion, compile, root } from './build-cli.mjs';
 import { platformProxy } from './helpers/platform-proxy.mjs';
 import { egressBoundary, loopbackCommand } from './helpers/loopback-command.mjs';
 
-const directory = mkdtempSync(resolve(root, 'dist/ws-proxy-'));
+const directory = mkdtempSync(resolve(root, 'dist/扫码 代理 '));
 const report = {
   bunVersion, egressBoundary,
   sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
@@ -21,15 +21,38 @@ let proxy;
 async function run(program, args, env, allowedProxy) {
   const [command, argv] = loopbackCommand(program, args, allowedProxy);
   const child = spawn(command, argv, { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 });
-  let output = '';
-  child.stdout.on('data', chunk => { output += chunk; }); child.stderr.resume();
+  let output = '', stderr = '';
+  child.stdout.on('data', chunk => { output += chunk; });
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8192); });
   const code = await new Promise((res, rej) => { child.once('error', rej); child.once('close', res); });
-  return { code, result: output.trim() };
+  return { code, result: output.trim(), extraCaLoadWarning: /(?:extra.*(?:ca|cert).*(?:fail|ignor|error)|(?:fail|ignor|error).*extra.*(?:ca|cert))/i.test(stderr) };
 }
 try {
   const program = resolve(directory, process.platform === 'win32' ? 'probe.exe' : 'probe');
   compile('scripts/ws-proxy-probe.ts', program);
   report.artifactSha256 = createHash('sha256').update(readFileSync(program)).digest('hex');
+  if (process.platform === 'win32') {
+    report.certificatePathComparison = [];
+    // Same certificate bytes, cwd, program and proxy. Only the CA environment
+    // spelling changes. This diagnostic cannot substitute for the gates below.
+    const comparison = await platformProxy(directory);
+    try {
+      const fixture = [{kind:'websocket',request:{host:'fixture.invalid',path:'/wsapp/',headers:{origin:'https://fixture.invalid'}},message:{probe:'client'},respond:ws=>ws.send('server')}];
+      comparison.use(fixture);
+      for (const spelling of ['absolute-unicode', 'relative-ascii']) {
+        const before = comparison.evidence();
+        const result = await run(program, ['wss://fixture.invalid/wsapp/'], {
+          PATH:'', HOME:directory, USERPROFILE:directory, TMP:directory, TEMP:directory,
+          ...(process.env.SystemRoot ? {SystemRoot:process.env.SystemRoot} : {}),
+          HTTPS_PROXY:comparison.url,
+          NODE_EXTRA_CA_CERTS:spelling==='absolute-unicode'?comparison.ca:relative(directory,comparison.ca),
+        }, comparison.url);
+        const after = comparison.evidence();
+        report.certificatePathComparison.push({spelling,...result,connects:after.tunnels-before.tunnels,upgrades:after.wsUpgrades-before.wsUpgrades});
+        if (result.code===0) { comparison.done(); if (spelling==='absolute-unicode') comparison.use(fixture); }
+      }
+    } finally { await comparison.close(); }
+  }
   proxy = await platformProxy(directory);
   if (process.platform === 'darwin') {
     // Use a second listening loopback port: denial cannot pass merely because no server exists.
@@ -52,7 +75,7 @@ try {
       PATH: '', HOME: directory, USERPROFILE: directory, TMPDIR: directory, TMP: directory, TEMP: directory,
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HTTPS_PROXY: mode === 'invalid-proxy' ? 'invalid proxy URL' : proxy.url,
-      ...(mode === 'untrusted-ca' ? {} : { NODE_EXTRA_CA_CERTS: proxy.ca }),
+      ...(mode === 'untrusted-ca' ? {} : { NODE_EXTRA_CA_CERTS: relative(directory, proxy.ca) }),
     }, proxy.url);
     const after = proxy.evidence();
     const tlsClientErrors = Object.fromEntries(Object.keys(after.tlsClientErrors).map(code => [code, after.tlsClientErrors[code] - (before.tlsClientErrors[code] ?? 0)]).filter(([, count]) => count > 0));

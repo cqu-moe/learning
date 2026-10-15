@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { basename, resolve } from 'node:path';
+import { basename, resolve, relative } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 import { setTimeout, clearTimeout } from 'node:timers';
@@ -97,7 +97,7 @@ try {
         PATH: '', HOME: directory, USERPROFILE: directory, TMPDIR: directory, TMP: directory, TEMP: directory,
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         CI: '1', LEARNING_HOME: resolve(directory, 'unused-home'), LEARNING_TELEMETRY_DISABLED: '1',
-        HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url, ALL_PROXY: proxy.url, NODE_EXTRA_CA_CERTS: proxy.ca,
+        HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url, ALL_PROXY: proxy.url, NODE_EXTRA_CA_CERTS: relative(directory, proxy.ca),
       };
       const secrets = [...proxy.secrets, 'exam-session-fixture', 'crypt-fixture', 'xtx-crypt-fixture', 'xtx-exam-sess'];
       async function run(args, expected = 0, { killed = false, timeout = process.platform === 'win32' ? 75_000 : 15_000 } = {}) {
