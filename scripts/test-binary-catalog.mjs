@@ -6,13 +6,14 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, mkdtempSyn
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { executable, releaseDirectory, root } from './build-cli.mjs';
+import { egressBoundary, loopbackCommand } from './helpers/loopback-command.mjs';
 
 // This journey deliberately uses the shipped program, never a preload or SDK import.
 const binary = resolve(process.argv.slice(2).find(arg => !arg.startsWith('--')) ?? resolve(releaseDirectory, executable));
-const control = ['wrong-expectation', 'missing-fixture', 'unregistered-host', 'unregistered-route', 'setup-cleanup-failure'].find(name => process.argv.includes('--' + name)) ?? 'journey';
+const control = ['wrong-expectation', 'missing-fixture', 'unregistered-host', 'unregistered-route', 'setup-cleanup-failure', 'ws-unregistered-route', 'ws-missing-fixture', 'ws-wrong-message'].find(name => process.argv.includes('--' + name)) ?? 'journey';
 const reportDir = resolve(root, 'dist/e2e');
 mkdirSync(reportDir, { recursive: true });
-const report = { schemaVersion: 1, control, sourceDirty: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), artifact: { name: executable, sha256: existsSync(binary) ? createHash('sha256').update(readFileSync(binary)).digest('hex') : null }, runs: [] };
+const report = { schemaVersion: 1, control, egressBoundary, sourceDirty: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), artifact: { name: executable, sha256: existsSync(binary) ? createHash('sha256').update(readFileSync(binary)).digest('hex') : null }, runs: [] };
 const failures = [];
 
 async function removeIsolatedDirectory(directory) {
@@ -65,8 +66,40 @@ try {
         LEARNING_TELEMETRY_DISABLED: '1', HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url, ALL_PROXY: proxy.url,
         NODE_EXTRA_CA_CERTS: proxy.ca,
       };
+      let activeChild;
+      const waitForQr = async file => {
+        for (let i = 0; i < 200; i++) {
+          if (existsSync(file) && readFileSync(file).subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return;
+          await new Promise(res => setTimeout(res, 10));
+        }
+        assert.fail('binary did not publish a PNG QR');
+      };
+      const wsLogin = (file, outcome = 'success') => {
+        const http = JSON.parse(readFileSync(new URL('../packages/sdk/tests/fixtures/xuetang/qr-is-new.json', import.meta.url), 'utf8')).interactions;
+        const isNew = pass === 1;
+        const ws = {
+          kind: 'websocket',
+          request: { host: 'www.xuetangx.com', path: '/wsapp/', headers: { origin: 'https://www.xuetangx.com', 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' } },
+          message: { op: 'requestlogin', role: 'web', version: '1.4', purpose: 'login', xtbz: 'xt', 'x-client': 'web' },
+          respond: async socket => {
+            socket.send(JSON.stringify({ op: 'requestlogin', ticket: 'https://qr.invalid/ws-qr-fixture', expire_seconds: outcome === 'expired' ? 5 : 60 }));
+            await waitForQr(file);
+            if (outcome === 'close') { socket.close(); return; }
+            if (outcome === 'cancel') { assert.ok(activeChild.kill('SIGINT')); return; }
+            if (outcome === 'expired') await new Promise(res => setTimeout(res, 6000));
+            if (outcome === 'malformed') { socket.send('{'); return; }
+            socket.send(JSON.stringify(outcome === 'missing-token' ? { op: 'loginsuccess', is_new: true } : { op: 'loginsuccess', is_new: isNew, token: isNew ? 'unused-token' : 'fixture-token', ...(isNew ? { s_s: 'fixture-token' } : {}) }));
+          },
+        };
+        if (control === 'ws-unregistered-route') ws.request.path = '/unregistered';
+        if (control === 'ws-wrong-message') ws.message.purpose = 'wrong-purpose';
+        if (outcome === 'exchange-denied') http[1].response = { status: 403, body: { success: false } };
+        proxy.use([http[0], ...(control === 'ws-missing-fixture' ? [] : [ws]), ...(['success', 'exchange-denied'].includes(outcome) ? [http[1]] : [])]);
+      };
       async function run(args, expected = 0) {
-        const child = spawn(program, ['--home', home, ...args, '--json', '--no-interactive'], { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] });
+        const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json', '--no-interactive'], proxy.url);
+        const child = spawn(command, argv, { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] });
+        activeChild = child;
         let stdout = '', stderr = '';
         child.stdout.on('data', chunk => { stdout += chunk; });
         child.stderr.on('data', chunk => { stderr += chunk; });
@@ -121,11 +154,14 @@ try {
       assert.equal((await run(['whoami', '--profile', 'beta'])).data.state, 'valid');
       proxy.done();
       assert.equal((await run(['outline', courses.data.items[0].ref.key, '--profile', 'beta'], 3)).error.code, 'FORBIDDEN');
-      // Imports use only synthetic cookie files; no encrypted session or successful catalog is seeded.
+      // Real QR login writes the session; later commands read it in new processes.
       const xtProfile = await run(['profile', 'add', 'xt', '--platform', 'xuetang']);
       const imported = resolve(directory, 'synthetic-import.json');
-      writeFileSync(imported, JSON.stringify([{ name: 'sessionid', value: 'xtx-sess-fixture', domain: '.xuetangx.com' }]));
-      assert.equal((await run(['login', '--profile', 'xt', '--import', imported])).data.identityVerified, false);
+      const xtQr = resolve(directory, 'xt-qr.png');
+      wsLogin(xtQr);
+      assert.equal((await run(['login', '--profile', 'xt', '--qr-file', xtQr])).data.identityVerified, true);
+      proxy.done();
+      assert.equal(existsSync(xtQr), false);
       proxy.use('xuetang/courses', { cookie: 'sessionid=xtx-sess-fixture' });
       assert.equal((await run(['whoami', '--profile', 'xt'])).data.state, 'valid');
       proxy.done();
@@ -136,6 +172,27 @@ try {
       proxy.use(JSON.parse(readFileSync(new URL('../packages/sdk/tests/fixtures/xuetang/outline.json', import.meta.url), 'utf8')).interactions.slice(1), { cookie: 'sessionid=xtx-sess-fixture' });
       assert.ok((await run(['outline', xt.data.items[0].ref.key, '--profile', 'xt'])).data.value.roots.length > 0);
       proxy.done();
+      writeFileSync(imported, JSON.stringify([{ name: 'sessionid', value: 'xtx-import-fixture', domain: '.xuetangx.com' }]));
+      assert.equal((await run(['login', '--profile', 'xt', '--import', imported])).data.identityVerified, false);
+      proxy.use('xuetang/courses', { cookie: 'sessionid=xtx-import-fixture' });
+      assert.equal((await run(['whoami', '--profile', 'xt'])).data.state, 'valid');
+      proxy.done();
+      await run(['profile', 'add', 'xt-failed', '--platform', 'xuetang']);
+      record.wsTokenBranch = pass === 1 ? 'is_new:s_s' : 'existing:token';
+      record.wsFailures = [];
+      const wsFailures = [['missing-token', 1, 'PROTOCOL'], ['malformed', 1, 'PROTOCOL'], ['close', 3, 'AUTH_REQUIRED'], ['exchange-denied', 3, 'AUTH_REQUIRED'], ['expired', 1, 'TIMEOUT']];
+      // POSIX signals reach the actual CLI handler; Windows kill() forcibly terminates.
+      if (process.platform !== 'win32') wsFailures.push(['cancel', 3, 'CANCELED']);
+      record.wsCancellation = process.platform === 'win32' ? 'not-run: requires Windows console Ctrl+C' : 'SIGINT';
+      for (const [outcome, code, error] of wsFailures) {
+        wsLogin(xtQr, outcome);
+        assert.equal((await run(['login', '--profile', 'xt-failed', '--qr-file', xtQr], code)).error.code, error);
+        proxy.done();
+        assert.equal(existsSync(xtQr), false);
+        assert.equal((await run(['whoami', '--profile', 'xt-failed'])).data.state, 'expired');
+        record.wsFailures.push({ outcome, code, error, qrRemoved: true, session: 'expired' });
+      }
+      await run(['profile', 'remove', 'xt-failed', '--yes']);
       await run(['profile', 'add', 'zhs', '--platform', 'zhs']);
       proxy.use('zhs/wechat-qr');
       assert.equal((await run(['login', '--profile', 'zhs', '--qr-file', resolve(directory, 'wx.jpg')])).data.identityVerified, false);
@@ -200,6 +257,10 @@ try {
       assert.equal(readdirSync(directory).some(name => /^(qr|wx|native|failed|denied|malformed)\./.test(name)), false);
       proxy.done();
       assert.ok(proxy.evidence().requests > 0, 'binary must use the actual local proxy');
+      assert.equal(proxy.evidence().wsUpgrades, 1 + wsFailures.length);
+      assert.equal(proxy.evidence().wsMessages, 1 + wsFailures.length);
+      for (let i = 0; i < 100 && proxy.evidence().wsClosed < 1 + wsFailures.length; i++) await new Promise(res => setTimeout(res, 10));
+      assert.equal(proxy.evidence().wsClosed, 1 + wsFailures.length, 'every auth socket must close');
       record.status = 'passed';
     } catch (error) {
       fail(error, stage);

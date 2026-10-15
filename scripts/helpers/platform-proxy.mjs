@@ -5,10 +5,11 @@ import { createServer } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import { connect } from 'node:net';
 import { resolve } from 'node:path';
+import { WebSocketServer } from 'ws';
 
 const fixtures = new URL('../../packages/sdk/tests/fixtures/', import.meta.url);
 // An explicit allowlist: this proxy NEVER forwards a request to the Internet.
-const hosts = ['www.yuketang.cn', 'www.xuetangx.com', 'passport.zhihuishu.com', 'onlineservice-api.zhihuishu.com', 'hikeservice.zhihuishu.com', 'studyservice-api.zhihuishu.com', 'open.weixin.qq.com', 'lp.open.weixin.qq.com', 'user.zhihuishu.com'];
+const hosts = ['fixture.invalid', 'www.yuketang.cn', 'www.xuetangx.com', 'passport.zhihuishu.com', 'onlineservice-api.zhihuishu.com', 'hikeservice.zhihuishu.com', 'studyservice-api.zhihuishu.com', 'open.weixin.qq.com', 'lp.open.weixin.qq.com', 'user.zhihuishu.com'];
 
 export async function platformProxy(directory) {
   const ca = resolve(directory, 'test-ca.pem');
@@ -27,14 +28,15 @@ export async function platformProxy(directory) {
     throw Object.assign(new Error(`platform TLS certificate setup failed (${error.code ?? error.status})`), { code: 'PLATFORM_TLS_SETUP', diagnostic });
   }
   let interactions = [], cookie, fault;
-  const evidence = { requests: 0, tunnels: 0, deniedHosts: 0, rejectedRequests: 0 };
+  const evidence = { requests: 0, tunnels: 0, deniedHosts: 0, rejectedRequests: 0, wsUpgrades: 0, wsMessages: 0, wsClosed: 0 };
   const sockets = new Set();
-  const secrets = ['beta-session-fixture', 'synthetic-zhs-cookie', 'sess-fixture', 'auth-secret-fixture', 'fixture.jwt.token', 'xtx-sess-fixture', 'uuid-fixture', 'qt-fixture', 'op-fixture', 'CODE1'];
+  const secrets = ['beta-session-fixture', 'synthetic-zhs-cookie', 'sess-fixture', 'auth-secret-fixture', 'fixture.jwt.token', 'xtx-sess-fixture', 'uuid-fixture', 'qt-fixture', 'op-fixture', 'CODE1', 'fixture-token', 'xtx-csrf-fixture', 'ws-qr-fixture'];
   const secure = createTlsServer({ cert: readFileSync(ca), key: readFileSync(key) }, async (request, response) => {
     evidence.requests++;
     try {
       const expected = interactions.shift();
       assert.ok(expected, 'undeclared platform request');
+      assert.notEqual(expected.kind, 'websocket', 'expected WebSocket upgrade');
       const url = new URL(request.url, 'https://' + request.headers.host);
       const match = expected.request;
       assert.equal(request.method, match.method, 'platform method mismatch');
@@ -56,6 +58,41 @@ export async function platformProxy(directory) {
       evidence.rejectedRequests++;
       fault ??= 'Platform traffic rejected: ' + error.message.split('\n')[0];
       response.writeHead(599); response.end('{}');
+    }
+  });
+  const websocket = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+  secure.on('upgrade', (request, socket, head) => {
+    try {
+      const expected = interactions.shift();
+      assert.equal(expected?.kind, 'websocket', 'undeclared WebSocket request');
+      assert.equal(request.method, 'GET');
+      assert.equal(request.headers.host, expected.request.host, 'WebSocket host mismatch');
+      assert.equal(request.url, expected.request.path, 'WebSocket path mismatch');
+      for (const [name, value] of Object.entries(expected.request.headers ?? {})) assert.equal(request.headers[name], value, 'WebSocket header mismatch');
+      websocket.handleUpgrade(request, socket, head, ws => {
+        evidence.wsUpgrades++;
+        let received = false;
+        ws.on('close', () => { evidence.wsClosed++; });
+        ws.on('error', () => { fault ??= 'WebSocket server error'; });
+        ws.on('message', async (data, binary) => {
+          try {
+            assert.equal(received, false, 'unexpected extra WebSocket message');
+            received = true;
+            assert.equal(binary, false, 'expected text WebSocket message');
+            assert.deepEqual(JSON.parse(data.toString()), expected.message, 'WebSocket message mismatch');
+            evidence.wsMessages++;
+            await expected.respond(ws);
+          } catch {
+            evidence.rejectedRequests++;
+            fault ??= 'WebSocket message or response rejected';
+            ws.close(1008);
+          }
+        });
+      });
+    } catch (error) {
+      evidence.rejectedRequests++;
+      fault ??= 'Platform traffic rejected: ' + error.message.split('\n')[0];
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
     }
   });
   const proxy = createServer((_request, response) => { fault = 'Unexpected plain HTTP request'; response.writeHead(599); response.end(); });
@@ -99,6 +136,8 @@ export async function platformProxy(directory) {
     assertHealthy() { assert.equal(fault, undefined, fault); },
     done() { assert.equal(fault, undefined, fault); assert.equal(interactions.length, 0, 'unconsumed platform responses'); cookie = undefined; },
     async close() {
+      for (const ws of websocket.clients) ws.terminate();
+      await new Promise(res => websocket.close(res));
       for (const socket of sockets) socket.destroy();
       await Promise.all([secure, proxy].map(server => new Promise((res, rej) => server.close(error => error ? rej(error) : res()))));
     },

@@ -6,11 +6,11 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { root } from './build-cli.mjs';
 
-for (const control of ['wrong-expectation', 'missing-fixture', 'unregistered-host', 'unregistered-route']) {
+for (const control of ['wrong-expectation', 'missing-fixture', 'unregistered-host', 'unregistered-route', 'ws-unregistered-route', 'ws-missing-fixture', 'ws-wrong-message']) {
   const result = spawnSync(process.execPath, [resolve(root, 'scripts/test-binary-catalog.mjs'), ...(process.argv[2] ? [process.argv[2]] : []), '--' + control], { encoding: 'utf8', timeout: 60_000 });
   assert.equal(result.error, undefined, 'negative control could not launch');
   assert.equal(result.status, 1, 'negative control must fail with an assertion, not be skipped');
-  const messages = { 'wrong-expectation': /incorrect title negative control/, 'missing-fixture': /ENOENT/, 'unregistered-host': /Outbound destination rejected/, 'unregistered-route': /platform path mismatch/ };
+  const messages = { 'wrong-expectation': /incorrect title negative control/, 'missing-fixture': /ENOENT/, 'unregistered-host': /Outbound destination rejected/, 'unregistered-route': /platform path mismatch/, 'ws-unregistered-route': /WebSocket path mismatch/, 'ws-missing-fixture': /undeclared WebSocket request/, 'ws-wrong-message': /WebSocket message or response rejected/ };
   assert.match(result.stderr, messages[control]);
 }
 console.log('OK catalog negative controls: wrong result, missing fixture and binary host/route rejection exit nonzero');

@@ -41,19 +41,25 @@ export function xtxQrLaunch(deps: { http: SessionHttp; jar: SessionCookieJar; tr
     try {
       await socket.send(JSON.stringify(REQUESTLOGIN_FRAME));
       let success: LoginSuccessFrame | null = null;
+      let qrExpiresAtMs = ctx.deadlineAtMs;
       for await (const message of socket.messages) {
         if (ctx.signal.aborted) return;
         const text = typeof message === 'string' ? message : new TextDecoder().decode(message);
         const frame = JSON.parse(text) as { op?: string; ticket?: string; expire_seconds?: number };
         if (frame.op === 'requestlogin' && typeof frame.ticket === 'string') {
+          qrExpiresAtMs = Math.min(ctx.deadlineAtMs, deps.clock.nowMs() + Math.max(5, (frame.expire_seconds ?? 60) - 2) * 1000);
           ctx.emit({
             type: 'qr',
             generation: ctx.generation,
             qr: { type: 'text', value: ticketFollowUrl(frame.ticket) },
-            expiresAtMs: deps.clock.nowMs() + Math.max(5, (frame.expire_seconds ?? 60) - 2) * 1000,
+            expiresAtMs: qrExpiresAtMs,
           });
           ctx.emit({ type: 'waiting', generation: ctx.generation });
         } else if (frame.op === 'loginsuccess') {
+          if (deps.clock.nowMs() >= qrExpiresAtMs) {
+            ctx.fail({ code: 'TIMEOUT', message: 'wsapp login confirmation arrived after QR expiry', retryAfterMs: null, operationId: null });
+            return;
+          }
           success = frame as LoginSuccessFrame;
           break;
         }

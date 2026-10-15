@@ -16,8 +16,8 @@ export class NodeFetchTransport implements Transport {
     return fetch(input);
   }
 
-  async connect(input: { url: string; signal: AbortSignal }): Promise<Socket> {
-    return NodeSocket.open(input.url, input.signal);
+  async connect(input: { url: string; headers?: Record<string, string>; signal: AbortSignal }): Promise<Socket> {
+    return NodeSocket.open(input.url, input.signal, input.headers);
   }
 }
 
@@ -28,9 +28,13 @@ export class NodeSocket implements Socket {
   private readonly waiters: ((result: IteratorResult<string | Uint8Array>) => void)[] = [];
   private failure: LearningError | null = null;
   private closed = false;
+  private readonly detachAbort: () => void;
 
-  private constructor(ws: WsLike) {
+  private constructor(ws: WsLike, signal: AbortSignal) {
     this.ws = ws;
+    const onAbort = () => { void this.close(); };
+    this.detachAbort = () => signal.removeEventListener('abort', onAbort);
+    signal.addEventListener('abort', onAbort, { once: true });
     ws.addEventListener('message', (event) => {
       const data = event.data;
       const frame = typeof data === 'string' ? data : new Uint8Array(data as ArrayBuffer);
@@ -47,18 +51,30 @@ export class NodeSocket implements Socket {
       else this.queue.push(frame);
     });
     ws.addEventListener('close', () => {
+      this.detachAbort();
       this.closed = true;
       for (const waiter of this.waiters.splice(0)) waiter({ value: undefined, done: true });
     });
+    if (signal.aborted) void this.close();
   }
 
-  static async open(url: string, signal: AbortSignal): Promise<NodeSocket> {
+  static async open(url: string, signal: AbortSignal, headers: Record<string, string> = {}): Promise<NodeSocket> {
+    if (process.versions.bun !== undefined) {
+      // Bun 1.4.3 accepts native options but does not select an env proxy for WS.
+      // Native TLS verification, NODE_EXTRA_CA_CERTS and NO_PROXY remain in Bun.
+      const env = process.env;
+      const proxy = (url.startsWith('wss:') ? env.https_proxy ?? env.HTTPS_PROXY : undefined)
+        ?? env.http_proxy ?? env.HTTP_PROXY ?? env.all_proxy ?? env.ALL_PROXY;
+      const BunWebSocket = WebSocket as unknown as new (url: string, options: { headers: Record<string, string>; proxy?: string }) => WsLike;
+      return NodeSocket.fromWebSocket(new BunWebSocket(url, { headers, ...(proxy ? { proxy } : {}) }), signal);
+    }
     return NodeSocket.fromWebSocket(new WebSocket(url) as unknown as WsLike, signal);
   }
 
   static async fromWebSocket(ws: WsLike, signal: AbortSignal): Promise<NodeSocket> {
     await new Promise<void>((resolve, reject) => {
       if (signal.aborted) {
+        ws.close();
         reject(new LearningError({ code: 'CANCELED', message: 'ws connect canceled', retryAfterMs: null, operationId: null }));
         return;
       }
@@ -72,6 +88,7 @@ export class NodeSocket implements Socket {
       };
       const onAbort = () => {
         cleanup();
+        ws.close();
         reject(new LearningError({ code: 'CANCELED', message: 'ws connect canceled', retryAfterMs: null, operationId: null }));
       };
       const cleanup = () => {
@@ -81,7 +98,7 @@ export class NodeSocket implements Socket {
       ws.addEventListener('error', onError);
       signal.addEventListener('abort', onAbort);
     });
-    return new NodeSocket(ws);
+    return new NodeSocket(ws, signal);
   }
 
   async send(message: string): Promise<void> {
@@ -107,6 +124,7 @@ export class NodeSocket implements Socket {
   };
 
   async close(): Promise<void> {
+    this.detachAbort();
     this.closed = true;
     this.ws.close();
     for (const waiter of this.waiters.splice(0)) waiter({ value: undefined, done: true });

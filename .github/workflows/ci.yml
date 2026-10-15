@@ -76,6 +76,8 @@ jobs:
           POSTHOG_PROJECT_TOKEN: ${{ github.event_name != 'pull_request' && vars.POSTHOG_PROJECT_TOKEN || '' }}
       - name: Run standalone executable
         run: node scripts/test-distribution.mjs ${{ github.event_name == 'pull_request' && '--without-telemetry' || '' }}
+      - name: Verify native WSS proxy and denial controls
+        run: node scripts/test-ws-proxy.mjs
       - name: Run standalone auth and catalog twice through local TLS providers
         run: node scripts/test-binary-catalog.mjs
       - name: Verify standalone journey failure controls
