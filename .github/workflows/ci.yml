@@ -81,6 +81,16 @@ jobs:
       - name: Diagnose Windows private-directory initialization
         if: runner.os == 'Windows'
         run: node scripts/diagnose-windows-private-directory.mjs
+      - name: Preserve Windows startup and certificate diagnostics before long journeys
+        if: runner.os == 'Windows' && !cancelled()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-startup-diagnostics-${{ github.sha }}
+          path: |
+            dist/e2e/windows-private-directory-diagnostic.json
+            dist/e2e/ws-proxy-*.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Run standalone auth and catalog twice through local TLS providers
         run: node scripts/test-binary-catalog.mjs
       - name: Verify standalone journey failure controls
