@@ -834,3 +834,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 固定 Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结安装、SDK/CLI 重建、lint、两包 typecheck、边界检查通过；profile+telemetry 15/15 通过。`build-cli.mjs --without-telemetry` 编译 0.2.7，`test-distribution.mjs --without-telemetry` 含真实 PTY 通过；catalog 两轮各 44 命令/37 HTTPS/22 CONNECT，均 cleaned=true/attempts=1；controls 四项故意失败、未知目的地及 setup+cleanup 双错误保留全部通过。
 - 本机 pnpm 自动依赖检查先报无 TTY 拒绝重装；离线安装缺缓存，随后按原 lockfile 冻结安装成功，未改依赖。验证直接以固定 Node 执行同版本本地 tsc/eslint/vitest，未更换工具或放宽检查。
 - 实跑证据 `dist/e2e/catalog-journey-1792065942567-49812.json`，sourceRevision=cb92eba、sourceDirty=true（合并暂存态）；产物 SHA256 `0df69c6f1913e269fbd6194f61a76a8761c9186cf77adc96c47eccf150908cf6`。本机仅 macOS arm64；Windows OpenSSL 修正及新集成 CI 待父代理跟踪。签名合并后交 merger，本代理无 push、PR 编辑或 integration 修改。
+
+### 2026-10-15 · LEARNING-01 原 distribution 清理诊断补修
+
+- 新 CI `38732837065/job/116414607719` 在旧 `test-distribution` → `test-binary.mjs:94` 的 rmSync 报 EPERM，尚未运行 catalog；原日志 `/private/tmp/learning-windows-116414607719.raw.log` 保留。不能由该轮推断 OpenSSL 修正通过，也不能把被 finally 覆盖的原始失败猜作已确定原因。
+- 只在这两个既有脚本改用 fs/promises.rm，最多 5 次可重试错误重试、100ms 线性退避；都读回目录不存在。主过程及 cleanup 各自收集错误，以 AggregateError 非零退出，不再覆盖原始错误。不缩减路径、ACL、超时或业务断言。
+- 实际本机负例：外部可执行替身输出错误版本，再令工作目录不可访问。旧 runner 的原始断言被清理 EACCES 覆盖（`distribution-errors-1792067009731.json`）；修后在不可访问目录内放置实际文件，两错误都保留且 exit1（`distribution-errors-1792067053156.json`）。中间空目录在 async rm 下可删除，不能冒充双失败，因此负例保留实际文件。控制恢复权限后删除并确认不存在；探针位于忽略的 dist/check-distribution-cleanup.mjs，不增加产品测试 seam。
+- 固定 Node24.11.1，本机 `test-distribution.mjs --without-telemetry`、两文件 ESLint、diff check 通过；正式 Bun1.4.3 编译 0.2.7 程序执行无运行时/SQLite/锁/权限和真实 PTY。Windows 仍需新原生 CI 暴露并核对 primary failure。此分段只提交两个既有脚本和本记录；WS 改动继续独立未提交。
