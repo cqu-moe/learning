@@ -23,7 +23,7 @@ if (process.platform !== 'win32') {
   const reportsBefore = new Set(readdirSync(resolve(root, 'dist/e2e')));
   try {
     const tool = resolve(shim, 'openssl');
-    writeFileSync(tool, `#!${process.execPath}\nimport { chmodSync } from 'node:fs';\nimport { dirname } from 'node:path';\nchmodSync(dirname(process.argv[process.argv.indexOf('-config') + 1]), 0o000);\nprocess.stderr.write('synthetic OpenSSL setup rejection\\n');\nprocess.exit(37);\n`);
+    writeFileSync(tool, `#!${process.execPath}\nimport { chmodSync } from 'node:fs';\nchmodSync(process.cwd(), 0o000);\nprocess.stderr.write('synthetic OpenSSL setup rejection\\n');\nprocess.exit(37);\n`);
     chmodSync(tool, 0o755);
     const result = spawnSync(process.execPath, [resolve(root, 'scripts/test-binary-catalog.mjs'), ...(process.argv[2] ? [process.argv[2]] : []), '--setup-cleanup-failure'], {
       env: { ...process.env, PATH: `${shim}:${process.env.PATH ?? ''}` }, encoding: 'utf8', timeout: 15_000,

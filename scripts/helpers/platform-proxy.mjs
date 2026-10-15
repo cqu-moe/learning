@@ -16,7 +16,8 @@ export async function platformProxy(directory) {
   const config = resolve(directory, 'openssl.cnf');
   writeFileSync(config, `[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=Learning synthetic platforms\n[ext]\nsubjectAltName=${hosts.map(h => 'DNS:' + h).join(',')}\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyEncipherment,keyCertSign\n`);
   try {
-    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-config', config, '-keyout', key, '-out', ca], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 15_000 });
+    // Windows OpenSSL loses non-ASCII argv paths; Node sets the Unicode cwd.
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-config', 'openssl.cnf', '-keyout', 'test-key.pem', '-out', 'test-ca.pem'], { cwd: directory, stdio: ['ignore', 'ignore', 'pipe'], timeout: 15_000 });
   } catch (error) {
     // Only certificate setup diagnostics: no platform traffic or private key output.
     const diagnostic = {

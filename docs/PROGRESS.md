@@ -789,3 +789,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 错误覆盖红绿：真实外部 OpenSSL 替身退出 37，同时把其隔离目录设为 POSIX 000。旧 runner 只显示 cleanup false（证据 `catalog-journey-1792064462585-46172.json`）；新 runner 同时报 setup status=37 和 cleanup EACCES，仍 exit 1、cleaned=false（`catalog-journey-1792064598112-66807.json`）。controls 恢复权限后实际删除残留并读回不存在。此 POSIX 权限控制不冒充 Windows 复现；Windows 原有完整旅程和严格清理仍执行。
 - Node24.11.1 本机 macOS 两轮 catalog 均 44 命令/37 HTTPS/22 CONNECT、cleaned=true（`catalog-journey-1792064589378-62723.json`）；controls 全部 exit 0；定向 ESLint 与 diff check exit 0。pnpm exec 首次因暂停 WS 的依赖清单与已安装额外开发包不同而拒绝自动重装，直接用固定 Node 执行现有同版本 ESLint 通过；未升级依赖或重复无关测试。
 - 仅交付已定位同步删除缺陷的规避与诊断修复，不能声称 Windows 整体已修好。需远端复验异步删除，并由新报告确定 setup 原因。WS 工作完整保存于命名 stash，未混入此提交。
+
+### 2026-10-15 · LEARNING-01 Windows 第三轮：OpenSSL Unicode argv 确证修复
+
+- 原生 CI `38730046590/job/116405301586` 的 artifact `11969878756`（`catalog-journey-1792065038031-5012.json`，sourceRevision `0a08eb571faf3b18201a45020c5d6627a429c9dd`）确认 `cleaned=true`、`cleanupAttempts=1`，异步删除规避已通过该 Windows 运行。唯一失败为 setup `PLATFORM_TLS_SETUP` / OpenSSL status 1；stderr 中中文目录变为 `???? j69Gt1`，`openssl.cnf` 打开失败 `Invalid argument`。没有业务命令执行，旧首败与本轮日志、artifact 均保留。
+- 只将 OpenSSL 的 config/key/cert 参数改为 ASCII 相对文件名 `openssl.cnf`、`test-key.pem`、`test-ca.pem`，由 Node 通过 `cwd: directory` 指定原中文空格目录；不搬移目录、不关闭 TLS 校验、不升级工具链。双失败外部控制改为对 `process.cwd()` 设置 POSIX 000，仍实际触发 setup status 37 与 cleanup EACCES，并在控制完成后恢复权限、删除和读回不存在。
+- 固定 Node v24.11.1、原 Bun1.4.3 编译的 macOS arm64 正式产物：`node scripts/test-binary-catalog.mjs` exit 0，两轮各 44 命令、37 HTTPS/22 CONNECT，均 cleaned=true、attempts=1；证据 `dist/e2e/catalog-journey-1792065243372-52947.json`。`node scripts/test-binary-catalog-controls.mjs` exit 0，原四个失败控制、目的地拒绝与双错误保留均通过；双失败证据 `catalog-setup-cleanup-failure-1792065266177-57477.json`。两文件定向 ESLint 和 `git diff --check` exit 0，未重复无关产品测试。
+- 本机验证时 sourceRevision=9705201、sourceDirty=true；产品二进制未变，SHA256 `e81fd8023aa86a966139529a8ca0a544f6f002eb3d223faf806ed47208ac88f7`。此 OpenSSL 修正仍需 Windows 新 CI；不声明整个 Windows catalog 已通过。WS 恢复内容另存 stash `d884617056d10f7686aa79244eda845f049680b6`，未混入本次分段；无 push、PR 编辑或 integration 修改。
