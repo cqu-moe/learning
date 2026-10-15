@@ -925,3 +925,13 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 真红灯：本worktree新增回归运行旧正式程序SHA e624d67362574ccbf77f540cd8efd914a06a6e3b0e4589932900fa99d2434701，writes-journey-1792084321557-58771.json在matching精确失败actual exact/expected ambiguous，子进程/端口/数据已清理。
 - 生产仅在既有distinct判别中纳入排序后的选项正文集合及所选答案正文；缺失key带独立标记，不能与合法正文混淆。题指纹及下游完整映射/重复选项/不存在key拒绝保持。完整选项集合不一致保守视为歧义，合法键名重排保持可用。
 - Node24.11.1/pnpm11.19.0/Bun1.4.3：定向ESLint、typecheck、SDK278测试、正式无遥测编译、matching两次全新隔离目录绿灯、git diff检查均通过。绿灯writes-journey-1792084386607-68299.json。提交前sourceDirty=true如实记录；签名后完整writes与控制、新五平台组合CI待最终证据。没有真实学业操作。
+
+### 2026-10-16 · LEARNING-WINDOWS-CONTROL
+
+- 只在独占 tickets/LEARNING-WINDOWS-CONTROL 从17e0cf661a00590cef270828d8cd455b584e0f02修复；未编辑integration、工作区root execution、PR或其他票据。
+- 已读取真实CI38777185239的Windows job116567761348：step22在父runner第20行报empty selection evidence missing；子报告明确nonempty known scenario selection required且runs=[]。实际checkout为PR19合成merge f8bfe68120083fcd1fe9478e7157b39b8e491003，head仍17e。正常writes双轮成功；不是空选择获准或业务写入失败。
+- 根因是子进程relative()输出Windows反斜杠，而父进程只识别POSIX路径。将原报告读取移到测试工具helper统一分隔符，要求恰好一条证据路径、无超时/信号且真实exit1；所有原有业务负控与清理断言保留，超时和产品源码未改。
+- test-audit主归属为真实子进程输出/退出和报告读回边界；原compiled写入旅程保留业务归属。新增两项聚焦测试：真实空选择exit1报告在POSIX/Windows+CRLF拼写下可读；真实compiled matching双轮exit0被负控拒绝。没有伪造报告、SDK store或新增产品测试入口。CI在原write-controls步骤前运行同一聚焦测试。
+- 真红灯：提取原逻辑但未修复时，新负控回归exit1且精确报empty selection evidence missing；修后2/2 exit0。另一次受限沙箱positive因本地监听EPERM失败并保留，允许本地TLS监听后真实native重跑通过，未删断言或改预算。
+- Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结离线安装196包、build、正式无遥测编译、lint、typecheck、boundaries、语法与diff检查均exit0；六项原负控全部真实exit1、预期阶段和清理/权限恢复通过。提交前证据sourceDirty=true，签名提交后精确clean SHA重放及证据见本票docs/e2e/results/LEARNING-WINDOWS-CONTROL.md。
+- 本机只有macOS arm64；Windows路径拼写回归不等于Windows native验收，Linux/Windows CI仍需父任务后续执行。未重复SDK/CLI全套或无关jobs旅程；无真实服务、账号、付费模型、推送或发布。使用既有效Git身份及SSH/1Password签名，不改身份/签名配置。下一步为父任务审查独立签名提交并安排CI，本票不自行整合。

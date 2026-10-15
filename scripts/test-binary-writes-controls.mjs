@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { setTimeout, clearTimeout } from 'node:timers';
 import { root } from './build-cli.mjs';
+import { writeControlEvidence } from './helpers/write-control-evidence.mjs';
 
 mkdirSync(resolve(root, 'dist/e2e'), { recursive: true });
 const directory = mkdtempSync(resolve(root, 'dist/write-controls-'));
@@ -15,10 +16,8 @@ async function control(name, args, verify) {
   let stdout = '', timedOut = false;
   child.stdout.on('data', chunk => { stdout += chunk; }); child.stderr.resume();
   const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, 120_000);
-  const code = await new Promise((res, rej) => { child.once('error', rej); child.once('close', res); }).finally(() => clearTimeout(timer));
-  assert.equal(timedOut, false, name + ' timeout'); assert.notEqual(code, 0, name + ' must fail'); assert.notEqual(code, null, name + ' terminated');
-  const path = stdout.trim().split('\n').find(line => /^dist\/e2e\/writes-.*\.json$/.test(line)); assert.ok(path, name + ' evidence missing');
-  const evidence = JSON.parse(readFileSync(resolve(root, path)));
+  const { code, signal } = await new Promise((res, rej) => { child.once('error', rej); child.once('close', (code, signal) => res({ code, signal })); }).finally(() => clearTimeout(timer));
+  const { path, evidence } = writeControlEvidence({ code, signal, timedOut, stdout }, name);
   verify(evidence);
   assert.ok(evidence.runs.every(r => r.childrenClosed && r.listenersClosed && (r.cleaned || r.controlRecoveryCleaned)), name + ' leaked resources');
   report.controls.push({ name, code, evidence: path });

@@ -117,7 +117,9 @@ jobs:
       - name: Run standalone drafts, matching and confirmed writes twice
         run: node scripts/test-binary-writes.mjs
       - name: Verify write journey failure controls and cleanup
-        run: node scripts/test-binary-writes-controls.mjs
+        run: |
+          node --test scripts/test-write-control-evidence.mjs
+          node scripts/test-binary-writes-controls.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
