@@ -91,10 +91,10 @@ describe('job runner (T18, A181/A182)', () => {
     expect((await new JobRunner(state, clock).get(job.id)).status).toBe('canceled');
   });
 
-  it('marks an interrupted running slice uncertain before any retry', async () => {
+  it('marks an interrupted write slice uncertain before any retry', async () => {
     const state = new MemoryStateStore();
     const runner = new JobRunner(state, new FakeClock());
-    const job = await runner.create(scope, 'export', { total: 1 });
+    const job = await runner.create(scope, 'study', { total: 1 });
     const pending = runner.advance(job.id, () => new Promise(() => {}));
     await new Promise((resolve) => setTimeout(resolve, 0));
     const reopened = new JobRunner(state, new FakeClock());

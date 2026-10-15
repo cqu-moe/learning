@@ -9,7 +9,7 @@ import { WebSocketServer } from 'ws';
 
 const fixtures = new URL('../../packages/sdk/tests/fixtures/', import.meta.url);
 // An explicit allowlist: this proxy NEVER forwards a request to the Internet.
-const hosts = ['fixture.invalid', 'www.yuketang.cn', 'www.xuetangx.com', 'passport.zhihuishu.com', 'onlineservice-api.zhihuishu.com', 'hikeservice.zhihuishu.com', 'studyservice-api.zhihuishu.com', 'open.weixin.qq.com', 'lp.open.weixin.qq.com', 'user.zhihuishu.com'];
+const hosts = ['fixture.invalid', 'www.yuketang.cn', 'www.xuetangx.com', 'examination.xuetangx.com', 'passport.zhihuishu.com', 'onlineservice-api.zhihuishu.com', 'hikeservice.zhihuishu.com', 'studyservice-api.zhihuishu.com', 'open.weixin.qq.com', 'lp.open.weixin.qq.com', 'user.zhihuishu.com'];
 
 export async function platformProxy(directory) {
   const ca = resolve(directory, 'test-ca.pem');
@@ -43,21 +43,28 @@ export async function platformProxy(directory) {
       assert.equal(url.hostname, match.host, 'platform host mismatch');
       assert.equal(url.pathname, match.path, 'platform path mismatch');
       if (cookie) assert.ok(request.headers.cookie?.includes(cookie), 'persisted session cookie missing');
-      for (const [name, value] of Object.entries(match.headers ?? {})) assert.equal(request.headers[name], value, 'platform header mismatch');
+      if (match.cookie) assert.ok(request.headers.cookie?.includes(match.cookie), 'persisted session cookie missing');
+      for (const [name, value] of Object.entries(match.headers ?? {})) assert.equal(request.headers[name], value ?? undefined, 'platform header mismatch');
       let body = '';
       for await (const chunk of request) body += chunk;
       if (match.body !== undefined) assert.deepEqual(typeof match.body === 'string' ? body : JSON.parse(body), match.body, 'platform body mismatch');
+      if (match.strict) {
+        assert.deepEqual([...url.searchParams.keys()].sort(), Object.keys(match.query ?? {}).sort(), 'platform query keys mismatch');
+        if (match.body === undefined) assert.equal(body, '', 'unexpected platform request body');
+      }
       for (const [name, value] of Object.entries(match.query ?? {})) {
         // Time/encrypted ZHS request data is exercised by existing protocol tests.
         if (['date', 'secretStr', 'uuid'].includes(name)) assert.ok(url.searchParams.has(name));
         else assert.equal(url.searchParams.get(name), value, 'platform query mismatch');
       }
       response.writeHead(expected.response.status, expected.response.headers ?? {});
-      response.end(expected.response.base64 ? Buffer.from(expected.response.base64, 'base64') : typeof expected.response.body === 'string' ? expected.response.body : JSON.stringify(expected.response.body ?? {}));
+      if (expected.response.respond) await expected.response.respond(response, request);
+      else response.end(expected.response.base64 ? Buffer.from(expected.response.base64, 'base64') : typeof expected.response.body === 'string' ? expected.response.body : JSON.stringify(expected.response.body ?? {}));
     } catch (error) {
       evidence.rejectedRequests++;
       fault ??= 'Platform traffic rejected: ' + error.message.split('\n')[0];
-      response.writeHead(599); response.end('{}');
+      if (!response.headersSent) response.writeHead(599);
+      response.end('{}');
     }
   });
   const websocket = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
@@ -138,8 +145,10 @@ export async function platformProxy(directory) {
     async close() {
       for (const ws of websocket.clients) ws.terminate();
       await new Promise(res => websocket.close(res));
-      for (const socket of sockets) socket.destroy();
-      await Promise.all([secure, proxy].map(server => new Promise((res, rej) => server.close(error => error ? rej(error) : res()))));
+      const closing = [...sockets].map(socket => new Promise(res => { socket.once('close', res); socket.destroy(); }));
+      await Promise.all([...closing, ...[secure, proxy].map(server => new Promise((res, rej) => server.close(error => error ? rej(error) : res())))]);
+      assert.equal(sockets.size, 0, 'local proxy sockets remain after close');
+      assert.equal(secure.listening || proxy.listening, false, 'local proxy listeners remain after close');
     },
   };
 }

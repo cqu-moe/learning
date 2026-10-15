@@ -700,22 +700,26 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           getAssessment: (ref) => clientRef.current!.assessments.get(ref),
           getSlides: async (ref) => (await clientRef.current!.resources.slides(ref)).value,
           getSlideImage: async (url) => {
-            const response = await (await httpBound()).request({ kind: 'read', method: 'GET', url });
+            const response = await (await httpBound()).request({ kind: 'read', method: 'GET', url, ...(options?.signal ? { signal: options.signal } : {}) });
             if (response.status !== 200) throw new LearningError({ code: 'PROTOCOL', message: `slide image returned HTTP ${response.status}`, retryAfterMs: null, operationId: job.id });
             return { bytes: await response.bytes(32 * 1024 * 1024), mimeType: response.headers.get('content-type')?.split(';')[0] ?? '' };
           },
           getMedia: (ref) => clientRef.current!.resources.media(ref),
           getTranscript: async (ref) => (await clientRef.current!.resources.transcript(ref)).value,
           getAsset: async (url, maxBytes, headers) => {
-            const response = await (await httpBound()).request({ kind: 'read', method: 'GET', url, ...(headers === undefined ? {} : { headers }) });
+            const response = await (await httpBound()).request({ kind: 'read', method: 'GET', url, ...(headers === undefined ? {} : { headers }), ...(options?.signal ? { signal: options.signal } : {}) });
             if (response.status !== 200 && response.status !== 206 && !(headers?.range && response.status === 416)) throw new LearningError({ code: 'PROTOCOL', message: `media asset returned HTTP ${response.status}`, retryAfterMs: null, operationId: job.id });
             return { status: response.status, headers: response.headers, mimeType: response.headers.get('content-type')?.split(';')[0] ?? '', stream: response.stream(maxBytes) };
           },
         });
       },
       pause: async (jobId) => { await assertOwnedJob(jobId); const live = liveSessions.get(jobId); if (live) { await live.close(); liveSessions.delete(jobId); } return jobRunner.pause(jobId); },
-      resume: async (jobId) => {
+      resume: async (jobId, options) => {
         const job = await assertOwnedJob(jobId);
+        if (options?.recoverInterrupted) {
+          if (job.kind !== 'export') throw new LearningError({ code: 'INVALID_INPUT', message: 'only read-only exports can recover without reconciliation', retryAfterMs: null, operationId: jobId });
+          await jobRunner.recoverInterrupted(jobId);
+        }
         if (job.kind !== 'live') return jobRunner.resume(jobId);
         if (platform !== 'ykt' || !['paused', 'waiting', 'needs-input', 'uncertain'].includes(job.status)) throw new LearningError({ code: 'CONFLICT', message: 'live job cannot rejoin from its current state', retryAfterMs: null, operationId: jobId });
         const session = await readSession(runtime.state, runtime.masterKey, scope);
