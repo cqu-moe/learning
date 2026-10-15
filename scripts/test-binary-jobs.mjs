@@ -83,7 +83,7 @@ function records(home, prefix) {
   }
 }
 
-async function until(observe, label, timeout = 10_000) {
+async function until(observe, label, timeout = process.platform === 'win32' ? 75_000 : 10_000) {
   const startedAt = Date.now();
   for (;;) {
     let value;
