@@ -1,0 +1,15 @@
+# LEARNING-04 acceptance ownership
+
+Base: `0c6c7e3725e73d0668ade95131e1ccb323ebb20c`. Ticket: workspace `docs/e2e/tickets/LEARNING-04.md`, issue #16. Only compiled existing CLI capabilities and synthetic external platform traffic are in scope.
+
+| Contract / primary owner | Regression caught at this boundary | Distinct from retained coverage |
+| --- | --- | --- |
+| `test-binary-writes.mjs`: CLI-generated YAML and local feedback matching | Missing/ambiguous/suggested feedback becomes executable first-option answers; cross-profile inference or output overwrite bypasses validation | Existing pure matcher tests do not run the shipped program, parse real files or check compiled package wiring. No new production seam. |
+| Same runner: homework, embedded, exam start/save, discussion draft/post | Confirmation/cancel/type/fingerprint/scope gates send a mutation; request body or platform-specific session is wrong; E05 finalization or unsupported platform reports success | SDK protocol tests keep their independent request-shape role; this owner tests actual compiled commands with real SQLite, encrypted sessions, artifacts and PTY. |
+| Same runner: acknowledged writes and public platform readback | CLI prints success before sending; accepted payload differs; exam save finalizes | Platform state changes only after a validated HTTP mutation. Independent curl reads platform GET endpoints; exam additionally uses CLI export and inspects its JSON. No local success records are seeded. |
+| Same runner: accepted POST, dropped response, new-process operations reconcile | Native transport retries a write or a restart/reconcile confirms or resubmits an unknown result | Existing ActionStore tests do not traverse native Bun TLS/CONNECT or process lifetime. Existing product generic verifier stays uncertain; no new reconciliation feature is implied. |
+| `test-binary-writes-controls.mjs`: runner admission, independent wrong assertion, missing fixture, real cleanup denial | Empty selection/output, missing artifact, unregistered request or failed cleanup passes CI; cleanup overwrites primary failure | These deliberately fail the artifact runner, rather than mocking its assertions or seeding the result. POSIX denial and PTY are explicitly not run on Windows. |
+
+Execution: inspect current contracts and commands; author external-boundary regression; run baseline and retain intended failure; repair only the product owner; rebuild the pinned artifact; run two fresh Unicode/space directories; run fault controls and retained repository gates; review spec and standards; sign using unchanged configured identity; rerun artifact proof on exact clean source SHA; write workspace result report. No integration merge/push/release.
+
+LEARNING-03 owns `platform-proxy.mjs` and job/live runner tests. This ticket uses its own bounded HTTP-only fixture helper and adds separate CI steps. Catalog/export/WS and PowerShell/Windows diagnostic scripts are unchanged. Fixtures are backed by the existing pinned protocol corpus and `docs/PLATFORMS.md`; no unimplemented platform action is added.

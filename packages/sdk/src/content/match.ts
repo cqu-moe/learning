@@ -40,9 +40,12 @@ export function matchDraft(draft: AnswerDraft, sources: FeedbackSet[], questions
     if (candidates.length === 0) {
       return { questionId: entry.questionId, state: 'missing', answer: null, sourceId: null, reason: 'no feedback question matched' };
     }
-    const distinct = new Set(candidates.map(({ question }) => question.fingerprint));
+    const distinct = new Set(candidates.map(({ question }) => {
+      const answer = question.feedback?.answer ?? null;
+      return JSON.stringify([question.fingerprint, answer?.kind === 'choice' ? { kind: 'choice', keys: [...answer.keys].sort() } : answer]);
+    }));
     if (distinct.size > 1) {
-      return { questionId: entry.questionId, state: 'ambiguous', answer: null, sourceId: null, reason: 'multiple distinct sources matched' };
+      return { questionId: entry.questionId, state: 'ambiguous', answer: null, sourceId: null, reason: 'distinct questions or conflicting feedback matched' };
     }
     const { question: source, source: set } = candidates[0]!;
     const official = source.feedback?.answer ?? null;
