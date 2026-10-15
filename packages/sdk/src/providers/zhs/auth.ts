@@ -63,7 +63,7 @@ export function zhsQrLaunch(deps: { http: SessionHttp; jar: SessionCookieJar; cl
     }
     const session: Omit<SessionRecord, 'scope' | 'generation'> = {
       schemaVersion: 1,
-      platformUserId: caslogc,
+      platformUserId: cookieUserId(caslogc),
       identityVerified: false,
       cookieJar: await deps.jar.serialize(),
       displayName: null,
@@ -122,15 +122,19 @@ export function zhsWechatQrLaunch(deps: { http: SessionHttp; jar: SessionCookieJ
       caslogc = await deps.jar.cookieValue(new URL(PASSPORT), 'CASLOGC');
     }
     if (caslogc === null) { ctx.fail({ code: 'AUTH_REQUIRED', message: 'WeChat exchange did not set CASLOGC', retryAfterMs: null, operationId: null }); return; }
-    // Keep the full cookie only in the encrypted session, never in public auth events.
-    let platformUserId: string | null = null;
-    try {
-      const identity = z.object({ uuid: z.string().min(1) }).safeParse(JSON.parse(decodeURIComponent(caslogc)));
-      if (identity.success) platformUserId = identity.data.uuid;
-    } catch { /* An authenticated identity probe can populate a missing UUID later. */ }
+    const platformUserId = cookieUserId(caslogc);
     await ctx.finish({ schemaVersion: 1, platformUserId, identityVerified: false,
       cookieJar: await deps.jar.serialize(), displayName: null, checkedAtMs: deps.clock.nowMs() });
   };
+}
+
+function cookieUserId(cookie: string): string | null {
+  try {
+    const identity = z.object({ uuid: z.string().min(1) }).safeParse(JSON.parse(decodeURIComponent(cookie)));
+    return identity.success ? identity.data.uuid : null;
+  } catch {
+    return null;
+  }
 }
 
 const CachedWechatUserSchema = z.object({

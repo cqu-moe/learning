@@ -76,6 +76,17 @@ jobs:
           POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
       - name: Run standalone release executable
         run: node scripts/test-distribution.mjs
+      - name: Run standalone auth and catalog twice through local TLS providers
+        run: node scripts/test-binary-catalog.mjs
+      - name: Verify standalone journey failure controls
+        run: node scripts/test-binary-catalog-controls.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: catalog-evidence-${{ matrix.target }}
+          path: dist/e2e/
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-${{ matrix.target }}

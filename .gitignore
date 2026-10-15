@@ -9,3 +9,5 @@ dist/
 .env
 .env.*
 master.key
+
+.tools/

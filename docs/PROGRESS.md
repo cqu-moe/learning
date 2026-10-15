@@ -738,3 +738,14 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 此前耗时假设修复继续保留：进程启动耗时不决定是否单批，业务输出在 HTTP 响应前产生；连续 start/finish 的单批保证由独立测试验证。等待本 PR 的原生五平台 CI 与 Node 门禁。
 
 公开后的首轮原生 CI 38451785866：五个实际二进制目标全部通过；Node 门禁的作业离线 fixture 用例耗时 5.8 秒，超过默认 5 秒，全部业务断言未报差异。CLI Vitest 限制最多两个文件 worker，给真实 CLI 子进程保留 CPU；不增加超时、不删除断言。Node24 本地 141 项常规测试通过；遥测 11 项初次因沙箱禁止 localhost listen 未运行，允许本地 fixture 监听后 11/11 通过；root lint、diff check 通过。最终远端结果后续读回。
+
+### 2026-10-15 · LEARNING-01 独立产物身份与目录 E2E
+
+- 本次授权覆盖旧 T31 停止限制，仅 CLI。沿用 Node 24.11.1、pnpm 11.19.0、Bun 1.4.3；无依赖版本/lockfile 变化。
+- 新增独立程序目录旅程及仅 loopback TLS/CONNECT 平台替身；复制发行程序到隔离中文路径、PATH 为空、环境白名单、真实 SQLite 与跨进程读回。覆盖雨课堂 QR/导入、学堂在线导入、智慧树微信/原生 QR/导入、身份/课程/大纲、双 profile、错误/过期/取消、配置/遥测偏好及清理。未替换内部模块或生产 fetch；未关闭证书验证。
+- TDD 实际二进制红绿：雨课堂拒绝缺少成功 data 时原先 PROTOCOL/exit 1，修复为 AUTH_REQUIRED/exit 3，成功 DTO 仍严格验证；智慧树原生 QR 原先把完整 CASLOGC 放进公开身份，敏感输出断言失败，修复后仅提取 UUID、不可解析保持 null，完整 Cookie 仍加密保存，原单元契约同步。
+- 网络负例：二进制沿服务端重定向访问未登记 host，代理拒绝、程序 NETWORK/exit 1；实际请求未登记 route，代理拒绝、程序 PROTOCOL/exit 1；故意错误标题和缺 fixture 均使 runner exit 1。正向两次干净运行、清理读回通过。证据为 dist/e2e 下逐次保存的脱敏 JSON（产物 SHA256、提交/dirty、命令退出码、代理计数、清理结果），不保存原始 stdout/stderr/Cookie。
+- 真实 WS 扫码未纳入本票代理旅程，不宣称 WebSocket 被该代理封锁。既有学堂扫码进程 fixture 与 Bun loopback WS 互操作测试保留，不能据此推断独立程序完整 WS 登录或真实平台通过。
+- 验证：pnpm lint/typecheck/build、pnpm test（SDK 278、CLI 152）、pnpm test:e2e（7）、check-boundaries、test-release、test-distribution（含真实 PTY）、固定 BUN_BINARY 的 test-bun-runtime 均 exit 0。新 catalog 正向与 controls exit 0；controls 内故意失败均检查 exit 1。首轮全套 CLI 的 ffprobe 可用性断言失败，单独 5 项与整套 152 项重跑通过；保留首败记录，未修改该超时或放宽断言。
+- CI：保留五目标构建/运行与 tarball 门禁，在各原生程序 job 新增目录旅程和负例、always 上传脱敏证据；本机仅 macOS arm64 已执行，其他平台与远端 CI 未运行。真实账号/学校服务未访问，live 属 LEARNING-05。
+- 详细验收及最终签名提交见根工作区 docs/e2e/results/LEARNING-01.md。未 push、不关闭 issue，不代替主代理合并 integration。

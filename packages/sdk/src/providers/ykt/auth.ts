@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { LearningError } from '../../types/errors.js';
 import { AppLoginWire, PreInfoWire, UserinfoWire, YKT_BASE } from './schemas.js';
 import type { Clock } from '../../runtime/types.js';
@@ -28,11 +29,13 @@ export function yktQrLaunch(deps: { http: SessionHttp; jar: SessionCookieJar; cl
         url: `${YKT_BASE}/api/v3/user/login/app-web-pre-info`,
         signal: ctx.signal,
       });
-      const pre = PreInfoWire.parse(await preResponse.json());
-      if (pre.code !== 0) {
-        ctx.fail({ code: 'AUTH_REQUIRED', message: `pre-info failed: ${pre.msg ?? pre.code}`, retryAfterMs: null, operationId: null });
+      const payload = await preResponse.json();
+      const envelope = z.object({ code: z.number(), msg: z.string().optional() }).parse(payload);
+      if (envelope.code !== 0) {
+        ctx.fail({ code: 'AUTH_REQUIRED', message: `pre-info failed: ${envelope.msg ?? envelope.code}`, retryAfterMs: null, operationId: null });
         return;
       }
+      const pre = PreInfoWire.parse(payload);
       ctx.emit({
         type: 'qr',
         generation: ctx.generation,
