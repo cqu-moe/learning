@@ -42,7 +42,15 @@ export function matchDraft(draft: AnswerDraft, sources: FeedbackSet[], questions
     }
     const distinct = new Set(candidates.map(({ question }) => {
       const answer = question.feedback?.answer ?? null;
-      return JSON.stringify([question.fingerprint, answer?.kind === 'choice' ? { kind: 'choice', keys: [...answer.keys].sort() } : answer]);
+      const options = optionBodies(question);
+      // Fingerprints omit options; compare their meaning before choosing a source.
+      const semanticAnswer = answer?.kind === 'choice' ? {
+        kind: 'choice',
+        options: [...options.values()].sort(),
+        selected: answer.keys.map((key) => JSON.stringify(options.has(key)
+          ? ['body', options.get(key)] : ['missing-key', key])).sort(),
+      } : answer;
+      return JSON.stringify([question.fingerprint, semanticAnswer]);
     }));
     if (distinct.size > 1) {
       return { questionId: entry.questionId, state: 'ambiguous', answer: null, sourceId: null, reason: 'distinct questions or conflicting feedback matched' };

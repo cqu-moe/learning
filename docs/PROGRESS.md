@@ -917,3 +917,11 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 最终提交前完整 binary 两轮各73命令、6场景、124HTTPS/57CONNECT/7次业务写入、0拒绝；childrenClosed/listenersClosed/cleaned均true，清理一次成功，证据 `writes-journey-1792079594417-92278.json`。6项故意失败控制均非零（空场景、缺产物、空stdout、错答案断言、缺fixture、实际chmod导致主错误+EACCES清理错误）；最后控制恢复权限并读回无残留，证据 `write-controls-1792079161753-34126.json`。两轮全新数据与 Git clean 是不同概念；提交前 sourceDirty=true，签名后精确 clean SHA 复验见根结果报告。
 - 新 CI 仅在五原生 binary job 追加本票旅程/controls，保留原步骤与 always 证据上传。当前本机仅 macOS arm64；Windows PTY 与 POSIX chmod 控制明确 not-run，五平台新CI未执行。check-source-lock exit1：三个固定私有参考仓库缺失，不补造源码或绕过门禁。仅合成平台，无真实账号、AI/计费、真实作业/发帖/开卷/交卷；浏览器 FF/WK 不适用 CLI。
 - 完成基线到本票的 standards/spec/test-audit 自审：强边界归属与负控见 `docs/LEARNING-04-plan.md`，既有算法/协议/打包测试保留；运行时无 subagent/review 执行入口，不声称独立模型审查。源码生产改动为5增2删；其余为本票测试、协议替身、CI和证据文档。签名使用原身份与1Password程序，无身份/签名配置变更，无push/PR/integration/main/release操作。下一步由父代理审查固定签名提交和根结果 `docs/e2e/results/LEARNING-04.md`，本票不自行整合。
+
+### 2026-10-16 · LEARNING-04 独审反馈语义冲突修复
+
+- 独审在固定5b39623正式程序上复现：两份反馈题指纹和答案字母都相同，但选项正文互换，反转来源顺序会自动写入不同答案。保留原反例于工作区根results/LEARNING-final-merge-evidence。
+- 扩展现有编译程序matching场景：同字母不同含义的两种来源顺序必须ambiguous/null/applied0/草稿unset；不同字母同含义的选项重排，两种顺序必须exact并映射为目标A。原A/B冲突及missing/suggested/权限/输出保护均保留，无新测试专用生产入口。
+- 真红灯：本worktree新增回归运行旧正式程序SHA e624d67362574ccbf77f540cd8efd914a06a6e3b0e4589932900fa99d2434701，writes-journey-1792084321557-58771.json在matching精确失败actual exact/expected ambiguous，子进程/端口/数据已清理。
+- 生产仅在既有distinct判别中纳入排序后的选项正文集合及所选答案正文；缺失key带独立标记，不能与合法正文混淆。题指纹及下游完整映射/重复选项/不存在key拒绝保持。完整选项集合不一致保守视为歧义，合法键名重排保持可用。
+- Node24.11.1/pnpm11.19.0/Bun1.4.3：定向ESLint、typecheck、SDK278测试、正式无遥测编译、matching两次全新隔离目录绿灯、git diff检查均通过。绿灯writes-journey-1792084386607-68299.json。提交前sourceDirty=true如实记录；签名后完整writes与控制、新五平台组合CI待最终证据。没有真实学业操作。

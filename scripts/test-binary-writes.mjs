@@ -127,6 +127,20 @@ try {
           const ambiguous = resolve(directory, '歧义.yaml');
           const conflict = await call('ykt', ['answers', 'match', hw, '--source', one, two, '-o', ambiguous], [f.hwRead('ykt')]);
           assert.equal(conflict.data.matches[2].state, 'ambiguous', 'conflicting feedback must not select first source'); assert.equal(conflict.data.applied, 0); assert.equal(readDraft(ambiguous).entries[2].answer.kind, 'unset'); remember(ambiguous);
+          const reordered = answer => ({ problems: [{ ...f.problems[2], content: { ...f.problems[2].content, Options: [{ key: 'A', value: '乙' }, { key: 'B', value: '甲' }], Answers: [answer] } }] });
+          const semanticConflict = file('相同字母不同含义.json', reordered('A'), true);
+          const semanticAgreement = file('不同字母相同含义.json', reordered('B'), true);
+          for (const [label, sources, state] of [
+            ['冲突正序', [one, semanticConflict], 'ambiguous'], ['冲突反序', [semanticConflict, one], 'ambiguous'],
+            ['一致正序', [one, semanticAgreement], 'exact'], ['一致反序', [semanticAgreement, one], 'exact'],
+          ]) {
+            const path = resolve(directory, label + '.yaml');
+            const result = await call('ykt', ['answers', 'match', hw, '--source', ...sources, '-o', path], [f.hwRead('ykt')]);
+            assert.equal(result.data.matches[2].state, state, label + ': compare answer meaning independently of source order');
+            assert.equal(result.data.applied, state === 'exact' ? 1 : 0);
+            assert.deepEqual(result.data.matches[2].answer, state === 'exact' ? { kind: 'choice', keys: ['A'] } : null);
+            assert.deepEqual(readDraft(path).entries[2].answer, state === 'exact' ? { kind: 'choice', keys: ['A'] } : { kind: 'unset' }); remember(path);
+          }
           const nonexistent = file('不存在选项.json', { problems: [{ ...f.problems[0], content: { ...f.problems[0].content, Answers: ['Z'] } }] }, true);
           assert.equal((await call('ykt', ['answers', 'match', hw, '--source', nonexistent], [f.hwRead('ykt')])).data.matches[0].state, 'missing');
           const suggested = file('建议.json', { problems: [{ ...f.problems[3], problem_id: 999, content: { ...f.problems[3].content, Answers: ['B'] } }] }, true);
