@@ -93,7 +93,7 @@ export function registerJobsCommands(program: Command): void {
           if (before.kind === 'live') {
             requireConfirmation(program, resume.opts<{ yes?: boolean }>().yes, false);
             await confirmAction(program, `恢复直播任务 ${jobId} 会重新签到。`, resume.opts<{ yes?: boolean }>().yes);
-            await client.jobs.resume(jobId);
+            await client.jobs.resume(jobId, before.status === 'running' ? { recoverInterrupted: true } : undefined);
           } else if (before.kind === 'export' && before.status === 'running') await client.jobs.resume(jobId, { recoverInterrupted: true });
           else if (before.status === 'paused' || before.status === 'needs-input' && before.kind === 'study') await client.jobs.resume(jobId);
           else if (!['queued', 'waiting', 'succeeded'].includes(before.status)) {

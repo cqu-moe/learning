@@ -935,3 +935,13 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 真红灯：提取原逻辑但未修复时，新负控回归exit1且精确报empty selection evidence missing；修后2/2 exit0。另一次受限沙箱positive因本地监听EPERM失败并保留，允许本地TLS监听后真实native重跑通过，未删断言或改预算。
 - Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结离线安装196包、build、正式无遥测编译、lint、typecheck、boundaries、语法与diff检查均exit0；六项原负控全部真实exit1、预期阶段和清理/权限恢复通过。提交前证据sourceDirty=true，签名提交后精确clean SHA重放及证据见本票docs/e2e/results/LEARNING-WINDOWS-CONTROL.md。
 - 本机只有macOS arm64；Windows路径拼写回归不等于Windows native验收，Linux/Windows CI仍需父任务后续执行。未重复SDK/CLI全套或无关jobs旅程；无真实服务、账号、付费模型、推送或发布。使用既有效Git身份及SSH/1Password签名，不改身份/签名配置。下一步为父任务审查独立签名提交并安排CI，本票不自行整合。
+
+### 2026-10-16 · PR19 post-merge live running 恢复修复
+
+- 读回合并CI38853269962/linux-arm64失败artifact：SIGINT/SIGTERM live confirmed-rejoin通过，第三个live在SIGKILL与一次`jobs show`后停止，旧断言只接受`waiting`。源码证明前台live每秒从`waiting`进入一次`jobs.advance`的持久`running`瞬态；主/PR源码树相同但PR使用`--without-telemetry`、main注入公开PostHog token，不能宣称同构建产物。
+- 最小红灯：在真实owner边界临时加入250ms诊断延迟扩大已进入`running`的窗口（随后删除），本地TLS/WSS+真实编译CLI+SQLite连续2/2捕捉`status=running`、`meta.running=true`并SIGKILL；新进程`jobs resume --yes`均为`CONFLICT`且checkin=0。另17次纯1000/999ms定时跨界仍为`waiting`，不用概率结果冒充根因。
+- 修复：CLI只在已取得独占writer锁且live原状态为running的显式确认resume中调用recoverInterrupted；SDK将该中断live socket drain恢复为paused后沿用原确认rejoin，并使用恢复后的job状态避免stale running检查。导出恢复不变，其他平台写仍保持uncertain/只读reconcile，不绕过活跃锁、不重交未知副作用。
+- 回归：SDK live owner测试先用executor-entered门闩确认持久running，旧代码准确失败`only read-only exports can recover without reconciliation`，新代码同一job显式rejoin、一个gap、最终succeeded。进程journey对SIGKILL仅接受`waiting|running`，并保留无确认resume、一次recheckin、gap、成功与无锁原断言；SIGINT/SIGTERM仍必须paused。
+- 0.2.7→0.2.8仅因CLI产品修复触发既有main release路径；依赖/lockfile不变。Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结安装、SDK build、live+jobs 19/19、CLI typecheck、真实0.2.8 `--without-telemetry`编译、原standalone jobs两轮旅程均exit0；准确RED为exit1。最终lint/diff检查见提交前记录。五平台CI、复审与发行读回由父代理接手，本worktree不push/PR/合并/发布。
+
+- 父代理复审补充：现有CLI持久化恢复用例参数化paused/running；用真实JobRunner推进到持久running且meta.running=true，再以新CLI进程验证无确认拒绝、单次fixture checkin、同job成功、恰好一个gap、meta清零和锁清理。该场景是确定性故障状态预置，原生SIGKILL流程单独保留。仅从构建后的CLI删除recoverInterrupted传参时，running分支真实exit1（签到未消费、WSS未打开），paused仍通过；恢复传参后2/2 exit0。全workspace typecheck、lint、diff检查exit0。PR #22及五平台CI接续，不修改依赖或生产钩子。

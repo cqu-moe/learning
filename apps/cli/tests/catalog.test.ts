@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -781,7 +781,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(events.some(event => event.type === 'question' && event.data.question.id === '11')).toBe(true);
   });
 
-  it('resumes the same paused live job only after a fresh --yes checkin', async () => {
+  it.each(['paused', 'running'] as const)('resumes the same %s live job only after a fresh --yes checkin', async (status) => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);
     expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
@@ -791,11 +791,22 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     await writeSession(state, new Uint8Array(readFileSync(resolve(dir, 'master.key'))), { schemaVersion: 1, scope, generation: 1, platformUserId: '77', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: Date.now() });
     const runner = new JobRunner(state, { nowMs: () => Date.now(), sleep: async () => {} });
     const job = await runner.create(scope, 'live', { total: null, generation: 1, payload: { kind: 'live.join', lesson: { scope, course: null, lessonId: '9000' }, maxDurationSeconds: 60 } });
-    await runner.pause(job.id);
+    if (status === 'paused') await runner.pause(job.id);
+    else {
+      let entered!: () => void;
+      const running = new Promise<void>(resolve => { entered = resolve; });
+      void runner.advance(job.id, () => {
+        entered();
+        return new Promise(() => {});
+      });
+      await running;
+      expect((await runner.metadata(job.id)).running).toBe(true);
+    }
+    expect((await runner.get(job.id)).status).toBe(status);
     state.close();
     const withoutYes = run(dir, ['jobs', 'resume', job.id, '--profile', 'alpha', '--json']);
     expect(withoutYes.code).toBe(3);
-    expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code });
+    expect(JSON.parse(withoutYes.stdout)).toMatchObject({ ok: false, exitCode: withoutYes.code, error: { code: 'CONFIRMATION_REQUIRED' } });
     const fixture = resolve(dir, 'live-resume.json');
     writeFileSync(fixture, JSON.stringify({ interactions: [
       { request: { method: 'POST', host: 'www.yuketang.cn', path: '/api/v3/lesson/checkin', headers: { 'content-type': 'application/json;charset=utf-8' }, body: { source: 1, lessonId: '9000' } }, response: { status: 200, body: { code: 0, data: { lessonToken: 'fixture-rejoin-token' } } } },
@@ -804,8 +815,12 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout).data.job).toMatchObject({ id: job.id, status: 'succeeded' });
     const reopened = new SqliteStateStore(resolve(dir, 'state.db'));
-    const events = await new JobRunner(reopened, { nowMs: () => Date.now(), sleep: async () => {} }).events(job.id, 0);
-    expect(events.some((event) => event.type === 'gap')).toBe(true);
+    const recovered = new JobRunner(reopened, { nowMs: () => Date.now(), sleep: async () => {} });
+    const events = await recovered.events(job.id, 0);
+    expect(events.filter(event => event.type === 'gap')).toHaveLength(1);
+    expect((await recovered.get(job.id)).status).toBe('succeeded');
+    expect((await recovered.metadata(job.id)).running).toBe(false);
+    expect(existsSync(resolve(dir, 'learning.lock'))).toBe(false);
     reopened.close();
   });
 

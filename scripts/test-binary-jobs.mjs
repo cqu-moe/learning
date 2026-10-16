@@ -1014,7 +1014,9 @@ try {
         });
         proxy.done();
         await until(() => proxy.evidence().wsClosed === closedBefore + 1, 'terminated live socket closure');
-        assert.equal((await jobShow(id, 'ykt')).status, signal === 'SIGKILL' ? 'waiting' : 'paused');
+        const interrupted = await jobShow(id, 'ykt');
+        if (signal === 'SIGKILL') assert.ok(['waiting', 'running'].includes(interrupted.status), `interrupted live job status must be waiting or running, got ${interrupted.status}`);
+        else assert.equal(interrupted.status, 'paused');
         const checkins = proxy.evidence().requestLog.filter(item => item.tag === 'ykt-live-checkin').length;
         assert.equal((await command('ykt', ['jobs', 'resume', id], 3)).error.code, 'CONFIRMATION_REQUIRED');
         assert.equal(proxy.evidence().requestLog.filter(item => item.tag === 'ykt-live-checkin').length, checkins, 'rejoin requires explicit confirmation');
@@ -1027,7 +1029,7 @@ try {
         assert.equal(gaps.length, 1);
         assert.match(gaps[0].message, /process exit/);
         assert.equal(existsSync(resolve(home, 'learning.lock')), false);
-        record.cases.push({ name: 'live-' + signal + '-confirmed-rejoin-close', status: 'passed', gaps: 1 });
+        record.cases.push({ name: 'live-' + signal + '-confirmed-rejoin-close', status: 'passed', gaps: 1, interruptedStatus: interrupted.status });
       }
 
       stage = 'jobs-cancel';

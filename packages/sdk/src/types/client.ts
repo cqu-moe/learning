@@ -81,7 +81,7 @@ export interface LearningClient {
     events(jobId: string, afterSequence: number, options?: Options): Promise<JobEvent[]>;
     advance(jobId: string, options?: Options): Promise<Job>;
     pause(jobId: string, options?: Options): Promise<Job>;
-    /** Recover a stopped read-only export only while holding the exclusive writer lock. */
+    /** Recover stopped exports or live socket drains only while holding the exclusive writer lock. */
     resume(jobId: string, options?: Options & { recoverInterrupted?: boolean }): Promise<Job>;
     cancel(jobId: string, options?: Options): Promise<Job>;
   };
