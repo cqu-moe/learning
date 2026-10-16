@@ -71,10 +71,13 @@ describe('zhs native qr login (T10, Z02)', () => {
       return { view, state, masterKey };
     });
     expect(result.view.identityVerified).toBe(false);
-    expect(result.view.platformUserId).toBe('uuid-fixture');
+    expect(result.view.platformUserId).toBeNull();
     const { readSession } = await import('../src/session/store.js');
     const record = await readSession(result.state, result.masterKey, scope);
     expect(record).not.toBeNull();
+    const { SessionCookieJar } = await import('../src/http/client.js');
+    const restored = await SessionCookieJar.deserialize(record!.cookieJar);
+    expect(await restored.cookieValue(new URL('https://passport.zhihuishu.com'), 'CASLOGC')).toBe('uuid-fixture');
   });
 });
 

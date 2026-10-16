@@ -1,7 +1,8 @@
 // Run the shipped executable outside the checkout, with no JS runtime on PATH.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -33,6 +34,7 @@ function json(args, expected = 0) {
   assert.ok(!stdout.includes('\u001b'), 'no terminal escapes in JSON');
   return JSON.parse(stdout);
 }
+const failures = [];
 try {
   assert.equal(run(['--version']).trim(), version);
   assert.match(run(['--help']), /learning/);
@@ -90,6 +92,10 @@ try {
   assert.equal(readFileSync(resolve(home, 'master.key'), 'utf8'), 'invalid');
   assert.equal(existsSync(lock), false, 'failed init releases its lock');
   console.log(`OK standalone CLI ${process.platform}/${process.arch}: runtime-free launch, SQLite, profiles, permissions, locks, failure cleanup`);
-} finally {
-  rmSync(root, { recursive: true, force: true });
+} catch (error) { failures.push(error); } finally {
+  try {
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    assert.equal(existsSync(root), false, 'isolated directory still exists after cleanup');
+  } catch (error) { failures.push(error); }
 }
+if (failures.length) throw new AggregateError(failures, 'standalone binary failed; primary and cleanup errors retained');

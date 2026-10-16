@@ -1,0 +1,32 @@
+binary (windows-x64)	Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262	2026-10-15T17:25:33.2422569Z HEAD is now at f8bfe68 Merge 17e0cf661a00590cef270828d8cd455b584e0f02 into 3d559ed95b1989b52cec80662c63d9c1ed8c3554
+binary (windows-x64)	Verify write journey failure controls and cleanup	﻿2026-10-15T17:41:14.8014922Z ##[group]Run node scripts/test-binary-writes-controls.mjs
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:14.8015618Z ^[[36;1mnode scripts/test-binary-writes-controls.mjs^[[0m
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:14.8030797Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:14.8031349Z env:
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:14.8031717Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:14.8032302Z   LEARNING_PDF_PYTHON: D:\a\learning\learning\.tools\pdf-reader\Scripts\python.exe
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:14.8032758Z ##[endgroup]
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2407457Z dist\e2e\write-controls-1792086075238-3336.json
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2417565Z file:///D:/a/learning/learning/scripts/test-binary-writes-controls.mjs:46
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2419513Z if (failures.length) throw new AggregateError(failures, 'write controls failed');
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2420879Z                            ^
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2421273Z
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2421511Z AggregateError: write controls failed
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2422094Z     at file:///D:/a/learning/learning/scripts/test-binary-writes-controls.mjs:46:28 {
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2422705Z   [errors]: [
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2423122Z     AssertionError [ERR_ASSERTION]: empty selection evidence missing
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2423774Z         at control (file:///D:/a/learning/learning/scripts/test-binary-writes-controls.mjs:20:106)
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2424526Z         at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2425246Z         at async file:///D:/a/learning/learning/scripts/test-binary-writes-controls.mjs:27:3 {
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2425770Z       generatedMessage: false,
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2426122Z       code: 'ERR_ASSERTION',
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2426436Z       actual: undefined,
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2426702Z       expected: true,
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2426980Z       operator: '==',
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2427258Z       diff: 'simple'
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2427552Z     }
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2427792Z   ]
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2428060Z }
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2428202Z
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2428305Z Node.js v24.11.1
+binary (windows-x64)	Verify write journey failure controls and cleanup	2026-10-15T17:41:15.2551680Z ##[error]Process completed with exit code 1.

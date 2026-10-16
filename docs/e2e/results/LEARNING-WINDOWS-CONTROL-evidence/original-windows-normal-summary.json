@@ -1,0 +1,174 @@
+{
+  "sourceRevision": "f8bfe68120083fcd1fe9478e7157b39b8e491003",
+  "sourceDirty": false,
+  "artifact": {
+    "name": "learning-0.2.7-windows-x64.exe",
+    "sha256": "9f7a2ac7272ff3fbcb211fc32df5a863bf7c40dda89efe9c5bb1bfb15770937b"
+  },
+  "runs": [
+    {
+      "pass": 1,
+      "status": "passed",
+      "cases": [
+        {
+          "name": "matching",
+          "status": "passed",
+          "mutations": 0
+        },
+        {
+          "name": "homework",
+          "status": "passed",
+          "mutations": 2
+        },
+        {
+          "name": "embedded",
+          "status": "passed",
+          "mutations": 1
+        },
+        {
+          "name": "exam",
+          "status": "passed",
+          "mutations": 2
+        },
+        {
+          "name": "discussion",
+          "status": "passed",
+          "mutations": 1
+        },
+        {
+          "name": "uncertain",
+          "status": "passed",
+          "mutations": 1
+        }
+      ],
+      "childrenClosed": true,
+      "listenersClosed": true,
+      "cleaned": true,
+      "commands": 77,
+      "platform": {
+        "requests": 118,
+        "mutations": [
+          {
+            "method": "POST",
+            "host": "www.yuketang.cn",
+            "path": "/mooc-api/v1/lms/exercise/problem_apply/"
+          },
+          {
+            "method": "POST",
+            "host": "www.xuetangx.com",
+            "path": "/api/v1/lms/exercise/problem_apply/"
+          },
+          {
+            "method": "POST",
+            "host": "www.yuketang.cn",
+            "path": "/mooc-api/v1/lms/exercise/leaf_video/problem/reply/11/"
+          },
+          {
+            "method": "POST",
+            "host": "examination.xuetangx.com",
+            "path": "/exam_room/start_paper"
+          },
+          {
+            "method": "POST",
+            "host": "examination.xuetangx.com",
+            "path": "/exam_room/answer_problem"
+          },
+          {
+            "method": "POST",
+            "host": "www.xuetangx.com",
+            "path": "/api/v1/lms/forum/comment/"
+          },
+          {
+            "method": "POST",
+            "host": "www.xuetangx.com",
+            "path": "/api/v1/lms/forum/comment/"
+          }
+        ],
+        "rejected": 0,
+        "tunnels": 56
+      }
+    },
+    {
+      "pass": 2,
+      "status": "passed",
+      "cases": [
+        {
+          "name": "matching",
+          "status": "passed",
+          "mutations": 0
+        },
+        {
+          "name": "homework",
+          "status": "passed",
+          "mutations": 2
+        },
+        {
+          "name": "embedded",
+          "status": "passed",
+          "mutations": 1
+        },
+        {
+          "name": "exam",
+          "status": "passed",
+          "mutations": 2
+        },
+        {
+          "name": "discussion",
+          "status": "passed",
+          "mutations": 1
+        },
+        {
+          "name": "uncertain",
+          "status": "passed",
+          "mutations": 1
+        }
+      ],
+      "childrenClosed": true,
+      "listenersClosed": true,
+      "cleaned": true,
+      "commands": 77,
+      "platform": {
+        "requests": 118,
+        "mutations": [
+          {
+            "method": "POST",
+            "host": "www.yuketang.cn",
+            "path": "/mooc-api/v1/lms/exercise/problem_apply/"
+          },
+          {
+            "method": "POST",
+            "host": "www.xuetangx.com",
+            "path": "/api/v1/lms/exercise/problem_apply/"
+          },
+          {
+            "method": "POST",
+            "host": "www.yuketang.cn",
+            "path": "/mooc-api/v1/lms/exercise/leaf_video/problem/reply/11/"
+          },
+          {
+            "method": "POST",
+            "host": "examination.xuetangx.com",
+            "path": "/exam_room/start_paper"
+          },
+          {
+            "method": "POST",
+            "host": "examination.xuetangx.com",
+            "path": "/exam_room/answer_problem"
+          },
+          {
+            "method": "POST",
+            "host": "www.xuetangx.com",
+            "path": "/api/v1/lms/forum/comment/"
+          },
+          {
+            "method": "POST",
+            "host": "www.xuetangx.com",
+            "path": "/api/v1/lms/forum/comment/"
+          }
+        ],
+        "rejected": 0,
+        "tunnels": 56
+      }
+    }
+  ]
+}

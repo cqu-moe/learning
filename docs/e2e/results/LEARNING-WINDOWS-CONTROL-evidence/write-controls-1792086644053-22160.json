@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "controls": [
+    {
+      "name": "empty selection",
+      "code": 1,
+      "evidence": "dist/e2e/writes-journey-1792086633770-22891.json"
+    },
+    {
+      "name": "missing artifact",
+      "code": 1,
+      "evidence": "dist/e2e/writes-journey-1792086633863-22936.json"
+    },
+    {
+      "name": "empty output",
+      "code": 1,
+      "evidence": "dist/e2e/writes-journey-1792086634395-23031.json"
+    },
+    {
+      "name": "wrong answer assertion",
+      "code": 1,
+      "evidence": "dist/e2e/writes-wrong-answer-1792086636904-23411.json"
+    },
+    {
+      "name": "missing fixture",
+      "code": 1,
+      "evidence": "dist/e2e/writes-missing-fixture-1792086641506-23584.json"
+    },
+    {
+      "name": "primary and cleanup failure",
+      "code": 1,
+      "evidence": "dist/e2e/writes-cleanup-1792086644043-23769.json"
+    }
+  ],
+  "cleaned": true
+}

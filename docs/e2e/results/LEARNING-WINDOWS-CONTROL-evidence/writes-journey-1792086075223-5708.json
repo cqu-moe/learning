@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "f8bfe68120083fcd1fe9478e7157b39b8e491003",
+  "sourceDirty": false,
+  "artifact": {
+    "name": "learning-0.2.7-windows-x64.exe",
+    "sha256": "9f7a2ac7272ff3fbcb211fc32df5a863bf7c40dda89efe9c5bb1bfb15770937b"
+  },
+  "platform": "win32-x64",
+  "egressBoundary": "native proxy: no OS firewall",
+  "control": null,
+  "runs": [],
+  "failure": "nonempty known scenario selection required"
+}

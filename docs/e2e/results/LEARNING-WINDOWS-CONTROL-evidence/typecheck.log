@@ -1,0 +1,7 @@
+$ pnpm -r typecheck
+Scope: 2 of 3 workspace projects
+packages/sdk typecheck$ tsc -p tsconfig.json
+packages/sdk typecheck: Done
+apps/cli typecheck$ pnpm --filter @learning/sdk build && tsc -p tsconfig.json
+apps/cli typecheck: $ tsc -p tsconfig.build.json
+apps/cli typecheck: Done

@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "b9dedb033554bd5815706a37884e4cb2ce6c2151",
+  "sourceDirty": false,
+  "artifact": {
+    "name": "learning-0.2.7-macos-arm64",
+    "sha256": "3d7e4751b6562f853add428566e2b7576513b3dea6309959682e00ad6f52d8a0"
+  },
+  "platform": "darwin-arm64",
+  "egressBoundary": "sandbox: proxy loopback port only",
+  "control": "wrong-answer",
+  "runs": [
+    {
+      "pass": 1,
+      "cases": [],
+      "commands": [
+        {
+          "command": [
+            "init"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 283,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "ykt",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 230,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/ykt-cookies.json"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "xt",
+            "--platform",
+            "xuetang"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 233,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/xt-cookies.json"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 436,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 352,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "other",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 232,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/other-cookies.json"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 802,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "50403380cd242ae141c3f3e6da5e60443576a42cbd801851e28fad5e49f9529d"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 3529,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 881,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "0af31e6c91885fa68282379c2361addde60795262ff0476bdfec0e7b4b459509"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 3242,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "homework",
+            "draft",
+            "dfcb866a520e26576d7a54eb51211c8c57a4cdbf7212760e1c39aaab7ccb98cd",
+            "-o",
+            "<isolated-directory>/作业.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 311,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json",
+            "-o",
+            "<isolated-directory>/匹配.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 779,
+          "stderrBytes": 0
+        }
+      ],
+      "artifacts": [
+        {
+          "name": "作业.yaml",
+          "sha256": "f5f4402c4212c633beaec151ea5b41a84e616bf0e0ae3f5366cb6d2e48c5c0a1",
+          "bytes": 1199
+        }
+      ],
+      "cleaned": true,
+      "failures": [
+        {
+          "phase": "matching",
+          "code": "ERR_ASSERTION"
+        }
+      ],
+      "status": "failed",
+      "childrenClosed": true,
+      "platform": {
+        "requests": 12,
+        "mutations": [],
+        "rejected": 0,
+        "tunnels": 9
+      },
+      "listenersClosed": true,
+      "cleanupAttempts": 1
+    }
+  ]
+}

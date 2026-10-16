@@ -747,6 +747,24 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 
 公开后的首轮原生 CI 38451785866：五个实际二进制目标全部通过；Node 门禁的作业离线 fixture 用例耗时 5.8 秒，超过默认 5 秒，全部业务断言未报差异。CLI Vitest 限制最多两个文件 worker，给真实 CLI 子进程保留 CPU；不增加超时、不删除断言。Node24 本地 141 项常规测试通过；遥测 11 项初次因沙箱禁止 localhost listen 未运行，允许本地 fixture 监听后 11/11 通过；root lint、diff check 通过。最终远端结果后续读回。
 
+### 2026-10-15 · LEARNING-01 独立产物身份与目录 E2E
+
+- 本次授权覆盖旧 T31 停止限制，仅 CLI。沿用 Node 24.11.1、pnpm 11.19.0、Bun 1.4.3；无依赖版本/lockfile 变化。
+- 新增独立程序目录旅程及仅 loopback TLS/CONNECT 平台替身；复制发行程序到隔离中文路径、PATH 为空、环境白名单、真实 SQLite 与跨进程读回。覆盖雨课堂 QR/导入、学堂在线导入、智慧树微信/原生 QR/导入、身份/课程/大纲、双 profile、错误/过期/取消、配置/遥测偏好及清理。未替换内部模块或生产 fetch；未关闭证书验证。
+- TDD 实际二进制红绿：雨课堂拒绝缺少成功 data 时原先 PROTOCOL/exit 1，修复为 AUTH_REQUIRED/exit 3，成功 DTO 仍严格验证；智慧树原生 QR 原先把完整 CASLOGC 放进公开身份，敏感输出断言失败，修复后仅提取 UUID、不可解析保持 null，完整 Cookie 仍加密保存，原单元契约同步。
+- 网络负例：二进制沿服务端重定向访问未登记 host，代理拒绝、程序 NETWORK/exit 1；实际请求未登记 route，代理拒绝、程序 PROTOCOL/exit 1；故意错误标题和缺 fixture 均使 runner exit 1。正向两次干净运行、清理读回通过。证据为 dist/e2e 下逐次保存的脱敏 JSON（产物 SHA256、提交/dirty、命令退出码、代理计数、清理结果），不保存原始 stdout/stderr/Cookie。
+- 真实 WS 扫码未纳入本票代理旅程，不宣称 WebSocket 被该代理封锁。既有学堂扫码进程 fixture 与 Bun loopback WS 互操作测试保留，不能据此推断独立程序完整 WS 登录或真实平台通过。
+- 验证：pnpm lint/typecheck/build、pnpm test（SDK 278、CLI 152）、pnpm test:e2e（7）、check-boundaries、test-release、test-distribution（含真实 PTY）、固定 BUN_BINARY 的 test-bun-runtime 均 exit 0。新 catalog 正向与 controls exit 0；controls 内故意失败均检查 exit 1。首轮全套 CLI 的 ffprobe 可用性断言失败，单独 5 项与整套 152 项重跑通过；保留首败记录，未修改该超时或放宽断言。
+- CI：保留五目标构建/运行与 tarball 门禁，在各原生程序 job 新增目录旅程和负例、always 上传脱敏证据；本机仅 macOS arm64 已执行，其他平台与远端 CI 未运行。真实账号/学校服务未访问，live 属 LEARNING-05。
+- 详细验收及最终签名提交见根工作区 docs/e2e/results/LEARNING-01.md。未 push、不关闭 issue，不代替主代理合并 integration。
+
+### 2026-10-15 · LEARNING-01 Windows 清理分段修复
+
+- PR #19 首个 Windows job `38722826869/job/116381339601` 在 `test-binary-catalog.mjs` 清理读回失败：第一轮报告无业务命令、`cleaned=false`，首败保留为远端 artifact `catalog-evidence-windows-x64`（Artifact ID 11967221941）。这不是正向业务断言失败；不删除目录存在性检查。
+- 修复仅覆盖确定的生命周期/删除时序：每个正式 CLI 子进程等待 `close`（进程退出且 stdio 关闭）后再继续；代理关闭后，Windows 上 `rmSync` 遇仍存在目录或删除错误时以 100ms 间隔最多重试 50 次（总计约 5 秒），非 Windows 不等待。最终仍要求 `!existsSync(directory)`，并把清理尝试次数/最后安全错误码写入脱敏报告。
+- Node v24.11.1 本机 macOS arm64 复验：`node scripts/test-binary-catalog.mjs` exit 0，两轮各 44 个命令、37 个 HTTPS 请求/22 个 CONNECT，均 `cleaned=true`；`node scripts/test-binary-catalog-controls.mjs` exit 0，四个故意失败控制和代理未知目的地拒绝均保持非零/拒绝。`pnpm exec eslint scripts/test-binary-catalog.mjs`、`git diff --check` exit 0。
+- 边界：macOS 通过不证明 Windows 已修复；本条需推送到 PR 后由同一 Windows job 远端复验。学堂独立 WS 扫码与 WS 出站隔离仍是后续独立缺口，不因 HTTP proxy 环境变量存在而推断通过。
+
 ### 2026-10-15 · PR #18 CI 失败诊断（诊断完成，修复未实施）
 
 - 用户指定排查 [PR #18](https://github.com/cqu-moe/learning/pull/18)。只读查询 `gh pr view 18 --repo cqu-moe/learning`、`gh run view 38712188494 --repo cqu-moe/learning --log-failed` 与 Actions 变量元数据，exit 0；未输出变量值。PR head 为 `082193fb6ecc141ea83f34e0d748110b5db40686`，来自 `yong0510zhao/learning`；仅修改 Windows 私有目录、profile 测试与进度文档。
@@ -771,6 +789,21 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 旧运行重跑沿用旧 SHA，因此用 GitHub update-branch 将已验证 main 合入 #18，原 head `082193f` 更新为 `5a927db0ee6021899533d6abc730117f89f0d7fe`。新 fork 运行经维护者批准后，[CI 38724940508](https://github.com/cqu-moe/learning/actions/runs/38724940508) Node 门禁与五个原生二进制检查全部 success，Windows 权限实际验收也通过。#18 保持 OPEN，未获授权合并它。
 - 已读回 #18 相对 main 仍只有原 private-directory.ts、profile.test.ts 与其进度记录三个文件；没有改写其业务补丁。本地主工作区快进至上述修复合并提交；本条为文档验收记录，以 `[skip ci]` 提交，不更改已验证源码或 CLI 版本、不发布 Release。用户指定任务完成，不继续其他 PLAN 项或 Web。
 
+### 2026-10-15 · LEARNING-01 Windows 第二轮：Unicode 删除与双错误保留
+
+- 远端 `38727584135/job/116397155981`（artifact `11968775820`，实际 sourceRevision `5efd244c9fee8a42457641d1824d09cb2edb379b`）再次在目录存在性断言失败：`commands=[]`、`failure=Error`、`cleanupAttempts=50`，无 cleanupError。原日志和 zip 均保留；50 次等待未解决问题，不能把 setup Error 归因于子进程 close race。
+- 固定 Node 24.11.1 的 `src/node_file.cc:1628` 将 UTF-8 `ToStringView()` 传入 Windows `std::filesystem::path`，随后 not_found 直接返回；与 [Node #61067](https://github.com/nodejs/node/issues/61067) 的中文路径静默不删除、[#61108](https://github.com/nodejs/node/pull/61108) 修复吻合。改用同一固定 Node 的 `fs/promises.rm`，其 JS rimraf → libuv 路径不经过该同步实现；保留最终目录不存在断言，不升级运行时、不缩减中文路径。既有有限等待只重试指定可重试错误，并修正实际尝试次数。
+- setup、代理关闭、目录清理分别收集错误，最后以 AggregateError 失败；JSON 同时保留各阶段错误。OpenSSL 保留退出状态、信号、错误码及限长/路径脱敏 stderr；不写私钥或平台流量。初始化 listen 失败等待已启动服务关闭。OpenSSL Unicode 绝对路径仍是待证假设，本次不凭猜测修改它的参数。
+- 错误覆盖红绿：真实外部 OpenSSL 替身退出 37，同时把其隔离目录设为 POSIX 000。旧 runner 只显示 cleanup false（证据 `catalog-journey-1792064462585-46172.json`）；新 runner 同时报 setup status=37 和 cleanup EACCES，仍 exit 1、cleaned=false（`catalog-journey-1792064598112-66807.json`）。controls 恢复权限后实际删除残留并读回不存在。此 POSIX 权限控制不冒充 Windows 复现；Windows 原有完整旅程和严格清理仍执行。
+- Node24.11.1 本机 macOS 两轮 catalog 均 44 命令/37 HTTPS/22 CONNECT、cleaned=true（`catalog-journey-1792064589378-62723.json`）；controls 全部 exit 0；定向 ESLint 与 diff check exit 0。pnpm exec 首次因暂停 WS 的依赖清单与已安装额外开发包不同而拒绝自动重装，直接用固定 Node 执行现有同版本 ESLint 通过；未升级依赖或重复无关测试。
+- 仅交付已定位同步删除缺陷的规避与诊断修复，不能声称 Windows 整体已修好。需远端复验异步删除，并由新报告确定 setup 原因。WS 工作完整保存于命名 stash，未混入此提交。
+
+### 2026-10-15 · LEARNING-01 Windows 第三轮：OpenSSL Unicode argv 确证修复
+
+- 原生 CI `38730046590/job/116405301586` 的 artifact `11969878756`（`catalog-journey-1792065038031-5012.json`，sourceRevision `0a08eb571faf3b18201a45020c5d6627a429c9dd`）确认 `cleaned=true`、`cleanupAttempts=1`，异步删除规避已通过该 Windows 运行。唯一失败为 setup `PLATFORM_TLS_SETUP` / OpenSSL status 1；stderr 中中文目录变为 `???? j69Gt1`，`openssl.cnf` 打开失败 `Invalid argument`。没有业务命令执行，旧首败与本轮日志、artifact 均保留。
+- 只将 OpenSSL 的 config/key/cert 参数改为 ASCII 相对文件名 `openssl.cnf`、`test-key.pem`、`test-ca.pem`，由 Node 通过 `cwd: directory` 指定原中文空格目录；不搬移目录、不关闭 TLS 校验、不升级工具链。双失败外部控制改为对 `process.cwd()` 设置 POSIX 000，仍实际触发 setup status 37 与 cleanup EACCES，并在控制完成后恢复权限、删除和读回不存在。
+- 固定 Node v24.11.1、原 Bun1.4.3 编译的 macOS arm64 正式产物：`node scripts/test-binary-catalog.mjs` exit 0，两轮各 44 命令、37 HTTPS/22 CONNECT，均 cleaned=true、attempts=1；证据 `dist/e2e/catalog-journey-1792065243372-52947.json`。`node scripts/test-binary-catalog-controls.mjs` exit 0，原四个失败控制、目的地拒绝与双错误保留均通过；双失败证据 `catalog-setup-cleanup-failure-1792065266177-57477.json`。两文件定向 ESLint 和 `git diff --check` exit 0，未重复无关产品测试。
+- 本机验证时 sourceRevision=9705201、sourceDirty=true；产品二进制未变，SHA256 `e81fd8023aa86a966139529a8ca0a544f6f002eb3d223faf806ed47208ac88f7`。此 OpenSSL 修正仍需 Windows 新 CI；不声明整个 Windows catalog 已通过。WS 恢复内容另存 stash `d884617056d10f7686aa79244eda845f049680b6`，未混入本次分段；无 push、PR 编辑或 integration 修改。
 ### 2026-10-15 · PR #18 双轴代码审查（完成，未合并）
 
 - 固定范围：`git diff 221cd949b0b62b0da9fb590fb1874ab1d6bac747...5a927db0ee6021899533d6abc730117f89f0d7fe`，三个文件、32 行新增/6 行删除；`git diff --check` exit 0。Standards 与 Spec 使用用户授权的 zhipu/glm-5.3 / max 独立并行审查。
@@ -793,3 +826,112 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 发布沿现有流程：PR 六项 CI 通过后合入 main，版本变更触发 cli-release；该流程重新执行 Node 检查和五目标原生验收，全部通过后才公开发布五个独立程序、LICENSES.txt、SHA256SUMS。远端结果与下载验收待后续记录，不覆盖旧版本。
 - 本机 Node v24.11.1：`node scripts/test-release.mjs`、`node scripts/check-boundaries.mjs`、`git diff --check` 均 exit 0。此次仅版本和文档变更，不新增测试；完整测试及五平台独立程序交由该版本远端 CI 实际执行。
 - 首次 PR CI 38729404758 的五目标程序全部通过，但 verify 在 telemetry.test.ts 失败：实际 release=0.2.7，旧断言写死 0.2.6（SDK 278/278、CLI 152/153）。改为读取 CLI package.json 的版本进行严格匹配，保留真实进程/HTTP fixture 验证，不修改生产代码或放宽断言。修后 Node 24.11.1 / pnpm 11.19.0 下冻结依赖安装、CLI build、telemetry 11/11、lint、typecheck 全部 exit 0。
+
+### 2026-10-15 · LEARNING-01 同步固定 main 3d559ed
+
+- 在 cb92eba 上合并 `3d559ed95b1989b52cec80662c63d9c1ed8c3554`；仅 PROGRESS 冲突，双方所有记录保留。上游 private-directory、profile/telemetry 测试和 CLI 0.2.7 package 文件与目标提交无差异；本票两次诊断、OpenSSL 相对路径、catalog/controls/CI 上传均保留。未改版本或重实施 ACL，未纳入其他未合并 PR。
+- WS 未提交内容完整保存为 stash `29b0fac1baac1e20865c995433cfa6d23d5a17b0`，不在合并中。此前只完成本机 sandbox 代理端口允许/其他 loopback 端口拒绝与 .invalid 原生 TLS/WS 探针；binary WS 取消仍有红灯（CANCELED envelope 已输出、socket 未关闭，最终被超时终止），下一轮再处理，不声称完整 WS 已通过。
+- 固定 Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结安装、SDK/CLI 重建、lint、两包 typecheck、边界检查通过；profile+telemetry 15/15 通过。`build-cli.mjs --without-telemetry` 编译 0.2.7，`test-distribution.mjs --without-telemetry` 含真实 PTY 通过；catalog 两轮各 44 命令/37 HTTPS/22 CONNECT，均 cleaned=true/attempts=1；controls 四项故意失败、未知目的地及 setup+cleanup 双错误保留全部通过。
+- 本机 pnpm 自动依赖检查先报无 TTY 拒绝重装；离线安装缺缓存，随后按原 lockfile 冻结安装成功，未改依赖。验证直接以固定 Node 执行同版本本地 tsc/eslint/vitest，未更换工具或放宽检查。
+- 实跑证据 `dist/e2e/catalog-journey-1792065942567-49812.json`，sourceRevision=cb92eba、sourceDirty=true（合并暂存态）；产物 SHA256 `0df69c6f1913e269fbd6194f61a76a8761c9186cf77adc96c47eccf150908cf6`。本机仅 macOS arm64；Windows OpenSSL 修正及新集成 CI 待父代理跟踪。签名合并后交 merger，本代理无 push、PR 编辑或 integration 修改。
+
+### 2026-10-15 · LEARNING-01 原 distribution 清理诊断补修
+
+- 新 CI `38732837065/job/116414607719` 在旧 `test-distribution` → `test-binary.mjs:94` 的 rmSync 报 EPERM，尚未运行 catalog；原日志 `/private/tmp/learning-windows-116414607719.raw.log` 保留。不能由该轮推断 OpenSSL 修正通过，也不能把被 finally 覆盖的原始失败猜作已确定原因。
+- 只在这两个既有脚本改用 fs/promises.rm，最多 5 次可重试错误重试、100ms 线性退避；都读回目录不存在。主过程及 cleanup 各自收集错误，以 AggregateError 非零退出，不再覆盖原始错误。不缩减路径、ACL、超时或业务断言。
+- 实际本机负例：外部可执行替身输出错误版本，再令工作目录不可访问。旧 runner 的原始断言被清理 EACCES 覆盖（`distribution-errors-1792067009731.json`）；修后在不可访问目录内放置实际文件，两错误都保留且 exit1（`distribution-errors-1792067053156.json`）。中间空目录在 async rm 下可删除，不能冒充双失败，因此负例保留实际文件。控制恢复权限后删除并确认不存在；探针位于忽略的 dist/check-distribution-cleanup.mjs，不增加产品测试 seam。
+- 固定 Node24.11.1，本机 `test-distribution.mjs --without-telemetry`、两文件 ESLint、diff check 通过；正式 Bun1.4.3 编译 0.2.7 程序执行无运行时/SQLite/锁/权限和真实 PTY。Windows 仍需新原生 CI 暴露并核对 primary failure。此分段只提交两个既有脚本和本记录；WS 改动继续独立未提交。
+
+### 2026-10-15 · LEARNING-01 学堂完整 binary WS QR followup（本机通过）
+
+- 从指定最新 stash 29b0fac 恢复，保留 main 0.2.7、Windows async rm/双错误诊断/OpenSSL ASCII 相对路径。生产只增加 Bun 原生 WebSocket headers/proxy 参数、AbortSignal 关闭真实连接，以及接收迟到成功消息时核对 QR 期限；无帧编解码、TLS 握手或自建协议栈。Node 原有连接分支保留；未关闭证书验证。测试服务端使用冻结的开发依赖 ws@8.22.0，未增加生产依赖或升级已有版本。
+- 能力来源：[Bun1.4.3 类型](https://github.com/oven-sh/bun/blob/bun-v1.4.3/packages/bun-types/bun.d.ts) 与[原生 proxy 测试](https://github.com/oven-sh/bun/blob/bun-v1.4.3/test/js/web/websocket/websocket-proxy.test.ts)。此前仅环境变量的 .invalid 原生探针没有 CONNECT；显式 proxy+NODE_EXTRA_CA_CERTS 才完成实际 WSS 双向收发。最终编译 SDK transport 探针通过可信 CA（exit0，CONNECT/Upgrade各1）、不可信 CA（exit1，无Upgrade）、未知host（exit1，CONNECT被拒绝）、非法proxy（exit1，无CONNECT）。不根据代理环境变量存在性推断隔离。
+- macOS 每个真实 CLI 进程都由 sandbox-exec 限制仅访问代理 loopback 端口；独立双监听探针确认许可端口可连、另一端口收到0连接。初次 profile 使用 IP 字面量被 sandbox 拒绝启动，改用其要求的 localhost 语法后通过；未进行外部站点探测。Linux/Windows 记录 native proxy 边界，没有冒称 OS 防火墙；CI 在 catalog 前运行 .invalid 原生正负探针。
+- 两轮从全新中文空格目录运行重建的 SDK+正式0.2.7 binary，PATH为空：实际 HTTPS seed → TLS WS Upgrade → requestlogin/PNG QR文件 → loginsuccess → HTTPS exchange；分别覆盖 is_new/s_s 与 existing/token。无内部 runtime mock、无预置成功会话。后续独立进程 whoami/courses/outline 带实际持久化 Cookie 读回真实 Session/SQLite；原三平台全部导入/登录与双profile隔离检查继续执行。
+- 二进制红绿：取消原先输出 CANCELED 但 socket 保持打开，20秒强杀（code=null，6 Upgrade/5 close，`catalog-journey-1792065740760-17817.json`）；修后 SIGINT 正常 exit3，所有socket关闭。过期原先真实等待6秒后仍接受迟到成功并 exit0（`catalog-journey-1792067126718-6960.json`）；修后 TIMEOUT/exit1，未发交换请求。其余缺token/畸形JSON exit1，断连/交换拒绝 exit3；每次失败都移除QR，并由新进程 whoami 证明无已保存会话。
+- 最终暂存前实跑：Node24.11.1，两包 typecheck、根 ESLint、check-boundaries、SDK auth-flow+xuetang-catalog 23/23、固定 Bun1.4.3 编译、catalog+controls、test-ws-proxy、diff check 全通过。两轮各60命令/47HTTPS/37CONNECT/7WS Upgrade及消息/7WS close，cleaned=true/attempts=1；`catalog-journey-1792067288034-28177.json`，产物 SHA256 `44abcac324bdb270a99fd6e4926e8f4b8d157ef11ec7c1ab12195942f2fcebc7`。源码记录2d37089、dirty=true；最终提交见根结果报告。
+- 三项新增 binary 控制（WS路径不匹配、未登记Upgrade、请求消息不匹配）均导致 runner 非零，实际CLI分别NETWORK/1、NETWORK/1、AUTH_REQUIRED/3，且各自读回清理成功；原HTTP/缺fixture/错断言/双错误控制保留。探针证据 `ws-proxy-1792067338224.json` 含Bun版本/源码/产物摘要、OS端口拒绝和四模式结果。
+- 边界：仅本机 macOS arm64 全路径通过；其余原生平台新CI待跑，Windows console Ctrl+C 未模拟（Windows kill不是控制台取消），报告明确not-run；Windows仍执行其他全部WS正负例。QR过期检查针对迟到成功消息，未增加无消息时主动计时退出；既有10分钟总预算的惰性语义保留。没有真实平台账号/扫码/网络验证，不宣称五平台或真实平台全部通过。本代理无push、PR编辑、merge回integration。
+
+### 2026-10-15 · LEARNING-02 前置 Windows catalog 进程诊断补修
+
+- 按用户新证据单独交付 runner 修正，基线 e9cd8a6；未修改产品 ACL、环境白名单、安全验证、中文路径或空 PATH。原 Windows run38736547147/job116427182002 的 artifact11973287771 实际 sourceRevision=ced4938e8bee09c24241af0eafae566dc8782665（集成运行），doctor0、init code=null、0网络、cleanup=true/attempts1；空输出被 JSON.parse 误报 SyntaxError。原始日志和 artifact 只读核验，未用新猜测覆盖首败。
+- catalog 在解析 JSON 前记录 code/signal、elapsedMs、timeoutMs、timedOut、stdoutBytes/stderrBytes、启动错误码；先判超时、信号、退出与空输出，再解析，错误 JSON 仅报告 BINARY_JSON，绝不记录原输出。Windows 命令上限75s覆盖最多两个各有30s生产上限的 ACL 入口，其他平台仍20s；这是 runner 的诊断预算，不更改 ACL 安全边界。
+- 查明环境差异：test-binary 继承大部分父环境；catalog 仅传白名单，原本未传 APPDATA/LOCALAPPDATA/PSModulePath/WINDIR 等。Windows 报告新增这些系统变量的 inherited/passed 布尔值，不读取或保存其内容。CI/遥测关闭路径中 init 只调用一次 ensureDataDir/ACL；目标参数解析加后续运行时装配的其他命令可能两次。尚无 Windows 逐调用耗时证据，不认定环境缺项或双 ACL 为本次根因，也不盲目补继承个人环境。
+- 固定 Node24.11.1，基线 Bun1.4.3 真实0.2.7程序：catalog 两轮各60命令/47HTTPS/37CONNECT/7WS，全通过、清理成功（dist/e2e/catalog-journey-1792068689685-58572.json）。原 controls 加真实外部可执行程序的超时/空输出/坏JSON控制全部通过；20秒实际超时记录SIGKILL、elapsed20010ms、stdout0B/stderr36B、BINARY_TIMEOUT，另两项按精确原因失败且无原文泄漏，均cleaned=true（catalog-journey-1792068793099-68040.json、1792068793703-69241.json、1792068794294-69271.json）。首次控制 shim 被 Node 扩展名规则拒绝，未计作通过；修为真实 POSIX shell 启动 Node stdin 后重跑通过。
+- 定向 ESLint 与 git diff --check exit0。此验证使用原 baseline platform-proxy（本票导出扩展暂存到忽略目录，没有混入此补修）；导出源码仍未提交。当前仅 macOS 实跑，Windows 尚待新原生CI；不宣称已修复其init阻塞。无push/PR/integration修改。
+
+### 2026-10-15 · LEARNING-02 独立程序只读导出与恢复（本机验收通过）
+
+- 指定 worktree/分支从 e9cd8a633d744e328d6f79f9d2b7e434c5e8e2e0 开始；先按用户新 Windows 证据交付独立签名补修11802303d9fb176bfe94092773eeffc898ad4df9。已执行 git merge --ff-only codex/e2e-coverage-20261015，Already up to date，integration=e9cd8a6 是本票祖先；无push/PR/integration修改。
+- 新旅程使用固定 Bun1.4.3 正式0.2.7 binary；每轮复制到全新中文空格目录，PATH为空、环境白名单、关闭遥测/模型，保留TLS验证与原macOS仅代理端口出站sandbox。公开登录/导入→whoami/courses/outline得到实际加密会话、真实SQLite和资源key，不预置成功任务或checkpoint，不preload内部Transport。只扩展首票外部HTTPS/CONNECT严格fixture，新增实际考试SSO域、查询/body/Range匹配、流中断及socket关闭读回。
+- 两平台作业/已提交试卷结果JSON逐项检查正文、选项、已有答案及未知/缺项；保留字体partial，不假装Canvas解码。内嵌题只读YAML草稿检查questionId/unset（该格式不承诺包含正文）。雨课堂课件PNG字节与PDF独立PyMuPDF1.27.2.3解析、页数/标题/尺寸/红蓝像素和顺序通过。学堂直接MP4/SD与字幕、雨课堂HLS master→TS/字幕、EXT-X-MAP→fMP4均验证实际字节和manifest。
+- 红绿：基线正式binary在直接媒体/HLS真实SIGKILL后 jobs resume 均UNCERTAIN/5（dist/e2e/exports-journey-1792068444605-23515.json、1792068449753-25596.json）；SIGINT下载3秒不退出被watchdog强杀（1792068450921-24915.json）。最小修复仅导出HTTP传入已有AbortSignal，以及显式持有写锁时恢复read-only export的metadata；平台写任务保持uncertain。客户端resume新增真实CLI使用的recoverInterrupted选项并同步契约，不是测试专用hook；原中断写单元测试使用study保护不重交。
+- 修后真实8MiB持久断点及Range/If-Range续接、新进程HTTP200忽略Range/206 validator变化/416从零重下均字节正确；HLS强杀前持久nextIndex=1/2068B，文件2256B，恢复丢弃188B未提交尾部且不重取首段。强杀前第二个真实进程恢复仍CONFLICT，活跃写锁不被绕过。直接媒体/HLS/课件流SIGINT均正常exit3，paused/canceled可跨进程读回，无残缺用户成品。
+- 404、声明超4GiB、加密/byte-range/过深HLS、损坏PNG、超40MP/501页、真实POSIX artifact写EACCES均保留paused且不新增内部.blob/用户成品。输出根为实际文件时ENOTDIR映射INVALID_INPUT/2，SDK artifact仍完整succeeded、用户文件未发布；修复临时输出路径后用原jobs resume重新物化正确字节。字幕缺失不造空文件，503重试耗尽保留视频与诊断。未模拟物理磁盘耗尽ENOSPC。
+- 最终提交前独立旅程证据dist/e2e/exports-journey-1792069547332-38051.json：两轮各114实际CLI命令、14组场景、21成品、172HTTPS/46CONNECT，0未登记/拒绝请求；childrenClosed/listenersClosed/cleaned均true、cleanupAttempts=1。sourceRevision=11802303、sourceDirty=true，产物SHA256=a498c920a4f09e72bba2417c0a9b19401a3d7df67fd6c4e3e806f96684dc7897。所有首次失败证据保留，不把提交前dirty运行写成最终clean SHA；提交后精确SHA与clean run见根docs/e2e/results/LEARNING-02.md。
+- 五项fault controls通过（错误媒体字节、错误PDF像素、缺fixture、未登记路径、真实EACCES导致primary+cleanup双失败）。双失败报告保留direct与directory-cleanup两原因、原cleaned=false，控制自身恢复权限、删除并确认无残留；未覆盖初始错误。证据export-controls-1792069558823-37668.json及其引用报告。
+- 固定Node24.11.1/pnpm11.19.0：原lockfile在本票.pnpm-store冻结安装成功，未改任何依赖/lockfile。lint/typecheck/test/build均exit0（SDK278/278、CLI153/153），test:e2e7/7；focused jobs/media/render/artifact27/27，release/boundaries检查、distribution真实PTY、原生WSS探针、catalog两轮与controls均exit0。早期缺离线缓存/沙箱DNS、单元入口路径不正确、runner对草稿正文及错误码的错误预期、lint扫到本票临时备份分别修正后重跑，不冒充生产红灯；zsh rm别名未删除备份，改为精确Path.unlink后lint通过。完整新venv固定PyMuPDF安装exit0。
+- check-source-lock exit1：.reference/ykt-cli、xuetang-cli、zhs-cli均缺失，具体固定ref仍由原source-lock报告；未补造私有参考或放宽门禁，CI原有该项||true不变。五原生CI接线保留旧门禁并新增独立PDFreader、双cleanrun、faultcontrols和现有always证据上传；本票未push，所以新远端CI/Windows/macOS x64/Linux尚未执行。Windows console Ctrl+C及POSIX chmod denial明确not-run，但Windows执行强杀恢复、blocked-output与其他全部正负例。
+- 排除未实现Canvas字体、旧课件浏览器及无CLI入口的普通图文独立导出；不调用真实账号、学习上报、开卷/作答/交卷、消息或付费模型。macOS出站由原OS sandbox验证；其他系统仅原生代理边界，不冒称跨平台OS防火墙。test-audit按公开进程/持久化/独立文件消费者归属完成，无source grep、成功状态seed或测试专用生产seam。运行时没有subagent入口，未伪称使用额外模型；本票完成源码/协议/CI与失败路径自审。
+
+### 2026-10-15 · LEARNING-03 compiled CLI jobs/study/live acceptance
+
+- Took over the existing codex/e2e-20261015-learning-03 worktree at 6218b4d, preserving its uncommitted platform-proxy, binary-terminal and new binary-jobs script. Fast-forwarded 97246d1, then parent integration 0c6c7e3725e73d0668ade95131e1ccb323ebb20c; preserved the parent private-directory diagnostics, relative CA spelling in the three older runners and native Windows TLS differential. proxy.ca remains absolute; the new jobs runner uses relative(directory, proxy.ca) in the child environment. No reverse integration merge, push, main merge, product release or deployment.
+- Added the real compiled binary jobs owner and seven fault controls. Each positive invocation creates two fresh CJK/space directories, copies the actual standalone 0.2.7 program, empties PATH, isolates identity/temp/data, disables telemetry/models and uses trusted local TLS/CONNECT/WSS fixtures. Actual public login/import/catalog/outline create encrypted sessions and SQLite state. No SDK mock, preload, seeded successful job/checkpoint or simulated business completion. The SQLite observer is read-only and waits/retries only SQLITE_BUSY; it never writes job records.
+- Covers Yuketang video/article, Xuetang video and ZHS share/hike study; unknown duration/state, unanswered embedded/popup questions, article ACK without completion, hike rt stalls, authoritative progress/readbacks, public list/show/cancel/resume/reconcile and profile isolation. Real SIGKILL loses an in-flight response in all five study branches; unchanged authority preserves uncertain and blocks resume, advancing authority permits read-only reconciliation/resume with zero replay. Lost ZHS prelearning acknowledgement remains uncertain because progress cannot prove its identity. No real school learning writes.
+- POSIX SIGINT/SIGTERM pause each study family and resume through a new process; live additionally tests both signals and SIGKILL with explicit confirmed recheckin, persisted process-exit gap and socket close. Actual WSS disconnect/rehandshake, unknown question body and mailbox duplicates are observed in persisted events. A live writer permits read-only list/show while competing resume/cancel must report CONFLICT and preserve its owner token. Confirmed cancel is independently read back; stale locks are retired after process death.
+- Production red: formal baseline binary stored two live events for the same phase/question when identical relative-limit frames arrived 25ms apart (dist/e2e/jobs-journey-1792077991431-70636.json, cleaned=true). Dedupe included a locally recomputed closesAtMs. Minimal fix uses stable phase/question identity and updates the answer deadline only when the mailbox accepts the first event. Existing SDK live/study/jobs 57/57 and complete SDK278/278, CLI153/153 pass. The repaired binary retains one question and all live sockets close; no answer is fabricated for unavailable bodies.
+- Test-support first failures remain in dist/e2e: initial sandbox EPERM for loopback, the inherited old ZHS fixture ordering failures, transient observer SQLite lock and wrong expected rejoin error code. Corrected the observer and expectation (CONFIRMATION_REQUIRED); these are not claimed as product red/green. The takeover also found one abandoned synthetic directory from the stopped worker; verified its recorded PID was dead, removed it and read back absence.
+- Expanded the original 32-column real PTY owner with a leaf operation returning to the home menu, persisted account readback, empty child PATH, original cancel/exit/Chinese checks and primary+cleanup error retention. CI retains all five native targets, distribution/PTY/catalog/exports gates and always-upload of safe reports, adding jobs journeys and controls. Report metadata includes fixed source/dirty/artifact, exit/signal/time/output byte counts, non-secret request routes/tags, state observations and cleanup; never raw output, cookies, CA/private keys or QR credentials.
+- Fixed toolchain verified: Node24.11.1, pnpm11.19.0, Bun1.4.3. Reused existing node_modules and the existing LEARNING-02 pinned PDF reader; no installation, dependency/lockfile/product-version or Git-identity change. SDK/CLI builds/typechecks, lint, existing SDK278/278 and CLI153/153, tarball E2E7/7, boundaries/release checks, distribution/real PTY, WSS/catalog controls and exports/controls all pass on macOS arm64. Missing three .reference repositories still make check-source-lock exit1; the pre-existing gate was not weakened. Final clean-commit hashes and refreshed evidence are recorded in the root docs/e2e/results/LEARNING-03.md.
+- Seven controls enforce exact phase/reason/nonzero: wrong result, missing fixture, wrong route, unknown-duration job oracle, unchanged authoritative reconciliation, unreviewed popup write oracle and real POSIX primary+cleanup denial. Outer cleanup restores permissions, removes the directory and reads back absence; an unrelated timeout or failure reason cannot pass.
+- Platform boundary: this ticket has local macOS arm64 evidence only. New jobs native CI/Windows/macOS x64/Linux x64/arm64 are not run by this worker. Windows console Ctrl+C/SIGTERM and POSIX chmod denial are explicitly not-run there; real forced-termination paths remain enabled. Parent owns Windows ACL/TLS investigation; the CA environment spelling is not claimed as a proven Windows root cause or fix. Other hosts have native proxy isolation, not an OS firewall. No GLM retry or paid model/provider call; runtime has no spawn_agent entry. Test-audit self-review found no success seed, implementation source assertion, new production test seam or duplicate primary owner.
+
+### LEARNING-03 clean-commit followup: non-intrusive SQLite observation
+
+- The first clean 534db97 build retained the exact tested artifact hash b797070aecfcd5bcadb53575a5dab6ce7db3af387fcfabefa6d8f8d901b21201, but a new live command failed INTERNAL/1 in 40ms before its checkin request (jobs-journey-1792078608852-47190.json). The failure is retained, not retried into a success claim.
+- An isolated diagnostic with the real binary reproduced startup interference: frequent opening/closing of a read-only DatabaseSync observer before launch caused INTERNAL in 5/100 commands; without that observer 0/100 failed. A second run with the public safe --debug category found Error in 4/100 versus 0/100 without observation. A held read transaction separately passed 10/10, as did its 10/10 no-observer control. These prove the observer affects startup, but do not establish the precise SQLite/OpenSSL/platform root cause; no new production storage repair is claimed.
+- Only the harness changes: arm study polling after an actual HTTP request and live/cancel polling after a real WSS Upgrade, then observe durable waiting state as before. Read-only SELECT, bounded SQLite busy handling, all state/signal/lock assertions and exact CLI exits remain. No arbitrary delay, seed, internal mock, skip or CLI retry is added. The diagnostic directories were removed and absence read back; reports contain only counts/error category and cleanup, never raw CLI output. Final exact signed followup and clean runs are listed in the root result report.
+- Final runner review aligns the new transport-readiness observer's Windows budget with the existing 75-second child command budget (POSIX remains10s). Otherwise the observer could kill an allowed Windows startup after10s before the parent-owned ACL/TLS diagnosis finishes. This is a test budget correction, not a Windows product fix; final clean source/controls are refreshed in the root report.
+
+
+### 2026-10-16 · LEARNING-03-BUDGET：仅 active-lock 嵌套生命周期 P1
+
+- 从固定 ed907d2b4f159438dc718b4146d82a0f526f9742 新建 tickets/LEARNING-03-BUDGET 与 codex/e2e-20261015-learning-03-budget；不操作 Maxwell 的 LEARNING-MERGER 草稿，不改 integration、04、diag、production、proxy、CI 或 jobs-controls。父拥有第2项 Windows 全套编排及生产 PowerShell cmdlet autoload 根因，未用全局超时上涨代替其修复。
+- 仅 scripts/test-binary-jobs.mjs：普通 child 默认仍 Windows75s/POSIX30s，两个 readiness 仍75s/10s。active-lock live 外层按两个 readiness +100ms既有settle+4个串行child+一个退出收尾budget计算，分别525100ms/170100ms；不是其他命令或CI预算。四个真实show/list/resume/cancel、0/0/3-CONFLICT/3-CONFLICT、owner token不变、退出signal/error、最终取消与无锁断言全部保留。safe报告新增该场景预算字段。
+- active-lock 独占 AbortController：observer、settle和四个nested child接收signal；外层退出或失败后finally abort并join gate，防止已终止owner的检查链继续启动child或和目录清理竞态。child自身timeout不变；timedOut断言仍早于预期SIGKILL判定，不把watchdog杀死算正常中断。其他场景无signal参数，其行为与预算不变。
+- 一次性 dist/budget-proof/lifecycle-proof.mjs 直接取实际 run/command/helpers、until和active-lock代码执行，外部子进程替身为真实Node进程，约19.135sec历史startup输入按1:100缩成191ms睡眠，时钟/定时器缩放；只证明runner生命周期，不证明真实Windows、CLI业务、SQLite或新性能根因。它是本票审查证据，不新增生产seam或重复算法测试，也不进入长期CI，脚本与结果复制到根结果证据目录便于复核。
+- 基线源码SHA256 c0846be7c1e8e3d9ee58256a19b3e1401ecc3b9f42dcae01953f39c447506650：合法路径四个checks都未超时却外层timedOut/exit1；修后合法路径exit0，四检查0/0/3/3，外层525100ms且timedOut=false。child-hang由原75000ms child watchdog先结束，outer timedOut=false；outer-timeout故障由外层timedOut结束并取消当前child，两控制均exit1，且仅初始list/live/show被启动、没有后续list/resume/cancel。所有childrenClosed/cleaned=true，准确区分外层误杀与真挂死。
+- 固定Node24.11.1/pnpm11.19.0/Bun1.4.3，原lockfile离线冻结安装196缓存包，无依赖/版本改变。node --check、定向ESLint、diff --check、SDK实际build与正式--without-telemetry程序编译exit0。真实本机macOS arm64 jobs旅程两轮各31场景/159CLI进程，active-lock场景passed，所有原网络、owner token、取消、锁、清理断言通过；提交前报告在dist/e2e，sourceRevision=ed907d2、dirty=true，不伪称已签名SHA。
+- 最终签名提交与精确clean源码复验、命令、artifact摘要及本票局限见根 docs/e2e/results/LEARNING-03-budget.md。未重复未变的SDK/CLI完整单元、旧下载/导出等门禁；未声称第2项P1、04编排或真实Windows验收完成。父通知的新artifact11992020074只作为其根因调查边界，本票不改性能实现或扩大范围。现有Git有效身份和1Password签名配置原样保留；不push、不合integration、不发布。
+
+### 2026-10-15 · LEARNING-04 编译程序草稿、匹配与确认写入
+
+- 用户指定基线 `0c6c7e3725e73d0668ade95131e1ccb323ebb20c`，创建独占 tickets/LEARNING-04 / codex/e2e-20261015-learning-04；integration、LEARNING-03 的 platform-proxy/job runner、catalog/export/WS、PowerShell/Windows 诊断均未修改。本票独立 HTTP-only TLS/CONNECT 替身不转发网络；真实正式 binary 每轮复制到中文空格目录，空 PATH、最小环境、专有 HOME/SQLite/加密会话、遥测关闭，macOS 沿用仅代理端口出站 sandbox。
+- 新脚本 `test-binary-writes.mjs` 经公开 profile/import/whoami/courses/outline 建立状态；测试 CLI 生成作业、内嵌、考试、讨论草稿，反馈 exact/missing/suggested/ambiguous 与不存在选项、坏输入、跨 profile、不可覆盖输出。正常确认逐项断言 confirmed，外部平台只在严格校验真实 mutation 后改变状态；独立 curl 读取其公开 GET，考试另由 CLI export 读回保存的 B 答案、仍 in-progress。雨课堂普通作业及讨论 CLI 未暴露完整答复读回，未为测试新增产品命令。
+- 作业/讨论/学堂考试 start/save 的 no-confirm、dry-run、真实 PTY 输入 n、作用域/内容/类型变化均不发送业务写请求；考试读取所需 gen_token 属外部会话准备，单独不计为业务 mutation。E05 最终交卷保持 blockers/exit3，雨课堂考试保存及讨论仍 UNSUPPORTED，缺能力不输出成功文件。内嵌题另检查已答对后拒绝重交。
+- TDD 实际红灯：基线编译程序对相同题指纹的 A/B 冲突反馈返回 exact 并自动写首个答案，`dist/e2e/writes-journey-1792078992091-4402.json` exit1/cleaned=true；仅修 `content/match.ts` 将反馈答案加入去歧义比较，choice keys 排序以保留集合语义，无新 export/注入 seam。修后真实编译旅程通过。先前 fixture 端点、资源树遍历和 PRECONDITION_CHANGED 退出码错误分别归为测试搭建/预期修正，不冒称产品红灯。
+- 丢响应场景在真实 POST 受理、记录讨论后断开 socket，CLI UNCERTAIN/exit5；两次新进程 operations reconcile 维持原 operationId/uncertain，其他 profile FORBIDDEN，平台接收一次、自动重发0次。既有通用 action verifier 不支持自动证明该类写入，对账不伪称 confirmed，也不禁止用户有意识新建操作；本票不扩展产品恢复能力。
+- 固定 Node24.11.1/pnpm11.19.0/Bun1.4.3；原 lockfile 离线冻结安装复用 LEARNING-02 store，依赖/版本无变更。lint/typecheck/build、SDK278/278、CLI 单 worker153/153、原消费者 E2E7/7、boundaries/release、diff check 均 exit0。标准 pnpm test 首轮 SDK deadline 用例缺 PID（277/278），定向4/4通过；第二轮 SDK278/278，CLI讨论用例超过既有5s（152/153），单 worker完整153/153通过，未修改旧测试预算/断言。日志均在 dist/e2e/ 保留，不把标准两次 exit1 写成通过。
+- 最终提交前完整 binary 两轮各73命令、6场景、124HTTPS/57CONNECT/7次业务写入、0拒绝；childrenClosed/listenersClosed/cleaned均true，清理一次成功，证据 `writes-journey-1792079594417-92278.json`。6项故意失败控制均非零（空场景、缺产物、空stdout、错答案断言、缺fixture、实际chmod导致主错误+EACCES清理错误）；最后控制恢复权限并读回无残留，证据 `write-controls-1792079161753-34126.json`。两轮全新数据与 Git clean 是不同概念；提交前 sourceDirty=true，签名后精确 clean SHA 复验见根结果报告。
+- 新 CI 仅在五原生 binary job 追加本票旅程/controls，保留原步骤与 always 证据上传。当前本机仅 macOS arm64；Windows PTY 与 POSIX chmod 控制明确 not-run，五平台新CI未执行。check-source-lock exit1：三个固定私有参考仓库缺失，不补造源码或绕过门禁。仅合成平台，无真实账号、AI/计费、真实作业/发帖/开卷/交卷；浏览器 FF/WK 不适用 CLI。
+- 完成基线到本票的 standards/spec/test-audit 自审：强边界归属与负控见 `docs/LEARNING-04-plan.md`，既有算法/协议/打包测试保留；运行时无 subagent/review 执行入口，不声称独立模型审查。源码生产改动为5增2删；其余为本票测试、协议替身、CI和证据文档。签名使用原身份与1Password程序，无身份/签名配置变更，无push/PR/integration/main/release操作。下一步由父代理审查固定签名提交和根结果 `docs/e2e/results/LEARNING-04.md`，本票不自行整合。
+
+### 2026-10-16 · LEARNING-04 独审反馈语义冲突修复
+
+- 独审在固定5b39623正式程序上复现：两份反馈题指纹和答案字母都相同，但选项正文互换，反转来源顺序会自动写入不同答案。保留原反例于工作区根results/LEARNING-final-merge-evidence。
+- 扩展现有编译程序matching场景：同字母不同含义的两种来源顺序必须ambiguous/null/applied0/草稿unset；不同字母同含义的选项重排，两种顺序必须exact并映射为目标A。原A/B冲突及missing/suggested/权限/输出保护均保留，无新测试专用生产入口。
+- 真红灯：本worktree新增回归运行旧正式程序SHA e624d67362574ccbf77f540cd8efd914a06a6e3b0e4589932900fa99d2434701，writes-journey-1792084321557-58771.json在matching精确失败actual exact/expected ambiguous，子进程/端口/数据已清理。
+- 生产仅在既有distinct判别中纳入排序后的选项正文集合及所选答案正文；缺失key带独立标记，不能与合法正文混淆。题指纹及下游完整映射/重复选项/不存在key拒绝保持。完整选项集合不一致保守视为歧义，合法键名重排保持可用。
+- Node24.11.1/pnpm11.19.0/Bun1.4.3：定向ESLint、typecheck、SDK278测试、正式无遥测编译、matching两次全新隔离目录绿灯、git diff检查均通过。绿灯writes-journey-1792084386607-68299.json。提交前sourceDirty=true如实记录；签名后完整writes与控制、新五平台组合CI待最终证据。没有真实学业操作。
+
+### 2026-10-16 · LEARNING-WINDOWS-CONTROL
+
+- 只在独占 tickets/LEARNING-WINDOWS-CONTROL 从17e0cf661a00590cef270828d8cd455b584e0f02修复；未编辑integration、工作区root execution、PR或其他票据。
+- 已读取真实CI38777185239的Windows job116567761348：step22在父runner第20行报empty selection evidence missing；子报告明确nonempty known scenario selection required且runs=[]。实际checkout为PR19合成merge f8bfe68120083fcd1fe9478e7157b39b8e491003，head仍17e。正常writes双轮成功；不是空选择获准或业务写入失败。
+- 根因是子进程relative()输出Windows反斜杠，而父进程只识别POSIX路径。将原报告读取移到测试工具helper统一分隔符，要求恰好一条证据路径、无超时/信号且真实exit1；所有原有业务负控与清理断言保留，超时和产品源码未改。
+- test-audit主归属为真实子进程输出/退出和报告读回边界；原compiled写入旅程保留业务归属。新增两项聚焦测试：真实空选择exit1报告在POSIX/Windows+CRLF拼写下可读；真实compiled matching双轮exit0被负控拒绝。没有伪造报告、SDK store或新增产品测试入口。CI在原write-controls步骤前运行同一聚焦测试。
+- 真红灯：提取原逻辑但未修复时，新负控回归exit1且精确报empty selection evidence missing；修后2/2 exit0。另一次受限沙箱positive因本地监听EPERM失败并保留，允许本地TLS监听后真实native重跑通过，未删断言或改预算。
+- Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结离线安装196包、build、正式无遥测编译、lint、typecheck、boundaries、语法与diff检查均exit0；六项原负控全部真实exit1、预期阶段和清理/权限恢复通过。提交前证据sourceDirty=true，签名提交后精确clean SHA重放及证据见本票docs/e2e/results/LEARNING-WINDOWS-CONTROL.md。
+- 本机只有macOS arm64；Windows路径拼写回归不等于Windows native验收，Linux/Windows CI仍需父任务后续执行。未重复SDK/CLI全套或无关jobs旅程；无真实服务、账号、付费模型、推送或发布。使用既有效Git身份及SSH/1Password签名，不改身份/签名配置。下一步为父任务审查独立签名提交并安排CI，本票不自行整合。

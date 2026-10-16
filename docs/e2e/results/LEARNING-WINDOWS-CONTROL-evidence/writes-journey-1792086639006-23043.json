@@ -1,0 +1,788 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "b9dedb033554bd5815706a37884e4cb2ce6c2151",
+  "sourceDirty": false,
+  "artifact": {
+    "name": "learning-0.2.7-macos-arm64",
+    "sha256": "3d7e4751b6562f853add428566e2b7576513b3dea6309959682e00ad6f52d8a0"
+  },
+  "platform": "darwin-arm64",
+  "egressBoundary": "sandbox: proxy loopback port only",
+  "control": null,
+  "runs": [
+    {
+      "pass": 1,
+      "cases": [
+        {
+          "name": "matching",
+          "status": "passed",
+          "mutations": 0
+        }
+      ],
+      "commands": [
+        {
+          "command": [
+            "init"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 283,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "ykt",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 230,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/ykt-cookies.json"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "xt",
+            "--platform",
+            "xuetang"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 233,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/xt-cookies.json"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 436,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 352,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "other",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 232,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/other-cookies.json"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 802,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "a5a6f0173120ffa0f9dde63fc2d91bf99f06e117234d4d653652752fa25e492d"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 3529,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 881,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "10a06fcb6db8ddf0f90dd0a9220f9cc2640732cc6f3e6661a9c8ea9d3aaadf10"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 3242,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "homework",
+            "draft",
+            "6bde7cc15fcb7438dac83cb678d2bc1aec39434d2cfa6b2712a1b85a6187535b",
+            "-o",
+            "<isolated-directory>/作业.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 311,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json",
+            "-o",
+            "<isolated-directory>/匹配.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 779,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/冲突乙.json",
+            "-o",
+            "<isolated-directory>/歧义.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 753,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/相同字母不同含义.json",
+            "-o",
+            "<isolated-directory>/冲突正序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 759,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/相同字母不同含义.json",
+            "<isolated-directory>/冲突甲.json",
+            "-o",
+            "<isolated-directory>/冲突反序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 759,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/不同字母相同含义.json",
+            "-o",
+            "<isolated-directory>/一致正序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 761,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/不同字母相同含义.json",
+            "<isolated-directory>/冲突甲.json",
+            "-o",
+            "<isolated-directory>/一致反序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 761,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/不存在选项.json"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 608,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/建议.json",
+            "-o",
+            "<isolated-directory>/建议.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 777,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json"
+          ],
+          "profile": "other",
+          "code": 3,
+          "stdoutBytes": 252,
+          "stderrBytes": 0,
+          "errorCode": "FORBIDDEN"
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/坏反馈.json"
+          ],
+          "profile": "ykt",
+          "code": 2,
+          "stdoutBytes": 299,
+          "stderrBytes": 0,
+          "errorCode": "INVALID_INPUT"
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json",
+            "-o",
+            "<isolated-directory>/匹配.yaml"
+          ],
+          "profile": "ykt",
+          "code": 3,
+          "stdoutBytes": 341,
+          "stderrBytes": 0,
+          "errorCode": "CONFLICT"
+        }
+      ],
+      "artifacts": [
+        {
+          "name": "作业.yaml",
+          "sha256": "5044f0287fbad09f149b62ef6eccebecc9cc214f5a88ca04a69cfe57e06b3605",
+          "bytes": 1199
+        },
+        {
+          "name": "匹配.yaml",
+          "sha256": "f46ad73709bb4e6b4cf9ef9c1540be88068dfa6de71761b8d9b869717a4ba9af",
+          "bytes": 1377
+        },
+        {
+          "name": "歧义.yaml",
+          "sha256": "437355695a91e148ffc36bed7a336a43389764abbdbb2e915a7bda8715404285",
+          "bytes": 1207
+        },
+        {
+          "name": "冲突正序.yaml",
+          "sha256": "437355695a91e148ffc36bed7a336a43389764abbdbb2e915a7bda8715404285",
+          "bytes": 1207
+        },
+        {
+          "name": "冲突反序.yaml",
+          "sha256": "437355695a91e148ffc36bed7a336a43389764abbdbb2e915a7bda8715404285",
+          "bytes": 1207
+        },
+        {
+          "name": "一致正序.yaml",
+          "sha256": "31ef93e1c98a6c715c616f6e4ffc622da23a7c8328daaefd512db9935a8671a9",
+          "bytes": 1377
+        },
+        {
+          "name": "一致反序.yaml",
+          "sha256": "31ef93e1c98a6c715c616f6e4ffc622da23a7c8328daaefd512db9935a8671a9",
+          "bytes": 1377
+        }
+      ],
+      "cleaned": true,
+      "failures": [],
+      "status": "passed",
+      "childrenClosed": true,
+      "platform": {
+        "requests": 20,
+        "mutations": [],
+        "rejected": 0,
+        "tunnels": 17
+      },
+      "listenersClosed": true,
+      "cleanupAttempts": 1
+    },
+    {
+      "pass": 2,
+      "cases": [
+        {
+          "name": "matching",
+          "status": "passed",
+          "mutations": 0
+        }
+      ],
+      "commands": [
+        {
+          "command": [
+            "init"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 283,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "ykt",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 230,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/ykt-cookies.json"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "xt",
+            "--platform",
+            "xuetang"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 233,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/xt-cookies.json"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 436,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 352,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "profile",
+            "add",
+            "other",
+            "--platform",
+            "ykt"
+          ],
+          "profile": null,
+          "code": 0,
+          "stdoutBytes": 232,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "login",
+            "--import",
+            "<isolated-directory>/other-cookies.json"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 432,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "whoami"
+          ],
+          "profile": "other",
+          "code": 0,
+          "stdoutBytes": 355,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 802,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "a0decf2d9c5e4399c5a43631ea54a4f27afa504ad1bb4e417558e7752a05c57c"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 3529,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "courses"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 881,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "outline",
+            "149b0e9061fb531add5999eafb7ddd25ca0d8ad09ff58a9d860d7dac3fcc2033"
+          ],
+          "profile": "xt",
+          "code": 0,
+          "stdoutBytes": 3242,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "homework",
+            "draft",
+            "6412ebde009a6cba902a5bebd287fefb6ec02a36e5af61838ea08b59fb98cd78",
+            "-o",
+            "<isolated-directory>/作业.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 311,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json",
+            "-o",
+            "<isolated-directory>/匹配.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 779,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/冲突乙.json",
+            "-o",
+            "<isolated-directory>/歧义.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 753,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/相同字母不同含义.json",
+            "-o",
+            "<isolated-directory>/冲突正序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 759,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/相同字母不同含义.json",
+            "<isolated-directory>/冲突甲.json",
+            "-o",
+            "<isolated-directory>/冲突反序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 759,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/冲突甲.json",
+            "<isolated-directory>/不同字母相同含义.json",
+            "-o",
+            "<isolated-directory>/一致正序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 761,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/不同字母相同含义.json",
+            "<isolated-directory>/冲突甲.json",
+            "-o",
+            "<isolated-directory>/一致反序.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 761,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/不存在选项.json"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 608,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/建议.json",
+            "-o",
+            "<isolated-directory>/建议.yaml"
+          ],
+          "profile": "ykt",
+          "code": 0,
+          "stdoutBytes": 777,
+          "stderrBytes": 0
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json"
+          ],
+          "profile": "other",
+          "code": 3,
+          "stdoutBytes": 252,
+          "stderrBytes": 0,
+          "errorCode": "FORBIDDEN"
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/坏反馈.json"
+          ],
+          "profile": "ykt",
+          "code": 2,
+          "stdoutBytes": 299,
+          "stderrBytes": 0,
+          "errorCode": "INVALID_INPUT"
+        },
+        {
+          "command": [
+            "answers",
+            "match",
+            "<isolated-directory>/作业.yaml",
+            "--source",
+            "<isolated-directory>/反馈.json",
+            "-o",
+            "<isolated-directory>/匹配.yaml"
+          ],
+          "profile": "ykt",
+          "code": 3,
+          "stdoutBytes": 341,
+          "stderrBytes": 0,
+          "errorCode": "CONFLICT"
+        }
+      ],
+      "artifacts": [
+        {
+          "name": "作业.yaml",
+          "sha256": "2a373fdc93cab7ff2bb507f55ad8ad76149567e67b534d59ae3dcce6f7298a55",
+          "bytes": 1199
+        },
+        {
+          "name": "匹配.yaml",
+          "sha256": "323835a5db834f968d8cba586d8b5d6ee291c2ace5c69f16dbf6f8cd4a18d54d",
+          "bytes": 1377
+        },
+        {
+          "name": "歧义.yaml",
+          "sha256": "a5b9174e51f864f28b59d0c1e9c2add30aad19e2022e1265e2ed17737283b39d",
+          "bytes": 1207
+        },
+        {
+          "name": "冲突正序.yaml",
+          "sha256": "a5b9174e51f864f28b59d0c1e9c2add30aad19e2022e1265e2ed17737283b39d",
+          "bytes": 1207
+        },
+        {
+          "name": "冲突反序.yaml",
+          "sha256": "a5b9174e51f864f28b59d0c1e9c2add30aad19e2022e1265e2ed17737283b39d",
+          "bytes": 1207
+        },
+        {
+          "name": "一致正序.yaml",
+          "sha256": "5148c096a8b81fe6d81ccc0c43b70bf7fd028e3f4661da0c104a591fe70b7318",
+          "bytes": 1377
+        },
+        {
+          "name": "一致反序.yaml",
+          "sha256": "5148c096a8b81fe6d81ccc0c43b70bf7fd028e3f4661da0c104a591fe70b7318",
+          "bytes": 1377
+        }
+      ],
+      "cleaned": true,
+      "failures": [],
+      "status": "passed",
+      "childrenClosed": true,
+      "platform": {
+        "requests": 20,
+        "mutations": [],
+        "rejected": 0,
+        "tunnels": 17
+      },
+      "listenersClosed": true,
+      "cleanupAttempts": 1
+    }
+  ]
+}

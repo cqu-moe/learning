@@ -1,0 +1,3 @@
+  [52ms]  minify  -2.55 MB (estimate)
+ [377ms]  bundle  573 modules
+ [169ms] compile  /Users/uu/Developer/cqu-moe/.agent-worktrees/e2e-20261015/tickets/LEARNING-WINDOWS-CONTROL/dist/releases/learning-0.2.7-macos-arm64

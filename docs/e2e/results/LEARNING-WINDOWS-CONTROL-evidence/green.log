@@ -1,0 +1,33 @@
+✔ negative child report is readable with POSIX and Windows separators and CRLF (261.498625ms)
+✖ positive native matching child is rejected as a negative control (433.886041ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 770.149042
+
+✖ failing tests:
+
+test at scripts/test-write-control-evidence.mjs:28:1
+✖ positive native matching child is rejected as a negative control (433.886041ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  1 !== 0
+
+      at TestContext.<anonymous> (file:///Users/uu/Developer/cqu-moe/.agent-worktrees/e2e-20261015/tickets/LEARNING-WINDOWS-CONTROL/scripts/test-write-control-evidence.mjs:30:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

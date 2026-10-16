@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { root } from '../build-cli.mjs';
+
+export function writeControlEvidence({ code, timedOut, stdout }, name) {
+  assert.equal(timedOut, false, name + ' timeout');
+  assert.notEqual(code, 0, name + ' must fail');
+  assert.notEqual(code, null, name + ' terminated');
+  const path = stdout.trim().split('\n').find(line => /^dist\/e2e\/writes-.*\.json$/.test(line));
+  assert.ok(path, name + ' evidence missing');
+  return { path, evidence: JSON.parse(readFileSync(resolve(root, path))) };
+}

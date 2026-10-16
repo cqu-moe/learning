@@ -1,0 +1,28 @@
+✖ negative child report is readable with POSIX and Windows separators and CRLF (94.9665ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 138.77525
+
+✖ failing tests:
+
+test at scripts/test-write-control-evidence.mjs:18:1
+✖ negative child report is readable with POSIX and Windows separators and CRLF (94.9665ms)
+  AssertionError [ERR_ASSERTION]: empty selection evidence missing
+      at writeControlEvidence (file:///Users/uu/Developer/cqu-moe/.agent-worktrees/e2e-20261015/tickets/LEARNING-WINDOWS-CONTROL/scripts/helpers/write-control-evidence.mjs:11:10)
+      at TestContext.<anonymous> (file:///Users/uu/Developer/cqu-moe/.agent-worktrees/e2e-20261015/tickets/LEARNING-WINDOWS-CONTROL/scripts/test-write-control-evidence.mjs:22:26)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

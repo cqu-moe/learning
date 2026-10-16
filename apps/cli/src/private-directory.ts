@@ -4,6 +4,9 @@ import { CliError } from './output.js';
 
 const secureDirectoryScript = `
 $ErrorActionPreference = 'Stop'
+# The isolated CLI needs no PowerShell modules; use the same .NET filesystem
+# and ACL APIs without triggering module discovery on every invocation.
+$PSModuleAutoLoadingPreference = 'None'
 $path = [Environment]::GetEnvironmentVariable('LEARNING_PRIVATE_DIRECTORY_PATH')
 if ([string]::IsNullOrWhiteSpace($path)) { throw 'LEARNING_PRIVATE_DIRECTORY_PATH is empty' }
 $root = [System.IO.Path]::GetFullPath($path)
@@ -18,12 +21,18 @@ function Assert-ApplicationPath([string]$candidate) {
   return $fullPath
 }
 
-function Get-SafeItem([string]$candidate) {
-  $item = Get-Item -LiteralPath $candidate -Force
-  if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+function Test-ExistingPath([string]$candidate) {
+  try { [void][System.IO.File]::GetAttributes($candidate); return $true }
+  catch [System.IO.FileNotFoundException] { return $false }
+  catch [System.IO.DirectoryNotFoundException] { return $false }
+}
+
+function Get-SafeAttributes([string]$candidate) {
+  $attributes = [System.IO.File]::GetAttributes($candidate)
+  if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw "Refusing reparse point in private data directory: $candidate"
   }
-  return $item
+  return $attributes
 }
 
 function Clear-And-GrantAcl([string]$candidate, [bool]$isDirectory) {
@@ -45,7 +54,7 @@ function Clear-And-GrantAcl([string]$candidate, [bool]$isDirectory) {
   }
   $propagation = [System.Security.AccessControl.PropagationFlags]::None
   $type = [System.Security.AccessControl.AccessControlType]::Allow
-  $rule = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList @($identity.User, $rights, $inheritance, $propagation, $type)
+  $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity.User, $rights, $inheritance, $propagation, $type)
   [void]$acl.AddAccessRule($rule)
   if ($isDirectory) {
     [System.IO.Directory]::SetAccessControl($candidate, $acl)
@@ -56,35 +65,35 @@ function Clear-And-GrantAcl([string]$candidate, [bool]$isDirectory) {
 
 $ancestor = $root
 while ([System.IO.Path]::GetPathRoot($ancestor) -ne $ancestor) {
-  if (Test-Path -LiteralPath $ancestor) { [void](Get-SafeItem $ancestor) }
+  if (Test-ExistingPath $ancestor) { [void](Get-SafeAttributes $ancestor) }
   $ancestor = [System.IO.Path]::GetDirectoryName($ancestor)
 }
 [void][System.IO.Directory]::CreateDirectory($root)
 
-$rootItem = Get-SafeItem $root
-if (-not $rootItem.PSIsContainer) { throw 'Private data path is not a directory' }
+$rootAttributes = Get-SafeAttributes $root
+if (($rootAttributes -band [System.IO.FileAttributes]::Directory) -eq 0) { throw 'Private data path is not a directory' }
 Clear-And-GrantAcl $root $true
 
 foreach ($coreName in @('master.key', 'state.db', 'state.db-wal', 'state.db-shm', 'learning.lock')) {
   $candidate = Assert-ApplicationPath ([System.IO.Path]::Combine($root, $coreName))
-  if (-not (Test-Path -LiteralPath $candidate)) { continue }
-  $item = Get-SafeItem $candidate
-  if ($item.PSIsContainer) { throw "Private core path is a directory: $candidate" }
+  if (-not (Test-ExistingPath $candidate)) { continue }
+  $attributes = Get-SafeAttributes $candidate
+  if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) { throw "Private core path is a directory: $candidate" }
   Clear-And-GrantAcl $candidate $false
 }
 
 foreach ($entry in [System.IO.Directory]::EnumerateFiles($root, 'login-qr-*')) {
   if ([System.IO.Path]::GetFileName($entry) -notmatch '^login-qr-[0-9a-f-]{36}[.](png|jpeg)$') { continue }
   $candidate = Assert-ApplicationPath $entry
-  [void](Get-SafeItem $candidate)
+  [void](Get-SafeAttributes $candidate)
   Clear-And-GrantAcl $candidate $false
 }
 
 foreach ($subtree in @('artifacts', 'exports')) {
   $directory = Assert-ApplicationPath ([System.IO.Path]::Combine($root, $subtree))
-  if (-not (Test-Path -LiteralPath $directory)) { continue }
-  $directoryItem = Get-SafeItem $directory
-  if (-not $directoryItem.PSIsContainer) { throw "Private output path is not a directory: $directory" }
+  if (-not (Test-ExistingPath $directory)) { continue }
+  $directoryAttributes = Get-SafeAttributes $directory
+  if (($directoryAttributes -band [System.IO.FileAttributes]::Directory) -eq 0) { throw "Private output path is not a directory: $directory" }
   Clear-And-GrantAcl $directory $true
 
   $pending = [System.Collections.Generic.Stack[string]]::new()
@@ -93,9 +102,9 @@ foreach ($subtree in @('artifacts', 'exports')) {
     $current = $pending.Pop()
     foreach ($entry in [System.IO.Directory]::EnumerateFileSystemEntries($current)) {
       $candidate = Assert-ApplicationPath $entry
-      $item = Get-SafeItem $candidate
-      Clear-And-GrantAcl $candidate $item.PSIsContainer
-      if ($item.PSIsContainer) { $pending.Push($candidate) }
+      $attributes = Get-SafeAttributes $candidate
+      Clear-And-GrantAcl $candidate (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0)
+      if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) { $pending.Push($candidate) }
     }
   }
 }

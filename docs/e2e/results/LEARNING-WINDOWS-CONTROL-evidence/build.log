@@ -1,0 +1,7 @@
+$ pnpm -r build
+Scope: 2 of 3 workspace projects
+packages/sdk build$ tsc -p tsconfig.build.json
+packages/sdk build: Done
+apps/cli build$ pnpm --filter @learning/sdk build && tsc -p tsconfig.build.json
+apps/cli build: $ tsc -p tsconfig.build.json
+apps/cli build: Done
