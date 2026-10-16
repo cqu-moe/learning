@@ -6,6 +6,7 @@ import { FakeClock } from './helpers/replay.js';
 import { MemoryStateStore } from './helpers/memory.js';
 import { SessionCookieJar } from '../src/http/client.js';
 import { writeSession } from '../src/session/store.js';
+import { JobRunner } from '../src/services/jobs.js';
 import type { Runtime } from '../src/runtime/types.js';
 
 describe('ykt live (T22, A221/A222)', () => {
@@ -94,6 +95,49 @@ describe('ykt live (T22, A221/A222)', () => {
     clock.setNow(clock.nowMs() + 1000);
     expect((await reopened.jobs.advance(same.id)).status).toBe('succeeded');
     await reopened.close();
+    transport.assertNoExtraScripts();
+  });
+
+  it('recovers an interrupted live socket drain after the writer lock is reacquired', async () => {
+    const transport = new FakeWsTransport();
+    const clock = new FakeClock();
+    const state = new MemoryStateStore();
+    const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
+    const masterKey = new Uint8Array(32).fill(5);
+    await writeSession(state, masterKey, { schemaVersion: 1, scope, generation: 1, platformUserId: '77', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: clock.nowMs() });
+    const checkin = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/api/v3/lesson/checkin', headers: { 'content-type': 'application/json;charset=utf-8' }, body: { source: 1, lessonId: '9000' } }, response: { status: 200, headers: { 'set-auth': 'fixture-jwt' }, body: { code: 0, data: { lessonToken: 'fixture-token' } } } };
+    transport.scriptInteractions([checkin, checkin]);
+    const runtime: Runtime = { transport, state, clock, masterKey,
+      artifacts: { create: async () => { throw Error('unused'); }, resume: async () => { throw Error('unused'); }, open: async () => { throw Error('unused'); }, remove: async () => {} },
+      heavy: null, model: null, log: () => {}, wake: async () => {} };
+    const first = createLearningClient({ scope, runtime });
+    const preview = await first.actions.prepare({ kind: 'live.join', lesson: { scope, course: null, lessonId: '9000' }, maxDurationSeconds: 60 });
+    const execution = await first.actions.execute(preview.id);
+    if (execution.type !== 'job') throw Error('missing job');
+    const runner = new JobRunner(state, clock);
+    let executorEntered;
+    const executorEnteredPromise = new Promise(resolve => { executorEntered = resolve; });
+    const interrupted = runner.advance(execution.job.id, () => {
+      executorEntered();
+      return new Promise(() => {});
+    });
+    await executorEnteredPromise;
+    expect((await runner.get(execution.job.id)).status).toBe('running');
+    await first.close();
+
+    const reopened = createLearningClient({ scope, runtime });
+    const same = await reopened.jobs.resume(execution.job.id, { recoverInterrupted: true });
+    expect(same.id).toBe(execution.job.id);
+    expect(same.status).toBe('queued');
+    expect((await reopened.jobs.events(same.id, 0)).some(event => event.type === 'gap')).toBe(true);
+    const server = transport.connectNext();
+    await reopened.jobs.advance(same.id);
+    server.push(JSON.stringify({ op: 'lessonfinished' }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    clock.setNow(clock.nowMs() + 1000);
+    expect((await reopened.jobs.advance(same.id)).status).toBe('succeeded');
+    await reopened.close();
+    void interrupted;
     transport.assertNoExtraScripts();
   });
 

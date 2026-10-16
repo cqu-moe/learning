@@ -101,13 +101,14 @@ export class JobRunner {
   }
 
   /** Call only after acquiring the local exclusive writer lock. A prior process
-   * can no longer own an in-flight slice. Exports may restart from checkpoints;
-   * platform writes still require read-only reconciliation. */
+   * can no longer own an in-flight slice. Exports may restart from checkpoints
+   * and live socket drains have no platform write to reconcile; other platform
+   * writes remain uncertain pending read-only reconciliation. */
   async recoverInterrupted(id: string): Promise<Job> {
     return this.update(id, (job, meta) => {
       if (job.status !== 'running' && !meta.running) return null;
       return {
-        job: { ...job, status: job.kind === 'export' ? 'paused' : 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() },
+        job: { ...job, status: job.kind === 'export' || job.kind === 'live' ? 'paused' : 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() },
         meta: { ...meta, running: false },
       };
     });

@@ -715,10 +715,10 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       },
       pause: async (jobId) => { await assertOwnedJob(jobId); const live = liveSessions.get(jobId); if (live) { await live.close(); liveSessions.delete(jobId); } return jobRunner.pause(jobId); },
       resume: async (jobId, options) => {
-        const job = await assertOwnedJob(jobId);
+        let job = await assertOwnedJob(jobId);
         if (options?.recoverInterrupted) {
-          if (job.kind !== 'export') throw new LearningError({ code: 'INVALID_INPUT', message: 'only read-only exports can recover without reconciliation', retryAfterMs: null, operationId: jobId });
-          await jobRunner.recoverInterrupted(jobId);
+          if (job.kind !== 'export' && job.kind !== 'live') throw new LearningError({ code: 'INVALID_INPUT', message: 'only exports and live socket drains can recover without reconciliation', retryAfterMs: null, operationId: jobId });
+          job = await jobRunner.recoverInterrupted(jobId);
         }
         if (job.kind !== 'live') return jobRunner.resume(jobId);
         if (platform !== 'ykt' || !['paused', 'waiting', 'needs-input', 'uncertain'].includes(job.status)) throw new LearningError({ code: 'CONFLICT', message: 'live job cannot rejoin from its current state', retryAfterMs: null, operationId: jobId });

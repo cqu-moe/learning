@@ -138,7 +138,7 @@ export interface LearningClient {
     events(jobId: string, afterSequence: number, options?: Options): Promise<JobEvent[]>;
     advance(jobId: string, options?: Options): Promise<Job>;
     pause(jobId: string, options?: Options): Promise<Job>;
-    /** Interrupted read-only exports only; caller must hold the exclusive writer lock. */
+    /** Interrupted exports or live socket drains only; caller must hold the exclusive writer lock. Other platform writes require reconciliation. */
     resume(jobId: string, options?: Options & { recoverInterrupted?: boolean }): Promise<Job>;
     cancel(jobId: string, options?: Options): Promise<Job>;
   };
