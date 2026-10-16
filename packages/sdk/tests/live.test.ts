@@ -115,8 +115,8 @@ describe('ykt live (T22, A221/A222)', () => {
     const execution = await first.actions.execute(preview.id);
     if (execution.type !== 'job') throw Error('missing job');
     const runner = new JobRunner(state, clock);
-    let executorEntered;
-    const executorEnteredPromise = new Promise(resolve => { executorEntered = resolve; });
+    let executorEntered!: () => void;
+    const executorEnteredPromise = new Promise<void>(resolve => { executorEntered = resolve; });
     const interrupted = runner.advance(execution.job.id, () => {
       executorEntered();
       return new Promise(() => {});
