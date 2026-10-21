@@ -15,6 +15,7 @@ const FLUSH_DELAY_MS = 100;
 const MAX_EVENTS = 16;
 const MAX_BODY_BYTES = 16 * 1024;
 const STATE_VERSION = 1;
+const CommandErrorCodeSchema = ErrorCodeSchema.or(z.literal('CONFIRMATION_REQUIRED'));
 
 const TelemetryStateSchema = z.object({
   version: z.literal(STATE_VERSION),
@@ -437,7 +438,7 @@ export async function finishTelemetry(output: Output, error?: unknown): Promise<
   if (controller === undefined || !controller.enabled) return;
 
   const info = error === undefined ? null : errorInfo(error);
-  const errorCode = info === null ? null : ErrorCodeSchema.safeParse(info.error.code).data ?? 'INTERNAL';
+  const errorCode = info === null ? null : CommandErrorCodeSchema.safeParse(info.error.code).data ?? 'INTERNAL';
   const exitCode = Number(process.exitCode ?? 0);
   const properties: Record<string, TelemetryPropertyValue> = {
     ...baseProperties(controller, controller.command),

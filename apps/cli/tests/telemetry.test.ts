@@ -253,6 +253,24 @@ describe('cli telemetry lifecycle', () => {
     expect(JSON.stringify(payloads)).not.toContain(home);
   });
 
+  it('preserves confirmation-required telemetry without reporting a fault', async () => {
+    const home = freshHome('learning-telemetry-confirmation-');
+    const setup = { ...userEnv(home), CI: '1' };
+    expect((await runUserCli(['init'], home, setup)).status).toBe(0);
+    expect((await runUserCli(['profile', 'add', 'SECRET_PROFILE', '--platform', 'ykt'], home, setup)).status).toBe(0);
+
+    const result = await runUserCli(['profile', 'remove', 'SECRET_PROFILE'], home);
+    expect(result.status, result.stderr).toBe(3);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, exitCode: 3, error: { code: 'CONFIRMATION_REQUIRED' } });
+    const events = requests.flatMap(request => request.body.batch);
+    expect(events.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
+    expect(events[1]!.properties).toMatchObject({
+      operation: 'profile remove', outcome: 'needs_input', exit_code: 3, error_code: 'CONFIRMATION_REQUIRED',
+    });
+    expect(JSON.stringify(requests)).not.toContain('SECRET_PROFILE');
+    expect(JSON.stringify(requests)).not.toContain(home);
+  });
+
   it('writes business output before a held telemetry request completes', async () => {
     const home = freshHome('learning-telemetry-observed-start-');
     const token = 'phc_start_observability_fixture_token_123456789';
