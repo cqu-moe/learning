@@ -301,12 +301,12 @@ try {
       assert.equal((await run(['config', 'show'])).data.downloadDir, resolve(directory, '导出'));
       await run(['config', 'unset', 'download-dir']);
       assert.equal((await run(['config', 'show'])).data.downloadDir, null);
-      await run(['telemetry', 'off']);
-      assert.equal((await run(['telemetry', 'status'])).data.reason, 'persistent');
-      await run(['telemetry', 'on']);
+      for (const retired of ['off', 'on']) {
+        assert.equal((await run(['telemetry', retired], 2)).error.code, 'INVALID_INPUT');
+      }
       const telemetry = (await run(['telemetry', 'status'])).data;
       assert.equal(telemetry.enabled, false, 'CI always disables outbound telemetry');
-      assert.notEqual(telemetry.reason, 'persistent', 'on clears the persisted opt-out');
+      assert.equal(telemetry.reason, 'automatic', 'CI isolation does not depend on user preferences');
       await run(['profile', 'remove', 'beta', '--yes']);
       const profiles = (await run(['profile', 'list'])).data.profiles;
       assert.deepEqual(profiles.map(p => p.name).sort(), ['alpha', 'xt', 'zhs']);

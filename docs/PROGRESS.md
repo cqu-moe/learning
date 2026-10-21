@@ -975,3 +975,13 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - `gh pr view 24 --repo cqu-moe/learning --json url,state,isDraft,headRefOid,baseRefName,mergeable,statusCheckRollup,reviews` exit0：上述产品提交与远程 head 一致，MERGEABLE；初始 CI 39527296568 的 verify 与五个平台 binary 检查已启动/排队，尚无完成结论，reviews=[]。不将创建 PR 或本地测试写成 CI 通过。
 - 本次后续提交仅记录这次已授权的推送与 PR 交接，不改产品/测试/依赖/版本；沿用上段 Node24/Bun1.4.3 验收，不重复未变测试。最终 `git diff --check` exit0，继续使用既有有效 Git 身份。后续只将本条文档提交推送至同一 PR 分支；未合并、未发布、未触发真实学习平台或付费模型，实际 PostHog 入库未验。
 - 当前指定「开 PR」任务完成；下一步为 PR 六项 CI 与代码审查。没有授权自动合并，不继续其他 PLAN 或 Web。
+
+
+### 2026-10-21 · PR #24 CI 失败修复（本机验收通过，远程复验待完成）
+
+- 用户报告 CI 失败。读取精确 head `8474f8d25317a3fa0290681313b4be18050db809` 的 run [39527432868](https://github.com/cqu-moe/learning/actions/runs/39527432868)：verify success，五个平台 binary 均在 `Run standalone auth and catalog twice through local TLS providers` 失败；兼容性、编译、基础程序与 WSS proxy 步骤通过。Linux x64/macOS arm64 原始 job 日志均为 `commands: standalone command exit mismatch / 2 !== 0`。
+- 用 Node24.11.1 / Bun1.4.3 原 `--without-telemetry` 构建重放 `CI=1 node scripts/test-binary-catalog.mjs`，实际 exit1。证据 `dist/e2e/catalog-journey-1792546362646-80957.json` 明确最后命令 `telemetry off` 返回 INVALID_INPUT/exit2；未超时、未出现真实平台故障。遗漏在本 PR：产品按用户要求删除 on/off，但原编译程序目录旅程还将其视为成功，并断言持久关闭状态。
+- 只改 `scripts/test-binary-catalog.mjs` 的 4增/4删：对 off/on 逐项严格断言 exit2 与 INVALID_INPUT，状态命令仍须 enabled=false 且 reason=automatic。保留两轮独立状态、真实编译程序、TLS/WS 严格 fixture、业务/权限/退出/清理断言；未恢复关闭功能、未改产品/依赖/超时，也未删除场景或跳过失败门禁。搜索其余 scripts/CLI 源码未发现仍要求 on/off 成功的调用。
+- `node --check scripts/test-binary-catalog.mjs`、定向 ESLint、`CI=1 node scripts/test-binary-catalog.mjs`、`CI=1 node scripts/test-binary-catalog-controls.mjs`、`git diff --check` 均 exit0。绿灯证据 `dist/e2e/catalog-journey-1792546487344-88015.json` 为每轮59命令、共118次，旧命令分别 exit2/INVALID_INPUT，status exit0；两轮 passed/cleaned=true。七类协议/结果负控、真实进程超时/空输出/坏JSON/错误信封、设置与清理双重失败及未登记出站拒绝也通过。
+- 红/绿均使用同一 macOS arm64 程序 SHA256 `a7be808b2bd3dea7b2087486922c97fb142ccd81e54a0abfc3539051445e42a1`；绿灯源证据 sourceRevision 为旧 head、sourceDirty=true，真实差异仅此次测试脚本。Node/CLI/SDK 产品代码未变，未重复此前完整单元测试；远程新 head 将跑完整 verify 与五目标验收。沿既有 Git 身份提交并正常推送原 PR 分支，无强推、合并、发布、真实平台操作或付费模型调用。
+- 当前下一步：读取修复提交的六项 CI 完成结论，失败则继续诊断；不推进其他 PLAN 或 Web。
