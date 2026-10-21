@@ -9,6 +9,7 @@ import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction
 import { courseCacheKey, resourceCacheKey, resourceKindCacheKey, resourceTitleCacheKey, chooseCourse, cacheResources } from './catalog.js';
 import { runJobForeground } from '../foreground.js';
 import type { CliRuntime } from '../context.js';
+import { trackWorkflowEvent } from '../telemetry.js';
 
 type StudyResource = { kind: ResourceKind; ref: ResourceRef; title: string };
 
@@ -149,6 +150,10 @@ export function registerRunCommands(program: Command): void {
         else if (job.status === 'partial' || job.status === 'succeeded' && skippedResources.length > 0) process.exitCode = 4;
         else if (job.status !== 'succeeded') process.exitCode = 3;
         const reasons = [...new Set(job.items.flatMap((item) => item.state === 'needs-input' && item.message !== null ? [item.message] : []))];
+        trackWorkflowEvent(getOutput(program), {
+          event: 'learning_run_completed',
+          properties: { status: job.status, scope: scopeLabel === '整门课程' ? 'course' : 'resource', resource_count: resources.length, skipped_resource_count: skippedResources.length, speed, target_fraction: targetFraction },
+        });
         printResult(program, job, [
           `课程：${title}`,
           `状态：${jobStates[job.status] ?? job.status}（${job.completed}/${job.total ?? '?'}）`,

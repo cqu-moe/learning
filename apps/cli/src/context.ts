@@ -34,7 +34,7 @@ export async function withCliRuntime(
     throw new CliError('CONFLICT', lock.reason, 3);
   }
   try {
-    const runtime: CliRuntime = Object.assign(createCliRuntime(dataDir), { output: getOutput(program) });
+    const runtime: CliRuntime = Object.assign(createCliRuntime(dataDir, getOutput(program)), { output: getOutput(program) });
     runtime.log = event => { if (event.level === 'warn') getOutput(program).recordWarning(typeof event.fields.code === 'string' ? event.fields.code : 'SDK_WARNING', event.message); };
     try {
       await action(runtime, dataDir);

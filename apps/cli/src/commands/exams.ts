@@ -8,6 +8,7 @@ import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction
 import { resourceCacheKey } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
+import { trackWorkflowEvent } from '../telemetry.js';
 
 export function registerExamCommands(program: Command): void {
   const exam = program.command('exam').description('试卷分步操作');
@@ -32,6 +33,7 @@ export function registerExamCommands(program: Command): void {
           if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null });
           throw error;
         }
+        trackWorkflowEvent(getOutput(program), { event: 'exam_draft_created', properties: { question_count: draft.entries.length } });
         printResult(program, { path: output, draftId: draft.id, questions: draft.entries.length }, `${output}: ${draft.entries.length} questions`);
       } finally { await client.close(); }
     });
@@ -55,6 +57,7 @@ export function registerExamCommands(program: Command): void {
         if (options.dryRun) { printResult(program, preview, `exam ${draft.ref.assessmentId} save previewed; no final submission`); return; }
         await confirmAction(program, `账号：${profile.name}，保存试卷 ${draft.ref.assessmentId} 的答案，不交卷。`, options.yes);
         const receipt = await executeAction(getOutput(program), client, preview.id);
+        trackWorkflowEvent(getOutput(program), { event: 'exam_answers_saved', properties: { result_type: receipt.type } });
         printResult(program, receipt, `exam answers saved: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
     });
@@ -80,6 +83,7 @@ export function registerExamCommands(program: Command): void {
         if (options.dryRun) { printResult(program, preview, `exam ${refs[0]!.assessmentId} start previewed; timer may begin`); return; }
         await confirmAction(program, `账号：${profile.name}，打开试卷 ${refs[0]!.assessmentId}，可能开始计时。`, options.yes);
         const receipt = await executeAction(getOutput(program), client, preview.id);
+        trackWorkflowEvent(getOutput(program), { event: 'exam_started', properties: { result_type: receipt.type } });
         printResult(program, receipt, `exam start: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
     });
@@ -138,6 +142,7 @@ export function registerExamCommands(program: Command): void {
           await confirmAction(program, `账号：${profile.name}，最终提交试卷 ${draft.ref.assessmentId}，提交后不能视为普通保存。`, options.yes);
           if (!options.final) await confirmAction(program, '再次确认：最终交卷，结束本次考试？此确认等价于 --final。', false);
           const receipt = await executeAction(getOutput(program), client, preview.id);
+          trackWorkflowEvent(getOutput(program), { event: 'exam_submitted', properties: { result_type: receipt.type } });
           printResult(program, receipt, `final submission: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
         } finally { await client.close(); }
       });

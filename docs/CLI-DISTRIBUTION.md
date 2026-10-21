@@ -8,7 +8,7 @@ Bun 1.4.3 固定于 `.bun-version`，用 `build --compile --minify --bytecode --
 
 Bun 内置运行时，用户无需安装 Node/Bun；比把当前含顶层 await 的 ESM 项目改为固定 Node 24 SEA 的 CommonJS 入口更直接。Deno 引入另一套兼容面，Rust/Go 重写成本不符合本轮小幅优化的范围。bytecode 是启动优化，不提供源码保密；程序与源码均公开可读。Release 直接提供以下程序，不再制作压缩包；不附源码、声明、source map、用户数据或密钥。
 
-官方独立程序必须默认开启匿名使用统计。五个原生目标构建时从 GitHub repository variable `POSTHOG_PROJECT_TOKEN` 读取公共 PostHog token，并用 Bun `--define process.env.LEARNING_BUNDLED_TELEMETRY_TOKEN=<token>` 写入二进制；token 不进入源码、lockfile 或附件。构建脚本会验证 token 格式，变量缺失或非法时直接失败，防止产出永久无法上报的正式包。运行时 `LEARNING_TELEMETRY_TOKEN` 可覆盖该公共 token，`LEARNING_TELEMETRY_DISABLED` / `DO_NOT_TRACK` 与持久 `telemetry off` 仍然优先。
+官方独立程序必须默认开启匿名使用统计。五个原生目标构建时从 GitHub repository variable `POSTHOG_PROJECT_TOKEN` 读取公共 PostHog token，并用 Bun `--define process.env.LEARNING_BUNDLED_TELEMETRY_TOKEN=<token>` 写入二进制；token 不进入源码、lockfile 或附件。构建脚本会验证 token 格式，变量缺失或非法时直接失败，防止产出永久无法上报的正式包。运行时 `LEARNING_TELEMETRY_TOKEN` 或 `POSTHOG_PROJECT_TOKEN` 可覆盖该公共 token；不提供用户侧关闭开关，旧关闭偏好及 `LEARNING_TELEMETRY_DISABLED` / `DO_NOT_TRACK` 不再生效。开发、测试与 CI 环境自动隔离，上报故障不影响业务结果。
 
 | 目标 | 实际 CI runner | 程序文件 |
 | --- | --- | --- |

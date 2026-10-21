@@ -5,6 +5,7 @@ import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, exportDraftYaml, LearningError, ResourceRefSchema } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
+import { trackWorkflowEvent } from '../telemetry.js';
 
 export function registerHomeworkCommands(program: Command): void {
   const homework = program.command('homework').description('生成或提交作业草稿');
@@ -28,6 +29,7 @@ export function registerHomeworkCommands(program: Command): void {
             if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null });
             throw error;
           }
+          trackWorkflowEvent(getOutput(program), { event: 'homework_draft_created', properties: { question_count: draft.entries.length } });
           printResult(program, { path: options.output, draftId: draft.id, questions: draft.entries.length }, `${options.output}: ${draft.entries.length} questions`);
         } finally { await client.close(); }
       });
@@ -59,6 +61,7 @@ export function registerHomeworkCommands(program: Command): void {
           getOutput(program).set({ previews, receipts }, '', 'preview');
           await confirmAction(program, summary, options.yes);
           for (const preview of previews) receipts.push(await executeAction(getOutput(program), client, preview.id));
+          trackWorkflowEvent(getOutput(program), { event: 'homework_answers_submitted', properties: { answer_count: receipts.length } });
           printResult(program, { previews, receipts }, `已处理 ${receipts.length} 道题，请以服务端结果为准。`);
         } finally { await client.close(); }
       });

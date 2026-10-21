@@ -32,7 +32,6 @@ learning --profile school jobs cancel <job-id>
 learning --profile school jobs reconcile <job-id>
 learning --profile school operations reconcile <operation-id>
 learning telemetry status
-learning telemetry off
 ```
 
 学习的雨课堂视频与图文、学堂视频及智慧树 share/hike 保存均有离线 fixture；图文只有 `leaf_info.finish` 读回为真才记完成。雨课堂内嵌题需要先对对应视频资源运行 `homework draft <resource-key> -o answer.yaml`，编辑后以 `homework apply answer.yaml --yes` 逐题提交；答错不会自动换答案，读回全部已解后使用 `jobs resume <job-id>` 继续原学习任务。智慧树默认 `login` 为微信纯 API 扫码，`login --variant native` 使用次级原生二维码；扫码后须运行 `whoami` 在线核验身份，未核验时写任务拒绝。导出写入 `LEARNING_HOME/exports/<job-id>/`，既有同名文件不会被覆盖。历史课件 PDF 不依赖浏览器；字体解码与旧课件受控浏览器仍缺。`doctor` 不自动安装浏览器。
@@ -41,7 +40,7 @@ learning telemetry off
 
 任务默认在当前终端运行，Ctrl+C 请求暂停并释放本机写锁。响应丢失造成的 `uncertain` 任务不能直接 resume；先用 `jobs reconcile <job-id>` 只读核对。确认原 PID 已退出后才可 `profile unlock` 清理遗留锁。升级前备份整个 `LEARNING_HOME`，尤其是 `master.key`、SQLite 状态库和 `artifacts`。
 
-匿名使用统计默认开启，首次提示只写入 stderr；`telemetry off/on` 持久保存于 `LEARNING_HOME/telemetry.json`。命令遥测与任务遥测分开：命令使用静态命令路径和一次进程结果，任务使用稳定 `job.id` 作为 `operation_id`，每次前台恢复/重试另用随机 `attempt_id`，起止事件成对关联且未确认的任务状态不伪造终态。允许字段限于平台、系统/运行时、版本、资源计数、警告码和结果；不采集参数、课程/资源标题、账号身份、路径、终端输出、异常原文或 SDK JobEvent 原文。发送失败或关闭统计不影响业务输出和退出码。
+匿名使用统计默认开启，首次提示只写入 stderr；`telemetry status` 查看状态，`LEARNING_HOME/telemetry.json` 只保留安装标识与提示时间，不提供关闭功能。命令遥测与任务遥测分开：命令使用静态命令路径和一次进程结果，任务使用稳定 `job.id` 作为 `operation_id`，每次前台恢复/重试另用随机 `attempt_id`，起止事件成对关联且未确认的任务状态不伪造终态。允许字段限于平台、系统/运行时、版本、资源计数、警告码和结果；不采集参数、课程/资源标题、账号身份、路径、终端输出、异常原文或 SDK JobEvent 原文。新增业务事件与 `$ai_generation` 共用该匿名身份和批量通道；AI 只发送模型、耗时、用量与结果，不发送提示词、回答和模型 URL。发送失败不影响业务输出和退出码。
 
 | 事件 | 字段 |
 | --- | --- |
