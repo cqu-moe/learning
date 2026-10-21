@@ -966,3 +966,12 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 最终 `pnpm lint`、`pnpm typecheck`、`pnpm build`、`pnpm test:e2e`（7/7）、`node scripts/check-boundaries.mjs`、`node scripts/test-release.mjs`、`git diff --check` 均 exit0。完整本机日志在忽略目录 `dist/posthog-checks.log`、`dist/posthog-checks-final.log`，保留首次失败证据；未把第一次整库失败记为通过。
 - Bun1.4.3：校验既有官方下载校验单、ZIP 与已解压程序一致。用虚构公共采集 token 走实际 bundled-token 编译路径，`scripts/build-cli.mjs`、CI 隔离下 `scripts/test-binary.mjs` 与 `scripts/test-binary-terminal.mjs` 均 exit0，覆盖无 JS runtime PATH、SQLite/加密状态、权限/锁、失败清理、中文窄终端、取消及菜单返回。测试程序与校验文件移至 `dist/posthog-review/`，只作 fixture，不是发行附件；日志 `dist/posthog-binary-checks.log`。
 - 未运行真实平台登录/学习/作业/考试/发帖、付费模型、PostHog 测试事件发送、其余四个平台原生程序或远程 CI；未推送、未改远程 notebook/dashboard、未合并或发布。项目事件目录查询返回的是 2026-10-20 的 taxonomy 快照，不能证明本次新事件已经送达。下一步为用户另行授权推功能分支后跑五平台 CI，并单独验证实际入库；不自动进入其他 PLAN 或 Web。
+
+
+### 2026-10-21 · PostHog 功能分支推送与 PR #24（已创建，CI 待完成）
+
+- 用户明确授权「开 PR」。`git fetch origin main` exit0，main 仍为 `2b9e80dd6d8f2b6084ffe2c638edeed9aa18ddf5`；工作树干净且 diff 检查通过后，`git push -u origin codex/learning-posthog` exit0，已验证产品提交 `dd825643c3ccb271e724b6892160fbf1c40eb413` 成功上传。
+- GitHub connector 实际创建并读回 [PR #24](https://github.com/cqu-moe/learning/pull/24)，OPEN、非 draft、base=main、head=codex/learning-posthog；PR 已附加到本聊天。说明包含最终实现、移除关闭功能的兼容性影响、全部本机测试及五平台/真实入库的待验证边界。
+- `gh pr view 24 --repo cqu-moe/learning --json url,state,isDraft,headRefOid,baseRefName,mergeable,statusCheckRollup,reviews` exit0：上述产品提交与远程 head 一致，MERGEABLE；初始 CI 39527296568 的 verify 与五个平台 binary 检查已启动/排队，尚无完成结论，reviews=[]。不将创建 PR 或本地测试写成 CI 通过。
+- 本次后续提交仅记录这次已授权的推送与 PR 交接，不改产品/测试/依赖/版本；沿用上段 Node24/Bun1.4.3 验收，不重复未变测试。最终 `git diff --check` exit0，继续使用既有有效 Git 身份。后续只将本条文档提交推送至同一 PR 分支；未合并、未发布、未触发真实学习平台或付费模型，实际 PostHog 入库未验。
+- 当前指定「开 PR」任务完成；下一步为 PR 六项 CI 与代码审查。没有授权自动合并，不继续其他 PLAN 或 Web。
