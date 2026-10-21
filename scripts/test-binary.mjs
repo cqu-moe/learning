@@ -17,7 +17,7 @@ const home = resolve(root, '账号 数据');
 const env = { ...process.env, PATH: '', LEARNING_HOME: resolve(root, 'ignored-home') };
 // Windows requires its system PowerShell for the owner-only ACL, not Node/Bun.
 for (const key of Object.keys(env)) {
-  if (/^(path|bun_options|node_options|learning_model_.+|learning_telemetry_token|learning_bundled_telemetry_token)$/i.test(key)) delete env[key];
+  if (/^(path|bun_options|node_options|posthog_project_token|posthog_host|learning_model_.+|learning_telemetry_token|learning_bundled_telemetry_token)$/i.test(key)) delete env[key];
 }
 env.PATH = '';
 function run(args, expected = 0) {
@@ -47,7 +47,7 @@ try {
   }
   const defaultStatus = spawnSync(binary, ['--home', home, 'telemetry', 'status', '--json'], {
     cwd: root, encoding: 'utf8', timeout: 5000,
-    env: { ...env, CI: '0', VITEST: '0', NODE_ENV: 'production', LEARNING_TELEMETRY_ENVIRONMENT: 'production', LEARNING_TELEMETRY_DISABLED: '0', DO_NOT_TRACK: '0' },
+    env: { ...env, CI: '0', VITEST: '0', NODE_ENV: 'production', LEARNING_TELEMETRY_ENVIRONMENT: 'production' },
   });
   assert.equal(defaultStatus.status, 0);
   assert.deepEqual(JSON.parse(defaultStatus.stdout).data, { enabled: tokenConfigured, reason: tokenConfigured ? 'active' : 'configuration', tokenConfigured }, 'runtime telemetry must match the explicit build mode');

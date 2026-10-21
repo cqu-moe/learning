@@ -7,6 +7,7 @@ import { lstatSync, readFileSync, unlinkSync, openSync, closeSync, fstatSync, ft
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
+import { trackWorkflowEvent } from '../telemetry.js';
 
 function readCookieFile(path: string): string {
   const stat = lstatSync(path);
@@ -56,6 +57,7 @@ export function registerLoginCommands(program: Command): void {
         if (options.import !== undefined) {
           const imported = await client.auth.importLegacy({ format: 'cookie-array', text: readCookieFile(options.import) });
           printResult(program, unwrapResult(program, imported), `已导入 ${profile.name} 的会话，身份尚未在线验证。`);
+          trackWorkflowEvent(getOutput(program), { event: 'login_completed', properties: { method: 'cookie_import' } });
           return;
         }
         if (options.variant === 'native' && profile.scope.platform !== 'zhs') throw new CliError('INVALID_INPUT', 'native 二维码仅用于智慧树。');
@@ -107,6 +109,7 @@ export function registerLoginCommands(program: Command): void {
           }
           const session = await flow.result;
           if (cancelError) throw cancelError;
+          trackWorkflowEvent(getOutput(program), { event: 'login_completed', properties: { method: 'qr', variant: options.variant } });
           printResult(program, session, `已登录账号：${profile.name}`);
         } finally {
           process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal);

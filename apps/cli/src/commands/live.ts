@@ -6,6 +6,7 @@ import { runJobForeground } from '../foreground.js';
 import { createPrompts, confirmAction, requireConfirmation } from '../prompts.js';
 import type { Output } from '../output.js';
 import type { Answer, JobEvent } from '@learning/sdk/public';
+import { trackWorkflowEvent } from '../telemetry.js';
 
 export async function confirmCurrentAnswer(client: ReturnType<typeof createLearningClient>, jobId: string, event: Extract<JobEvent, { type: 'question' }>, output: Output): Promise<void> {
   await output.message(`当前题目 ${event.question.id}：${event.question.body.plainText}`, true);
@@ -60,6 +61,7 @@ export function registerLiveCommand(program: Command): void {
         if (job.status === 'uncertain') process.exitCode = 5;
         else if (job.status === 'partial') process.exitCode = 4;
         else if (job.status !== 'succeeded') process.exitCode = 3;
+        trackWorkflowEvent(getOutput(program), { event: 'live_session_completed', properties: { status: job.status } });
         printResult(program, job, `${job.id}: ${job.status}`);
       } finally { await client.close(); }
     });

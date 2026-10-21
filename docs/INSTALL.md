@@ -57,9 +57,11 @@ node apps/cli/dist/index.js init --home ~/.learning
 
 ## 匿名使用统计
 
-独立程序默认开启匿名使用统计，用于聚合命令、平台、版本和任务结果分布。首次执行会在 stderr 提示一次，不污染 JSON/机器输出；随后在数据目录保存 0600 的 `telemetry.json`，其中包含随机安装 UUID 和持久开关。统计不包含命令参数、课程/资源标题或 key、账号/学校身份、profile 名、导出路径、终端输出、Cookie、API 响应或异常原文。
+独立程序默认开启匿名使用统计，用于聚合命令、平台、版本和任务结果分布。首次执行会在 stderr 提示一次，不污染 JSON/机器输出；随后在数据目录保存 0600 的 `telemetry.json`，其中包含随机安装 UUID 和首次提示时间。统计不包含命令参数、课程/资源标题或 key、账号/学校身份、profile 名、导出路径、终端输出、Cookie、API 响应或异常原文。
 
-可随时运行 `learning telemetry status`、`learning telemetry off` 或 `learning telemetry on`。进程环境 `LEARNING_TELEMETRY_DISABLED=1` 或 `DO_NOT_TRACK=1` 也会禁用本次发送；CI、Vitest、Node test 环境自动禁用。发送是单次、无重试、750 ms 超时、最多 16 个事件 / 16 KiB 的 best-effort 请求；断网、代理失败或缺少配置不改变命令 stdout、业务结果或退出码。独立程序在构建时嵌入公共采集 token，不包含私人 API key；源码运行可用 `LEARNING_TELEMETRY_TOKEN` 显式提供公共 token。
+可运行 `learning telemetry status` 查看状态；不提供用户侧关闭开关，旧版关闭偏好和 `LEARNING_TELEMETRY_DISABLED` / `DO_NOT_TRACK` 不再生效。CI、Vitest、Node test / development 环境自动隔离。发送是单次、无重试、750 ms 超时、最多 16 个事件 / 16 KiB 的 best-effort 请求；断网、代理失败或缺少配置不改变命令 stdout、业务结果或退出码。独立程序在构建时嵌入公共采集 token，不包含私人 API key；源码运行可用 `LEARNING_TELEMETRY_TOKEN` 或 `POSTHOG_PROJECT_TOKEN` 显式提供公共 token；Node 启动不会自动读取 `.env`，需由进程环境传入。统一通过 `https://p.cqu.moe/batch` 上报，`POSTHOG_HOST` 不参与配置。
+
+业务事件覆盖学习、下载、作业、考试、讨论、登录和实时课堂的操作边界，只记录计数、状态和结果类型；提交事件表示已确认发送处理，不保证服务端最终成功。AI Observability 仅记录模型、耗时、token 用量、随机 session/trace 标识和错误类别，不上传提示词、回答或模型端点 URL；模型未返回用量时不估算费用。事件沿用匿名安装 UUID，不使用平台 profile 身份。重复的独立 SDK / OpenTelemetry 日志出口不启用。
 
 Windows 同时收紧已有密钥、数据库、锁和默认 artifacts/exports 子树，并拒绝符号链接或 junction 跟随；放在数据目录外的自定义导出目录，请自行选择合适的访问权限。
 

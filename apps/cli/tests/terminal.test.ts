@@ -96,7 +96,8 @@ it('presents Chinese help for every registered leaf command', async () => {
   for (const child of command.commands) visit(child,[...path,child.name()]);
  };
  for (const command of program.commands) visit(command,[command.name()]);
- expect(paths).toHaveLength(36);
+ expect(paths).toHaveLength(34);
+ expect(paths.map(path=>path.join(' ')).filter(path=>path.startsWith('telemetry '))).toEqual(['telemetry status']);
  expect(paths.map(path=>path.join(' '))).toContain('exam draft');
  expect(paths.map(path=>path.join(' '))).toContain('operations reconcile');
  for (const path of paths) {

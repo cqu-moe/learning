@@ -945,3 +945,24 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 0.2.7→0.2.8仅因CLI产品修复触发既有main release路径；依赖/lockfile不变。Node24.11.1/pnpm11.19.0/Bun1.4.3：冻结安装、SDK build、live+jobs 19/19、CLI typecheck、真实0.2.8 `--without-telemetry`编译、原standalone jobs两轮旅程均exit0；准确RED为exit1。最终lint/diff检查见提交前记录。五平台CI、复审与发行读回由父代理接手，本worktree不push/PR/合并/发布。
 
 - 父代理复审补充：现有CLI持久化恢复用例参数化paused/running；用真实JobRunner推进到持久running且meta.running=true，再以新CLI进程验证无确认拒绝、单次fixture checkin、同job成功、恰好一个gap、meta清零和锁清理。该场景是确定性故障状态预置，原生SIGKILL流程单独保留。仅从构建后的CLI删除recoverInterrupted传参时，running分支真实exit1（签到未消费、WSS未打开），paused仍通过；恢复传参后2/2 exit0。全workspace typecheck、lint、diff检查exit0。PR #22及五平台CI接续，不修改依赖或生产钩子。
+### 2026-10-15 · CLI 0.2.7 发布验收（完成）
+
+- [PR #21](https://github.com/cqu-moe/learning/pull/21) 的精确 head `d0cbc745acf6cd031ebc343ba7e6b451706cd68d` 在 [CI 38729940375](https://github.com/cqu-moe/learning/actions/runs/38729940375) 六项全部通过后 squash 合入 main，提交 `3d559ed95b1989b52cec80662c63d9c1ed8c3554`。合并后的 [main CI 38730424325](https://github.com/cqu-moe/learning/actions/runs/38730424325) 与 [cli-release 38730424595](https://github.com/cqu-moe/learning/actions/runs/38730424595) 均 success；正式发布流程的五目标原生验收、Node 检查及 publish 全部通过。
+- [CLI 0.2.7](https://github.com/cqu-moe/learning/releases/tag/cli-v0.2.7) 已公开、非草稿、非预发行且为 latest；tag 和 targetCommitish 均为上述合并提交。资产读回为五个独立程序、LICENSES.txt、SHA256SUMS；补充 Windows SeSecurityPrivilege 修复及 CI 修复说明，保留原安装/许可证/构建信息。
+- 实际下载 macOS arm64 程序、许可证与校验清单至 `dist/release-check-0.2.7-20261015`。程序 78,408,434 字节，SHA256 `c8184ba184725e561d8d9fcc83f9b7fc7bf51cfc3a749d113de2c19f532bea81`；许可证 83,495 字节，两者均匹配清单，清单自身也匹配 GitHub 资产摘要。完整校验后才复制到仓库外中文/空格路径执行。
+- 下载程序的 `test-binary.mjs` 与 `test-binary-terminal.mjs` 最终均 exit 0，覆盖无 JS runtime PATH、SQLite、profile 隔离、权限、锁、失败清理、中文窄终端、确认取消及菜单退出。首轮本机验收因额外设置 `LEARNING_TELEMETRY_DISABLED=1` 导致禁用原因是 environment 而非预期 automatic，exit 1；恢复 CI=1 的自动禁用条件后全部通过，未改测试或产品代码。
+- 本机 main 已同步；Node v24.11.1 / pnpm 11.19.0 下 `pnpm build`、CLI `--version` 均 exit 0，输出 0.2.7。前两轮本机进度记录已随 #21 完整合入；额外保留 stash `codex-release-027-progress-backup-preserved` 备份。隔离 worktree 已归档，本条仅作本机验收记录，远程 main 保持已通过 CI 的发布 SHA。
+- 未运行真实平台登录/学习/答题或付费模型；不改变此前签名/公证、最低系统版本等验收边界，不继续其他 PLAN 或 Web。用户指定发布任务完成。
+
+
+### 2026-10-21 · PostHog 接入复核与精简（本地实现和离线验收完成，未推送）
+
+- 用户给定 [setup report](https://us.posthog.com/project/662666/notebooks/237f6550f70a)，并明确选择移除用户侧遥测关闭功能、继续接入。通过 `posthog-cli api --agent-help`、`skill list/install` 与只读 API 确认项目 662666（CQU Moe · Products，Asia/Shanghai）、notebook 与五图表 dashboard 2237500；原报告仅做过 Node22 的安装/build/lint/typecheck，未验收测试和入库。
+- 在隔离 worktree `codex/learning-posthog` 保留并整理用户已有改动，rebase 到本轮 fetch 的 `origin/main=2b9e80d`。PROGRESS 追加处冲突保留双方历史；原 main 的未提交内容未覆盖。SDK/CLI 版本、manifest 依赖与 lockfile相对当前 main 均无变化，不推进其他 PLAN、Web 或发布。
+- `apps/cli/src/telemetry.ts`、七个业务命令、`context.ts`/`runtime.ts`：12 类业务事件与 `$ai_generation` 共用既有匿名安装 UUID、公共字段、字段白名单和有界批量出口。移除 `telemetry on/off`、持久开关与旧 `LEARNING_TELEMETRY_DISABLED`/`DO_NOT_TRACK` 判断，旧状态仍保留安装身份；保留 status 和开发/测试/CI 自动隔离。源码进程支持 `POSTHOG_PROJECT_TOKEN`，便携程序沿既有 bundled token，通过 p.cqu.moe 上报。`.env.example` 仅含占位并明确需传入环境，`.gitignore` 单独放行它。
+- `packages/sdk/src/runtime/node/model.ts`：手动观测只保留模型、耗时、可用 token 用量、session/trace 和错误类别；不捕获提示词、回答、模型端点、凭据。proposal JSON 解析失败不再算成功，每个正常/异常调用分支只记一次；usage 缺失、null 或不完整不影响原建议输出，回调失败不影响模型业务。重复 posthog-node 单例、异常原文自动采集及 OTel 日志出口不纳入本次方案，既有匿名错误码统计保留；没有新依赖。
+- 回归涉及 `telemetry.test.ts`、`model-node.test.ts`、`terminal.test.ts`、终端 driver 与 `test-binary.mjs`；安装/使用/便携发行说明同步。先确认遥测测试红灯（3 failed/9 passed，exit1：旧偏好仍关闭、缺新捕获函数、旧 SDK 单例在 development 无配置时报错），模型隐私/错误分类与 usage:null 回归也实际红灯。随后全新 build 与 telemetry 12/12、model 5/5 exit0。
+- 固定 macOS arm64 / Node24.11.1 / pnpm11.19.0：`pnpm install --offline --frozen-lockfile` exit0；`pnpm -r test --maxWorkers 1` 首轮 SDK282/282、CLI154/155，exit1 仅因帮助清单仍要求36个命令。删除 on/off 后清单严格改为34，另断言 telemetry 唯一叶命令为 status，未放宽其余中文帮助检查。最终 `pnpm --filter @learning/cli exec vitest run --maxWorkers 1` 17文件155/155 exit0。
+- 最终 `pnpm lint`、`pnpm typecheck`、`pnpm build`、`pnpm test:e2e`（7/7）、`node scripts/check-boundaries.mjs`、`node scripts/test-release.mjs`、`git diff --check` 均 exit0。完整本机日志在忽略目录 `dist/posthog-checks.log`、`dist/posthog-checks-final.log`，保留首次失败证据；未把第一次整库失败记为通过。
+- Bun1.4.3：校验既有官方下载校验单、ZIP 与已解压程序一致。用虚构公共采集 token 走实际 bundled-token 编译路径，`scripts/build-cli.mjs`、CI 隔离下 `scripts/test-binary.mjs` 与 `scripts/test-binary-terminal.mjs` 均 exit0，覆盖无 JS runtime PATH、SQLite/加密状态、权限/锁、失败清理、中文窄终端、取消及菜单返回。测试程序与校验文件移至 `dist/posthog-review/`，只作 fixture，不是发行附件；日志 `dist/posthog-binary-checks.log`。
+- 未运行真实平台登录/学习/作业/考试/发帖、付费模型、PostHog 测试事件发送、其余四个平台原生程序或远程 CI；未推送、未改远程 notebook/dashboard、未合并或发布。项目事件目录查询返回的是 2026-10-20 的 taxonomy 快照，不能证明本次新事件已经送达。下一步为用户另行授权推功能分支后跑五平台 CI，并单独验证实际入库；不自动进入其他 PLAN 或 Web。

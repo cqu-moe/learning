@@ -9,6 +9,7 @@ import type { AssessmentRef, CourseRef, ResourceRef, OutlineNode } from '@learni
 import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
 import { resourceCacheKey, resourceKindCacheKey, chooseTarget } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
+import { trackWorkflowEvent } from '../telemetry.js';
 
 const TYPES = new Set(['video', 'homework', 'exam']);
 function flatten(nodes: OutlineNode[]): Array<{ kind: string; ref: ResourceRef }> {
@@ -100,6 +101,10 @@ export function registerDownloadCommands(program: Command): void {
         else if (jobs.some((job) => job.status === 'partial')) process.exitCode = 4;
         else if (jobs.some((job) => job.status !== 'succeeded')) process.exitCode = 3;
         const result = jobs.length === 1 ? { job: jobs[0], files } : { jobs, files };
+        trackWorkflowEvent(getOutput(program), {
+          event: 'download_completed',
+          properties: { job_statuses: jobs.map(job => job.status), exported_file_count: files.length, media_count: media.length, assessment_count: assessments.length },
+        });
         printResult(program, result, `${getOutput(program).signal.aborted ? '已取消，保留任务记录与已完成文件。\n' : ''}${jobs.map((job) => `${job.id}: ${job.status}`).join('\n')}\n${files.join('\n')}`);
       } finally { await client.close(); }
     });

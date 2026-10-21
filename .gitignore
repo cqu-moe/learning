@@ -8,6 +8,7 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+!.env.example
 master.key
 
 .tools/

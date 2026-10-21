@@ -1,8 +1,16 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { LearningError } from '../../types/errors.js';
 import type { ModelClient } from '../types.js';
 
-const ChatResponse = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) });
+const ChatResponse = z.object({
+  choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1),
+  usage: z.unknown().optional(),
+});
+const TokenUsage = z.object({
+  prompt_tokens: z.number().int().nonnegative(),
+  completion_tokens: z.number().int().nonnegative(),
+});
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 function failure(code: 'INVALID_INPUT' | 'NETWORK' | 'PROTOCOL', message: string): LearningError {
@@ -28,7 +36,14 @@ async function boundedText(response: Response): Promise<string> {
 }
 
 /** Explicitly configured, Node-only Chat Completions compatible adapter. */
-export function createCompatibleModelClient(config: { baseUrl: string; model: string; apiKey: string; fetchFn?: typeof fetch }): ModelClient {
+export function createCompatibleModelClient(config: {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  fetchFn?: typeof fetch;
+  aiSessionId?: string;
+  captureAiGeneration?: (properties: Record<string, unknown>) => void;
+}): ModelClient {
   let base: URL;
   try { base = new URL(config.baseUrl); }
   catch { throw failure('INVALID_INPUT', 'model base URL is invalid'); }
@@ -41,20 +56,76 @@ export function createCompatibleModelClient(config: { baseUrl: string; model: st
       const instruction = purpose === 'answers'
         ? 'Return only JSON with a suggestions array of questionId and option keys. Do not invent unavailable text. These are editable suggestions, not submissions.'
         : 'Return only JSON with one nonempty text field containing an editable discussion reply. Do not submit it.';
+      const messages = [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(content) }];
+      const startedAt = Date.now();
+      const traceId = randomUUID();
+      const capture = (outcome: {
+        httpStatus?: number;
+        isError: boolean;
+        error?: 'network_error' | 'http_error' | 'response_too_large' | 'response_read_error' | 'invalid_json_response' | 'invalid_response_structure' | 'invalid_proposal_json';
+        usage?: { prompt_tokens: number; completion_tokens: number };
+      }) => {
+        try {
+          config.captureAiGeneration?.({
+            $ai_trace_id: traceId,
+            $ai_session_id: config.aiSessionId ?? null,
+            $ai_span_id: randomUUID(),
+            $ai_span_name: `model_${purpose}_proposal`,
+            $ai_model: config.model,
+            $ai_provider: 'openai-compatible',
+            $ai_latency: (Date.now() - startedAt) / 1000,
+            $ai_stream: false,
+            $ai_is_error: outcome.isError,
+            ...(outcome.httpStatus === undefined ? {} : { $ai_http_status: outcome.httpStatus }),
+            ...(outcome.error === undefined ? {} : { $ai_error: outcome.error }),
+            ...(outcome.usage === undefined ? {} : {
+              $ai_input_tokens: outcome.usage.prompt_tokens,
+              $ai_output_tokens: outcome.usage.completion_tokens,
+            }),
+          });
+        } catch { return; }
+      };
       const request = new Request(endpoint, { method: 'POST', headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: config.model, messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(content) }], stream: false }),
+        body: JSON.stringify({ model: config.model, messages, stream: false }),
         signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]), credentials: 'omit', redirect: 'error' });
       let response: Response;
       try { response = await fetchFn(request); }
-      catch { throw failure('NETWORK', 'model request failed'); }
-      if (!response.ok) throw failure('PROTOCOL', `model returned HTTP ${response.status}`);
+      catch {
+        capture({ isError: true, error: 'network_error' });
+        throw failure('NETWORK', 'model request failed');
+      }
+      if (!response.ok) {
+        capture({ httpStatus: response.status, isError: true, error: 'http_error' });
+        throw failure('PROTOCOL', `model returned HTTP ${response.status}`);
+      }
       let payload: unknown;
-      try { payload = JSON.parse(await boundedText(response)); }
-      catch (error) { if (error instanceof LearningError) throw error; throw failure('PROTOCOL', 'model response is not JSON'); }
+      let text: string;
+      try { text = await boundedText(response); }
+      catch (error) {
+        capture({ httpStatus: response.status, isError: true, error: error instanceof LearningError ? 'response_too_large' : 'response_read_error' });
+        if (error instanceof LearningError) throw error;
+        throw failure('PROTOCOL', 'model response is not JSON');
+      }
+      try { payload = JSON.parse(text); }
+      catch {
+        capture({ httpStatus: response.status, isError: true, error: 'invalid_json_response' });
+        throw failure('PROTOCOL', 'model response is not JSON');
+      }
       const parsed = ChatResponse.safeParse(payload);
-      if (!parsed.success) throw failure('PROTOCOL', 'model completion has no text choice');
-      try { return JSON.parse(parsed.data.choices[0]!.message.content) as unknown; }
-      catch { throw failure('PROTOCOL', 'model returned invalid proposal JSON'); }
+      if (!parsed.success) {
+        capture({ httpStatus: response.status, isError: true, error: 'invalid_response_structure' });
+        throw failure('PROTOCOL', 'model completion has no text choice');
+      }
+      const output = parsed.data.choices[0]!.message.content;
+      let proposal: unknown;
+      try { proposal = JSON.parse(output); }
+      catch {
+        capture({ httpStatus: response.status, isError: true, error: 'invalid_proposal_json' });
+        throw failure('PROTOCOL', 'model returned invalid proposal JSON');
+      }
+      const usage = TokenUsage.safeParse(parsed.data.usage);
+      capture({ httpStatus: response.status, isError: false, ...(usage.success ? { usage: usage.data } : {}) });
+      return proposal;
     },
   };
 }

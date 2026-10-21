@@ -5,8 +5,10 @@ import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
+import { trackAiGeneration } from './telemetry.js';
+import type { Output } from './output.js';
 
-export function createCliRuntime(dataDir: string): Runtime & { state: SqliteStateStore; waitForWake: (ms: number, signal: AbortSignal) => Promise<void> } {
+export function createCliRuntime(dataDir: string, output?: Output): Runtime & { state: SqliteStateStore; waitForWake: (ms: number, signal: AbortSignal) => Promise<void> } {
   const masterKey = loadOrCreateMasterKey(dataDir);
   const clock = { nowMs: () => Date.now(), sleep: (ms: number, signal: AbortSignal) => new Promise<void>((resolveSleep, reject) => {
     const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolveSleep(); }, ms);
@@ -18,7 +20,15 @@ export function createCliRuntime(dataDir: string): Runtime & { state: SqliteStat
   const modelBaseUrl = process.env.LEARNING_MODEL_BASE_URL;
   const modelName = process.env.LEARNING_MODEL_NAME;
   const modelKey = process.env.LEARNING_MODEL_API_KEY;
-  const model = modelBaseUrl && modelName && modelKey ? createCompatibleModelClient({ baseUrl: modelBaseUrl, model: modelName, apiKey: modelKey }) : null;
+  const model = modelBaseUrl && modelName && modelKey
+    ? createCompatibleModelClient({
+      baseUrl: modelBaseUrl,
+      model: modelName,
+      apiKey: modelKey,
+      aiSessionId: randomUUID(),
+      captureAiGeneration: properties => { if (output !== undefined) trackAiGeneration(output, properties); },
+    })
+    : null;
   const waitForWake = (ms: number, signal: AbortSignal) => new Promise<void>((resolveWait, reject) => {
     let finished = false;
     const cleanup = () => { if (finished) return false; finished = true; clearTimeout(timer); signal.removeEventListener('abort', onAbort); wakeListeners.delete(onWake); return true; };

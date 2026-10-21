@@ -15,7 +15,7 @@ import time
 spec = json.loads(sys.argv[1])
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', spec.get('rows', 30), spec.get('columns', 80), 0, 0))
-env = dict(os.environ, CI='', LEARNING_TELEMETRY_DISABLED='1', TERM=spec.get('term', 'xterm-256color'))
+env = dict(os.environ, CI='', LEARNING_TELEMETRY_ENVIRONMENT='test', TERM=spec.get('term', 'xterm-256color'))
 env.update(spec.get('env', {}))
 def attach_terminal():
     os.setsid()

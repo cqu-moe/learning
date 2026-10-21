@@ -6,6 +6,7 @@ import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, DiscussionDraftSchema, LearningError, ResourceRefSchema } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime, executeAction } from '../context.js';
 import { resourceCacheKey } from './catalog.js';
+import { trackWorkflowEvent } from '../telemetry.js';
 
 export function registerDiscussCommands(program: Command): void {
   const discuss = program.command('discuss').description('生成讨论草稿或确认发帖');
@@ -31,6 +32,7 @@ export function registerDiscussCommands(program: Command): void {
           if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null });
           throw error;
         }
+        trackWorkflowEvent(getOutput(program), { event: 'discussion_draft_created', properties: { used_ai_suggestion: options.ai === true } });
         printResult(program, { path: options.output, draft: result }, `draft saved to ${options.output}`);
       } finally { await client.close(); }
     });
@@ -61,6 +63,7 @@ export function registerDiscussCommands(program: Command): void {
         getOutput(program).set(preview, '', 'preview');
         await confirmAction(program, summary, options.yes);
         const receipt = await executeAction(getOutput(program), client, preview.id);
+        trackWorkflowEvent(getOutput(program), { event: 'discussion_posted', properties: { result_type: receipt.type } });
         printResult(program, receipt, `discussion post: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
       } finally { await client.close(); }
     });

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, closeSync, existsSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { ensureDataDir } from './data-dir.js';
 import { errorInfo, type Output } from './output.js';
-import type { Job } from '@learning/sdk/public';
+import { JobStatusSchema, type Job } from '@learning/sdk/public';
 import pkg from '../package.json' with { type: 'json' };
 
 const POSTHOG_HOST = 'https://p.cqu.moe';
@@ -19,12 +19,16 @@ const TelemetryStateSchema = z.object({
   version: z.literal(STATE_VERSION),
   installationId: z.string().uuid(),
   noticeAcknowledgedAt: z.string().min(1),
-  disabled: z.boolean(),
-}).strict();
+  disabled: z.boolean().optional(),
+}).strict().transform(state => ({
+  version: state.version,
+  installationId: state.installationId,
+  noticeAcknowledgedAt: state.noticeAcknowledgedAt,
+}));
 
 type TelemetryState = z.infer<typeof TelemetryStateSchema>;
 type TelemetryEnvironment = 'production' | 'development' | 'test';
-type TelemetryPropertyValue = string | number | boolean | null | string[];
+type TelemetryPropertyValue = string | number | boolean | null | string[] | undefined;
 type TelemetryEvent = {
   uuid: string;
   event: string;
@@ -90,12 +94,8 @@ function automaticallyDisabled(): boolean {
     || isTruthy(runtimeEnv('VITEST'));
 }
 
-function environmentDisabled(): boolean {
-  return isTruthy(runtimeEnv('LEARNING_TELEMETRY_DISABLED')) || isTruthy(runtimeEnv('DO_NOT_TRACK'));
-}
-
 function telemetryToken(): string | null {
-  const explicit = runtimeEnv('LEARNING_TELEMETRY_TOKEN')?.trim();
+  const explicit = (runtimeEnv('LEARNING_TELEMETRY_TOKEN') ?? runtimeEnv('POSTHOG_PROJECT_TOKEN'))?.trim();
   if (explicit !== undefined) return /^phc_[A-Za-z0-9_-]{20,}$/.test(explicit) ? explicit : null;
   const token = process.env.LEARNING_BUNDLED_TELEMETRY_TOKEN?.trim();
   return token !== undefined && /^phc_[A-Za-z0-9_-]{20,}$/.test(token) ? token : null;
@@ -128,37 +128,13 @@ function readState(path: string): TelemetryState | null {
   }
 }
 
-function writeState(dataDir: string, state: TelemetryState, initial = false): void {
+function writeInitialState(dataDir: string, state: TelemetryState): void {
   ensureDataDir(dataDir);
-  const path = statePath(dataDir);
-  const text = `${JSON.stringify(state)}\n`;
-  if (initial) {
-    const descriptor = openSync(path, 'wx', 0o600);
-    try {
-      writeSync(descriptor, text);
-    } finally {
-      closeSync(descriptor);
-    }
-    return;
-  }
-
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  const descriptor = openSync(temporary, 'wx', 0o600);
+  const descriptor = openSync(statePath(dataDir), 'wx', 0o600);
   try {
-    writeSync(descriptor, text);
+    writeSync(descriptor, `${JSON.stringify(state)}\n`);
   } finally {
     closeSync(descriptor);
-  }
-  try {
-    renameSync(temporary, path);
-    chmodSync(path, 0o600);
-  } catch (stateError) {
-    try {
-      unlinkSync(temporary);
-    } catch {
-      // Cleanup remains best-effort because telemetry cannot affect the CLI result.
-    }
-    throw stateError;
   }
 }
 
@@ -174,10 +150,9 @@ function loadOrCreateState(dataDir: string): { state: TelemetryState; created: b
     version: STATE_VERSION,
     installationId: randomUUID(),
     noticeAcknowledgedAt: new Date().toISOString(),
-    disabled: false,
   };
   try {
-    writeState(dataDir, state, true);
+    writeInitialState(dataDir, state);
   } catch {
     return null;
   }
@@ -186,7 +161,7 @@ function loadOrCreateState(dataDir: string): { state: TelemetryState; created: b
 
 function writeFirstNotice(): void {
   try {
-    process.stderr.write('learning 会发送匿名使用统计帮助改进 CLI；可运行 learning telemetry off 关闭。\n');
+    process.stderr.write('learning 会发送匿名使用统计帮助改进 CLI，不采集账号、课程正文或 AI 对话内容。\n');
   } catch {
     // The notice is best-effort and must never affect command output or exit status.
   }
@@ -301,14 +276,14 @@ function commandOutcome(exitCode: number, errorCode: string | null, canceled: bo
 }
 
 export async function startTelemetry(output: Output, dataDir: string, command: string): Promise<void> {
-  if (controllers.has(output) || automaticallyDisabled() || environmentDisabled()) return;
+  if (controllers.has(output) || automaticallyDisabled()) return;
   const resolvedEnvironment = environment();
   const token = telemetryToken();
   const endpoint = telemetryEndpoint();
   if (resolvedEnvironment === null || endpoint === null) return;
 
   const loaded = loadOrCreateState(dataDir);
-  if (loaded === null || loaded.state.disabled) return;
+  if (loaded === null) return;
   const controller: TelemetryController = {
     state: loaded.state,
     command,
@@ -333,14 +308,62 @@ export async function startTelemetry(output: Output, dataDir: string, command: s
   });
 }
 
-export function disableTelemetry(output: Output): void {
+const countSchema = z.number().int().nonnegative();
+const resultProperties = z.object({ result_type: z.enum(['receipt', 'job']) }).strict();
+const draftProperties = z.object({ question_count: countSchema }).strict();
+const workflowProperties = {
+  learning_run_completed: z.object({ status: JobStatusSchema, scope: z.enum(['course', 'resource']), resource_count: countSchema, skipped_resource_count: countSchema, speed: z.number().positive(), target_fraction: z.number().min(0).max(1) }).strict(),
+  download_completed: z.object({ job_statuses: z.array(JobStatusSchema), exported_file_count: countSchema, media_count: countSchema, assessment_count: countSchema }).strict(),
+  homework_draft_created: draftProperties,
+  homework_answers_submitted: z.object({ answer_count: countSchema }).strict(),
+  exam_draft_created: draftProperties,
+  exam_answers_saved: resultProperties,
+  exam_started: resultProperties,
+  exam_submitted: resultProperties,
+  discussion_draft_created: z.object({ used_ai_suggestion: z.boolean() }).strict(),
+  discussion_posted: resultProperties,
+  login_completed: z.object({ method: z.enum(['cookie_import', 'qr']), variant: z.enum(['default', 'native']).optional() }).strict(),
+  live_session_completed: z.object({ status: JobStatusSchema }).strict(),
+};
+
+export function trackWorkflowEvent(output: Output, capture: { event: keyof typeof workflowProperties; properties: unknown }): void {
   const controller = controllers.get(output);
-  if (controller === undefined) return;
-  controller.enabled = false;
-  cancelScheduledFlush(controller);
-  controller.events.length = 0;
-  controller.jobAttempts.clear();
-  controller.transportAbort?.abort();
+  if (controller === undefined || !controller.enabled) return;
+  const parsed = workflowProperties[capture.event]?.safeParse(capture.properties);
+  if (!parsed?.success) return;
+  queueEvent(controller, capture.event, {
+    ...baseProperties(controller, controller.command),
+    operation_id: controller.commandOperationId,
+    ...parsed.data,
+  });
+}
+
+const AiGenerationSchema = z.object({
+  $ai_trace_id: z.uuid(),
+  $ai_session_id: z.uuid().nullable(),
+  $ai_span_id: z.uuid(),
+  $ai_span_name: z.enum(['model_answers_proposal', 'model_discussion_proposal']),
+  $ai_model: z.string().min(1).max(128),
+  $ai_provider: z.literal('openai-compatible'),
+  $ai_latency: z.number().nonnegative(),
+  $ai_stream: z.literal(false),
+  $ai_http_status: z.number().int().min(100).max(599).optional(),
+  $ai_is_error: z.boolean(),
+  $ai_error: z.enum(['network_error', 'http_error', 'response_too_large', 'response_read_error', 'invalid_json_response', 'invalid_response_structure', 'invalid_proposal_json']).optional(),
+  $ai_input_tokens: countSchema.optional(),
+  $ai_output_tokens: countSchema.optional(),
+});
+
+export function trackAiGeneration(output: Output, properties: unknown): void {
+  const controller = controllers.get(output);
+  if (controller === undefined || !controller.enabled) return;
+  const parsed = AiGenerationSchema.safeParse(properties);
+  if (!parsed.success) return;
+  queueEvent(controller, '$ai_generation', {
+    ...baseProperties(controller, controller.command),
+    operation_id: controller.commandOperationId,
+    ...parsed.data,
+  });
 }
 
 export function trackJobStarted(output: Output, job: Job, options: { newAttempt?: boolean } = {}): void {
@@ -437,28 +460,14 @@ export async function finishTelemetry(output: Output, error?: unknown): Promise<
   controller.transportAbort?.abort();
 }
 
-export function readTelemetryPreference(dataDir: string): TelemetryState | null {
-  return readState(statePath(dataDir));
-}
-
 export function telemetryStatus(dataDir: string): {
   enabled: boolean;
-  reason: 'persistent' | 'environment' | 'automatic' | 'configuration' | 'active';
+  reason: 'automatic' | 'configuration' | 'active';
   tokenConfigured: boolean;
 } {
-  const state = readTelemetryPreference(dataDir);
+  const state = readState(statePath(dataDir));
   const tokenConfigured = telemetryToken() !== null;
-  if (state?.disabled) return { enabled: false, reason: 'persistent', tokenConfigured };
-  if (environmentDisabled()) return { enabled: false, reason: 'environment', tokenConfigured };
   if (automaticallyDisabled()) return { enabled: false, reason: 'automatic', tokenConfigured };
   if (!tokenConfigured || (state === null && existsSync(statePath(dataDir))) || environment() === null || telemetryEndpoint() === null) return { enabled: false, reason: 'configuration', tokenConfigured };
   return { enabled: true, reason: 'active', tokenConfigured };
-}
-
-export function writeTelemetryPreference(dataDir: string, enabled: boolean): TelemetryState {
-  const existing = loadOrCreateState(dataDir);
-  if (existing === null) throw new Error('unable to initialize telemetry state');
-  const state = { ...existing.state, disabled: !enabled };
-  writeState(dataDir, state, false);
-  return state;
 }

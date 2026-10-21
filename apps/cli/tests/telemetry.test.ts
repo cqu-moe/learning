@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -11,7 +11,7 @@ import { JobRunner } from '../../../packages/sdk/src/services/jobs.js';
 import { createOutput } from '../src/output.js';
 import { createCliRuntime } from '../src/runtime.js';
 import { runJobForeground } from '../src/foreground.js';
-import { finishTelemetry, startTelemetry } from '../src/telemetry.js';
+import { finishTelemetry, startTelemetry, trackWorkflowEvent, trackAiGeneration } from '../src/telemetry.js';
 import pkg from '../package.json' with { type: 'json' };
 
 const cliEntry = resolve(import.meta.dirname, '../dist/index.js');
@@ -172,7 +172,7 @@ describe('cli telemetry lifecycle', () => {
     const first = await runUserCli(['init'], home);
     expect(first.status).toBe(0);
     expect(existsSync(resolve(home, 'telemetry.json')), `test endpoint ${baseUrl}`).toBe(true);
-    expect(first.stderr).toContain('learning telemetry off');
+    expect(first.stderr).toContain('匿名使用统计');
     expect(first.stderr.match(/匿名使用统计/g)).toHaveLength(1);
     expect(first.stdout.trim().split('\n')).toHaveLength(1);
     expect(JSON.parse(first.stdout)).toMatchObject({ command: 'init', ok: true, exitCode: 0 });
@@ -264,7 +264,7 @@ describe('cli telemetry lifecycle', () => {
     expect(startPayload.body.batch[0]!.event).toBe('cli_command_started');
     expect(stdout.trim().split('\n')).toHaveLength(1);
     expect(JSON.parse(stdout)).toMatchObject({ command: 'init', ok: true, exitCode: 0 });
-    expect(stderr).toContain('learning telemetry off');
+    expect(stderr).toContain('匿名使用统计');
     expect(child.exitCode).toBeNull();
 
     releaseHeldRequest();
@@ -323,7 +323,7 @@ describe('cli telemetry lifecycle', () => {
     const before = requests.length;
     const failed = await runUserCli(['init'], home, env);
     expect(failed.status).toBe(0);
-    expect(failed.stderr).toContain('learning telemetry off');
+    expect(failed.stderr).toContain('匿名使用统计');
     expect(JSON.parse(failed.stdout)).toMatchObject({ ok: true, exitCode: 0 });
     expect(requests).toHaveLength(before);
   });
@@ -333,40 +333,63 @@ describe('cli telemetry lifecycle', () => {
     const before = requests.length;
     const first = await runUserCli(['init'], home, userEnv(home, { telemetry: false }));
     expect(first.status).toBe(0);
-    expect(first.stderr).toContain('learning telemetry off');
+    expect(first.stderr).toContain('匿名使用统计');
     expect(existsSync(resolve(home, 'telemetry.json'))).toBe(true);
     expect((await runUserCli(['init'], home, userEnv(home, { telemetry: false }))).stderr).toBe('');
     expect(requests).toHaveLength(before);
   });
 
-  it('honors persistent and environment opt-out without touching stdout', async () => {
-    const home = freshHome('learning-telemetry-off-');
-    expect((await runUserCli(['init'], home)).status).toBe(0);
-    const initial = (await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 2)).flatMap(payload => payload.body.batch);
-    expect(initial.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
-    expect(new Set(initial.map(event => event.properties.operation_id)).size).toBe(1);
-    const beforeOff = requests.length;
+  it('keeps legacy installation identity but removes persistent and environment switches', async () => {
+    const home = freshHome('learning-telemetry-legacy-');
+    const installationId = 'e30c4117-1a12-4f2c-88fd-93d0b9ee9471';
+    writeFileSync(resolve(home, 'telemetry.json'), JSON.stringify({ version: 1, installationId, noticeAcknowledgedAt: '2026-10-21', disabled: true }));
+    const env = { ...userEnv(home), LEARNING_TELEMETRY_DISABLED: '1', DO_NOT_TRACK: '1' };
+    expect((await runUserCli(['init'], home, env)).status).toBe(0);
+    const events = (await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 2)).flatMap(payload => payload.body.batch);
+    expect(events.every(event => event.distinct_id === `cli:${installationId}`)).toBe(true);
+    for (const command of ['off', 'on']) {
+      expect((await runUserCli(['telemetry', command], home, env)).status).toBe(2);
+    }
+    const help = await runUserCli(['telemetry', '--help'], home, env);
+    expect(help.stdout).not.toContain('持久关闭');
+    expect(help.stdout).not.toContain('持久开启');
+    const status = await runUserCli(['telemetry', 'status'], home, env);
+    expect(JSON.parse(status.stdout).data).toEqual({ enabled: true, reason: 'active', tokenConfigured: true });
+  });
 
-    const disabled = await runUserCli(['telemetry', 'off'], home);
-    expect(disabled.status).toBe(0);
-    expect(JSON.parse(disabled.stdout).data).toEqual({ enabled: false, reason: 'persistent' });
-    const afterOff = requests.length;
-    expect(afterOff).toBe(beforeOff);
-    expect((await runUserCli(['init'], home)).status).toBe(0);
-    expect(requests).toHaveLength(afterOff);
-
-    const enabled = await runUserCli(['telemetry', 'on'], home);
-    expect(enabled.status).toBe(0);
-    expect(JSON.parse(enabled.stdout).data).toEqual({ enabled: true, reason: 'persistent' });
-    expect(requests).toHaveLength(afterOff);
-    expect((await runUserCli(['init'], home)).status).toBe(0);
-    await waitForTokenPayloads('phc_public_fixture_token_1234567890abcdef', 4);
-    const afterEnable = requests.length;
-
-    const envOff = userEnv(home);
-    envOff.LEARNING_TELEMETRY_DISABLED = '1';
-    expect((await runUserCli(['init'], home, envOff)).status).toBe(0);
-    expect(requests).toHaveLength(afterEnable);
+  it('batches workflow and content-free AI facts under the existing anonymous identity', async () => {
+    const home = freshHome('learning-telemetry-workflows-');
+    const previousEnv = process.env;
+    const token = 'phc_workflow_fixture_token_1234567890abcdef';
+    process.env = userEnv(home, { token });
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    try {
+      await startTelemetry(output, home, 'discuss draft');
+      trackWorkflowEvent(output, { event: 'discussion_draft_created', properties: { used_ai_suggestion: true } });
+      const invalid = { event: 'homework_draft_created' as const, properties: { question_count: -1, title: 'SECRET_COURSE' } };
+      trackWorkflowEvent(output, invalid);
+      trackAiGeneration(output, {
+        $ai_trace_id: 'c22fbe3a-fbe2-4a4e-a7ea-69aa08b3c67f',
+        $ai_session_id: 'e30c4117-1a12-4f2c-88fd-93d0b9ee9471',
+        $ai_span_id: 'a19b3772-5577-4c96-bd05-576f24490946',
+        $ai_span_name: 'model_discussion_proposal', $ai_model: 'fixture-model',
+        $ai_provider: 'openai-compatible', $ai_latency: 0.5, $ai_stream: false,
+        $ai_http_status: 200, $ai_is_error: false,
+        $ai_input: 'SECRET_PROMPT', $ai_output_choices: 'SECRET_ANSWER',
+        $ai_request_url: 'https://SECRET_ENDPOINT.test/v1',
+      });
+      await finishTelemetry(output);
+      const events = await waitForTokenEvents(token, events => events.some(event => event.event === 'cli_command_completed'));
+      expect(events.map(event => event.event)).toEqual(['cli_command_started', 'discussion_draft_created', '$ai_generation', 'cli_command_completed']);
+      expect(new Set(events.map(event => event.distinct_id)).size).toBe(1);
+      expect(events.every(event => event.properties.product === 'learning' && event.properties.surface === 'cli')).toBe(true);
+      expect(events.find(event => event.event === '$ai_generation')!.properties).toMatchObject({ $ai_latency: 0.5, $ai_model: 'fixture-model' });
+      expect(JSON.stringify(events)).not.toContain('SECRET_');
+      expect(JSON.stringify(events)).not.toContain(home);
+    } finally {
+      process.env = previousEnv;
+      output.close();
+    }
   });
 
   it('is automatically disabled by CI and does not run for help or version', async () => {
