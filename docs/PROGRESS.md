@@ -985,3 +985,31 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - `node --check scripts/test-binary-catalog.mjs`、定向 ESLint、`CI=1 node scripts/test-binary-catalog.mjs`、`CI=1 node scripts/test-binary-catalog-controls.mjs`、`git diff --check` 均 exit0。绿灯证据 `dist/e2e/catalog-journey-1792546487344-88015.json` 为每轮59命令、共118次，旧命令分别 exit2/INVALID_INPUT，status exit0；两轮 passed/cleaned=true。七类协议/结果负控、真实进程超时/空输出/坏JSON/错误信封、设置与清理双重失败及未登记出站拒绝也通过。
 - 红/绿均使用同一 macOS arm64 程序 SHA256 `a7be808b2bd3dea7b2087486922c97fb142ccd81e54a0abfc3539051445e42a1`；绿灯源证据 sourceRevision 为旧 head、sourceDirty=true，真实差异仅此次测试脚本。Node/CLI/SDK 产品代码未变，未重复此前完整单元测试；远程新 head 将跑完整 verify 与五目标验收。沿既有 Git 身份提交并正常推送原 PR 分支，无强推、合并、发布、真实平台操作或付费模型调用。
 - 当前下一步：读取修复提交的六项 CI 完成结论，失败则继续诊断；不推进其他 PLAN 或 Web。
+
+### 2026-10-21 · 遥测诊断与模型指标边界补充（PR 交付）
+
+- 用户在本聊天授权开 PR；fetch 发现 main 已前进到 `23087468664b70baff16c46a8349d3244561c1fc`（PR #24），其中关闭策略与原方案不同。用户明确选择沿用 main 的无用户关闭开关设计，只补脱敏诊断与指标边界。本次保留 main 全部业务事件、现有模型 session/trace/span、详细错误类别、0.2.8 版本和依赖集合；不恢复 on/off、旧偏好或 DO_NOT_TRACK，不新增独立 Logs 通道。
+- 在隔离分支 `codex/posthog-privacy` 适配最新基线。原工作目录未覆盖，原始审计报告不纳入 PR。提交使用既有 Git 身份，没有修改身份配置。
+- 生产变更仅 telemetry.ts、SDK node/model.ts 及 node/index.ts：共享 ModelLabelSchema 将 URL/邮箱/绝对路径/正文标签归为 custom；usage 逐字段校验非负安全整数，无效项省略，合法项在无效 proposal JSON 时也保留；取消独立分类且耗时非负。CLI 对故障添加只包含命令、固定错误码的 synthetic $exception，不上传异常原文/堆栈/路径，取消不误报故障；沿用匿名安装身份、自动隔离、批量队列与退出预算。
+- 测试先行：最新 main 的原 telemetry 专项 12/12；迁移并补充回归后实际 3 failed / 20 passed，exit1（取消指标过滤、结构化故障缺失、挂起出口下诊断缺失）。SDK 新边界回归实际 4 failed / 5 passed，exit1，随后专项 9/9 exit0。中间 SDK build 因 exactOptionalPropertyTypes 显式 undefined 报 TS2375/exit2，已改为省略缺失字段，不放宽类型。测试使用严格本地模型 fixture、真实 CLI 进程及 HTTP collector，没有真实模型或平台调用。
+- 完整本地复验：固定 Node v24.11.1 / pnpm 11.19.0，`pnpm install --offline --frozen-lockfile`、`pnpm lint`、`pnpm typecheck`、`pnpm test`（SDK 286/286、CLI 167/167，其中 telemetry 24/24）、`pnpm build`、`pnpm test:e2e`（7/7）、`node scripts/check-boundaries.mjs`、`node scripts/test-release.mjs`、`git diff --check` 均 exit0。SDK 专项与实现由用户授权的 zhipu/glm-5.3 / max 子任务完成，主线程复核后运行整仓门禁。
+- macOS arm64 / Bun 1.4.3：`node scripts/test-bun-runtime.mjs`，无 token 模式的 `build-cli.mjs --without-telemetry` + `test-distribution.mjs --without-telemetry`，以及仅嵌入虚构 fixture token 的默认构建 + `test-distribution.mjs` 全部 exit0。验证 Bun/Node 互操作、基础独立程序、SQLite/权限/锁/失败清理和真实 PTY；CI=1 隔离全部外发。未重跑新增的全套目录/导出/写入/任务长旅程或其他四目标原生程序，这些由远端 CI 分项验收。
+- 交付边界：创建 PR 不等于 CI 或真实入库通过；本轮不合并、不发布、不改远程 PostHog notebook/dashboard。下一步为该 PR 的远端检查与代码审查，不推进其他 PLAN 或 Web。
+
+
+### 2026-10-21 · PR #25 双轴代码审查（1 项待修复）
+
+- 用户调用 code-review；固定比较为 `git diff 23087468664b70baff16c46a8349d3244561c1fc...71c59d6d9632e5a7e86610782f1526721279a053`，共 9 个文件。按用户最新决策审查：保留 main 无关闭开关与业务事件，仅补脱敏诊断和模型指标边界。两条独立审查轴使用已授权的 zhipu/glm-5.3 / max；Standards 零发现，Spec 一项 P2。
+- P2：`apps/cli/src/telemetry.ts:440` 使用 SDK ErrorCodeSchema 过滤 CLI 错误码，漏掉合法的 CONFIRMATION_REQUIRED。真实 CLI 非交互执行 `profile remove fixture --json` 且不带 `--yes` 时，业务输出 exit3 / CONFIRMATION_REQUIRED，发送的 cli_command_completed 却为 outcome=needs_input / error_code=INTERNAL。base 原有 safeCode 保留该固定码；当前会污染命令错误分类，但不会额外生成 $exception。下一步在 CLI 统计边界补齐该固定错误码，并将此路径加入回归。
+- 本轮实际验证：Node v24.11.1 内联断言探针，使用独立临时数据目录、真实 CLI 子进程和本地 /batch collector，严格断言上述输出与上报差异，exit0；`git diff --check` exit0。只使用虚构 profile 与采集 token，未访问真实平台、模型或 PostHog。
+- 远程读回 [CI 39566534570](https://github.com/cqu-moe/learning/actions/runs/39566534570) 与精确 head 一致，verify 及 macOS arm64/x64、Linux arm64/x64、Windows x64 五项 binary 均 completed/success。该证据覆盖 Node 门禁及五目标本地 fixture 验收，不等于真实平台或 PostHog 入库验收。
+- 本轮未重复整仓本地测试，未改生产代码或测试，未提交/推送本审查记录，未合并或发布。PR 保持开放；下一当前任务为按审查结果修复该 P2，不推进其他 PLAN 或 Web。
+
+
+### 2026-10-21 · PR #25 确认错误分类修复（本地验证通过）
+
+- 用户授权修复上段审查问题。仅在 CLI 遥测边界将 SDK 固定错误码与 CLI 专属 CONFIRMATION_REQUIRED 合并为 CommandErrorCodeSchema；未知码仍归 INTERNAL，SDK 契约、退出码、故障事件生成条件、无关闭开关策略均保持不变。
+- 在 `apps/cli/tests/telemetry.test.ts` 添加真实 CLI / 本地 HTTP collector 回归：初始化虚构 profile，非交互 remove 不带 --yes，断言业务输出 exit3 / CONFIRMATION_REQUIRED，遥测 needs_input / CONFIRMATION_REQUIRED，只有 started/completed 两个事件，且不包含 profile 名或本机路径。既有 unknown-error、STORAGE 和取消回归继续覆盖固定码过滤和故障边界。
+- 先运行 `pnpm --filter @learning/cli build` 后定向 `vitest run tests/telemetry.test.ts -t 'preserves confirmation-required'`，实际 exit1，仅错误码断言收到 INTERNAL；未改生产实现前确认红灯，日志 `dist/confirmation-red.log`。修复后完整 CLI 17 文件 168/168（遥测 25/25）exit0，日志 `dist/confirmation-cli-green.log`。
+- 固定 Node24.11.1 / pnpm11.19.0：`pnpm lint`、`pnpm --filter @learning/cli typecheck`、`pnpm --filter @learning/cli build`、`pnpm --filter @learning/cli exec vitest run --maxWorkers 1`、`pnpm test:e2e`（7/7）、`node scripts/check-boundaries.mjs`、`node scripts/test-release.mjs`、`git diff --check` 均 exit0。检查有效 Git 身份后沿用现有身份提交；审查记录与修复一起纳入原 PR 分支。
+- 未重跑 SDK 全量测试或五目标独立程序；SDK 产品未变，独立程序由新提交 CI 验收。未访问真实平台、付费模型或 PostHog 入库，未合并或发布。下一步为本修复提交的远端检查，不推进其他 PLAN 或 Web。
