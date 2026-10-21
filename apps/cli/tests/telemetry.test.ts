@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -8,7 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createLearningClient } from '@learning/sdk';
 import { SqliteStateStore } from '@learning/sdk/node';
 import { JobRunner } from '../../../packages/sdk/src/services/jobs.js';
-import { createOutput } from '../src/output.js';
+import { CliError, createOutput } from '../src/output.js';
 import { createCliRuntime } from '../src/runtime.js';
 import { runJobForeground } from '../src/foreground.js';
 import { finishTelemetry, startTelemetry, trackWorkflowEvent, trackAiGeneration } from '../src/telemetry.js';
@@ -26,7 +27,7 @@ type TelemetryEvent = {
   properties: Record<string, unknown>;
 };
 type TelemetryPayload = { api_key: string; batch: TelemetryEvent[] };
-type CapturedRequest = { url: string; body: TelemetryPayload };
+type CapturedRequest = { url: string; method: string; contentType: string; raw: string; body: TelemetryPayload };
 
 let server: Server;
 const requests: CapturedRequest[] = [];
@@ -36,10 +37,17 @@ let heldResponse: ServerResponse | null = null;
 
 function startServer(): Promise<void> {
   server = createServer((request, response) => {
-    let body = '';
-    request.on('data', chunk => { body += chunk; });
+    const chunks: Buffer[] = [];
+    request.on('data', chunk => { chunks.push(Buffer.from(chunk)); });
     request.on('end', () => {
-      requests.push({ url: request.url ?? '', body: JSON.parse(body) as TelemetryPayload });
+      const bytes = Buffer.concat(chunks);
+      const raw = (request.headers['content-encoding'] === 'gzip' ? gunzipSync(bytes) : bytes).toString();
+      let body: TelemetryPayload = { api_key: 'unknown', batch: [] };
+      try {
+        const parsed = JSON.parse(raw) as Partial<TelemetryPayload>;
+        if (typeof parsed.api_key === 'string' && Array.isArray(parsed.batch)) body = parsed as TelemetryPayload;
+      } catch { /* Record unexpected protocols too, so a second channel cannot evade assertions. */ }
+      requests.push({ url: request.url ?? '', method: request.method ?? '', contentType: String(request.headers['content-type'] ?? ''), raw, body });
       if (holdNextRequest) {
         holdNextRequest = false;
         heldResponse = response;
@@ -130,8 +138,12 @@ async function waitForTokenEvents(apiKey: string, predicate: (events: TelemetryE
 }
 
 async function runUserCli(args: string[], home: string, env = userEnv(home)) {
+  return runChild([cliEntry, ...args, '--home', home, '--json'], env);
+}
+
+async function runChild(args: string[], env: NodeJS.ProcessEnv) {
   // Keep the fixture server responsive while the real CLI sends and exits.
-  const child = spawn(process.execPath, [cliEntry, ...args, '--home', home, '--json'], {
+  const child = spawn(process.execPath, args, {
     env, stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000,
   });
   let stdout = '';
@@ -372,9 +384,10 @@ describe('cli telemetry lifecycle', () => {
         $ai_trace_id: 'c22fbe3a-fbe2-4a4e-a7ea-69aa08b3c67f',
         $ai_session_id: 'e30c4117-1a12-4f2c-88fd-93d0b9ee9471',
         $ai_span_id: 'a19b3772-5577-4c96-bd05-576f24490946',
-        $ai_span_name: 'model_discussion_proposal', $ai_model: 'fixture-model',
+        $ai_span_name: 'model_discussion_proposal', $ai_model: 'https://SECRET_ENDPOINT.test/model',
         $ai_provider: 'openai-compatible', $ai_latency: 0.5, $ai_stream: false,
-        $ai_http_status: 200, $ai_is_error: false,
+        $ai_http_status: 200, $ai_is_error: true, $ai_error: 'canceled',
+        $ai_input_tokens: -1, $ai_output_tokens: 7,
         $ai_input: 'SECRET_PROMPT', $ai_output_choices: 'SECRET_ANSWER',
         $ai_request_url: 'https://SECRET_ENDPOINT.test/v1',
       });
@@ -383,7 +396,8 @@ describe('cli telemetry lifecycle', () => {
       expect(events.map(event => event.event)).toEqual(['cli_command_started', 'discussion_draft_created', '$ai_generation', 'cli_command_completed']);
       expect(new Set(events.map(event => event.distinct_id)).size).toBe(1);
       expect(events.every(event => event.properties.product === 'learning' && event.properties.surface === 'cli')).toBe(true);
-      expect(events.find(event => event.event === '$ai_generation')!.properties).toMatchObject({ $ai_latency: 0.5, $ai_model: 'fixture-model' });
+      expect(events.find(event => event.event === '$ai_generation')!.properties).toMatchObject({ $ai_latency: 0.5, $ai_model: 'custom', $ai_is_error: true, $ai_error: 'canceled', $ai_output_tokens: 7 });
+      expect(events.find(event => event.event === '$ai_generation')!.properties).not.toHaveProperty('$ai_input_tokens');
       expect(JSON.stringify(events)).not.toContain('SECRET_');
       expect(JSON.stringify(events)).not.toContain(home);
     } finally {
@@ -560,5 +574,156 @@ describe('telemetry job outcomes', () => {
     expect(cancelJobEvents.map(event => event.properties.outcome)).toEqual([undefined, 'canceled']);
     expect(cancelJobEvents[0]!.properties.operation_id).toBe(cancelJobEvents[1]!.properties.operation_id);
     expect(cancelJobEvents[0]!.properties.attempt_id).toBe(cancelJobEvents[1]!.properties.attempt_id);
+  });
+});
+
+async function prepareProfiles(home: string): Promise<string> {
+  const setup = { ...userEnv(home), CI: '1' };
+  expect((await runUserCli(['init'], home, setup)).status).toBe(0);
+  for (const name of ['SECRET_ALPHA', 'SECRET_BETA']) {
+    expect((await runUserCli(['profile', 'add', name, '--platform', 'ykt'], home, setup)).status).toBe(0);
+  }
+  const cookies = resolve(home, 'SECRET_COOKIES.json');
+  writeFileSync(cookies, JSON.stringify([{ name: 'sessionid', value: 'SECRET_COOKIE', domain: 'www.yuketang.cn', path: '/' }]), { mode: 0o600 });
+  return cookies;
+}
+
+function withLegacyConfig(home: string): NodeJS.ProcessEnv {
+  return { ...userEnv(home), POSTHOG_PROJECT_TOKEN: 'phc_public_fixture_token_1234567890abcdef', POSTHOG_HOST: baseUrl };
+}
+
+async function runModel(home: string, env: NodeJS.ProcessEnv, invalid = false) {
+  return runChild([resolve(import.meta.dirname, 'helpers/model-telemetry.mjs')], {
+    ...env, LEARNING_HOME: home, LEARNING_MODEL_BASE_URL: 'https://model.example.test/SECRET_ENDPOINT',
+    LEARNING_MODEL_NAME: 'fixture-model', LEARNING_MODEL_API_KEY: 'SECRET_MODEL_KEY',
+    FIXTURE_INVALID_MODEL_OUTPUT: invalid ? '1' : '0',
+  });
+}
+
+describe('one privacy boundary for all telemetry', () => {
+  it('uses one installation across profile imports and preserves existing workflow events', async () => {
+    const home = freshHome('learning-telemetry-profiles-');
+    const cookies = await prepareProfiles(home);
+    for (const profile of ['SECRET_ALPHA', 'SECRET_BETA']) {
+      const result = await runUserCli(['login', '--profile', profile, '--import', cookies], home, withLegacyConfig(home));
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout).data.identityVerified).toBe(false);
+    }
+    expect(requests.every(request => request.url === '/batch' && request.method === 'POST' && request.contentType === 'application/json')).toBe(true);
+    const events = requests.flatMap(request => request.body.batch);
+    expect(events.map(event => event.event)).toEqual(['cli_command_started', 'login_completed', 'cli_command_completed', 'cli_command_started', 'login_completed', 'cli_command_completed']);
+    expect(new Set(events.map(event => event.distinct_id)).size).toBe(1);
+    expect(events[0]!.distinct_id).toMatch(/^cli:[0-9a-f-]{36}$/);
+    expect(JSON.stringify(requests)).not.toContain('SECRET_');
+  });
+
+  it.each([
+    ['CI', { CI: '1' }], ['Vitest', { VITEST: '1' }], ['test', { NODE_ENV: 'test' }], ['development', { NODE_ENV: 'development' }],
+    ['test environment', { LEARNING_TELEMETRY_ENVIRONMENT: 'test' }], ['development environment', { LEARNING_TELEMETRY_ENVIRONMENT: 'development' }],
+    ['no shared token', { LEARNING_TELEMETRY_TOKEN: '' }],
+  ] as const)('isolates workflow, diagnostic and model telemetry in %s even when source token is present', async (_reason, overrides) => {
+    const home = freshHome('learning-telemetry-all-off-');
+    const cookies = await prepareProfiles(home);
+    const env = { ...withLegacyConfig(home), ...overrides };
+    const before = requests.length;
+    const imported = await runUserCli(['login', '--profile', 'SECRET_ALPHA', '--import', cookies], home, env);
+    expect(imported.status, imported.stderr).toBe(0);
+    const model = await runModel(home, env, true);
+    expect(model.status, model.stderr).toBe(1);
+    expect(requests).toHaveLength(before);
+  });
+
+  it('sends only model metrics with the command installation and marks invalid output as failure', async () => {
+    const home = freshHome('learning-telemetry-model-');
+    await prepareProfiles(home);
+    const env = withLegacyConfig(home);
+    expect((await runModel(home, env)).status).toBe(0);
+    const invalid = await runModel(home, env, true);
+    expect(invalid.status, invalid.stderr).toBe(1);
+    const events = requests.flatMap(request => request.body.batch);
+    const generations = events.filter(event => event.event === '$ai_generation');
+    expect(generations).toHaveLength(2);
+    expect(generations[0]!.properties).toMatchObject({ product: 'learning', surface: 'cli', release: pkg.version,
+      $process_person_profile: false, $geoip_disable: true, $ai_model: 'fixture-model', $ai_input_tokens: 12, $ai_output_tokens: 7,
+      $ai_is_error: false });
+    expect(generations[1]!.properties).toMatchObject({ $ai_is_error: true, $ai_error: 'invalid_proposal_json' });
+    expect(new Set(events.map(event => event.distinct_id)).size).toBe(1);
+    for (const generation of generations) {
+      expect(generation.properties.$ai_latency).toBeGreaterThanOrEqual(0);
+      expect(events.some(event => event.event === 'cli_command_completed' && event.properties.operation_id === generation.properties.operation_id)).toBe(true);
+    }
+    expect(requests.every(request => request.url === '/batch')).toBe(true);
+    expect(JSON.stringify(requests)).not.toMatch(/SECRET_|model\.example\.test|\$ai_input"|\$ai_output_choices/);
+  });
+
+  it('captures a handled storage failure without raw exception text, paths or account data', async () => {
+    const home = freshHome('learning-telemetry-error-');
+    await prepareProfiles(home);
+    writeFileSync(resolve(home, 'master.key'), 'SECRET_INVALID_KEY');
+    const failed = await runUserCli(['profile', 'list'], home, withLegacyConfig(home));
+    expect(failed.status, failed.stderr).toBe(1);
+    expect(JSON.parse(failed.stdout)).toMatchObject({ ok: false, error: { code: 'STORAGE' } });
+    const events = requests.flatMap(request => request.body.batch);
+    const exceptions = events.filter(event => event.event === '$exception');
+    expect(exceptions).toHaveLength(1);
+    expect(exceptions[0]!.properties).toMatchObject({ error_code: 'STORAGE', product: 'learning', operation: 'profile list',
+      $process_person_profile: false, $exception_list: [{ type: 'LearningCliError', value: 'STORAGE', mechanism: { handled: true, synthetic: true } }] });
+    expect(new Set(events.map(event => event.distinct_id)).size).toBe(1);
+    expect(JSON.stringify(requests)).not.toContain('SECRET_');
+    expect(JSON.stringify(requests)).not.toContain(home);
+  });
+});
+
+
+describe('diagnostic delivery limits', () => {
+  it('does not report a canceled request as an exception', async () => {
+    const home = freshHome('learning-telemetry-canceled-');
+    const previousEnv = process.env;
+    process.env = userEnv(home);
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    try {
+      await startTelemetry(output, home, 'discuss draft');
+      output.markCanceled();
+      const error = new CliError('NETWORK', 'SECRET_ABORTED_REQUEST', 1);
+      await output.finish(error);
+      await finishTelemetry(output, error);
+      const events = requests.flatMap(request => request.body.batch);
+      expect(events.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
+      expect(events[1]!.properties.outcome).toBe('canceled');
+      expect(JSON.stringify(requests)).not.toContain('SECRET_');
+    } finally {
+      await finishTelemetry(output);
+      output.close();
+      process.exitCode = 0;
+      process.env = previousEnv;
+    }
+  });
+
+  it('redacts unknown errors and exits within the telemetry budget when the collector never responds', async () => {
+    const home = freshHome('learning-telemetry-stalled-error-');
+    const previousEnv = process.env;
+    process.env = userEnv(home);
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    try {
+      await startTelemetry(output, home, 'profile list');
+      holdNextRequest = true;
+      const error = Object.assign(new Error('SECRET_MESSAGE /Users/SECRET/file?token=SECRET_TOKEN'), { code: 'SECRET_CODE' });
+      error.stack = 'SECRET_STACK';
+      await output.finish(error);
+      const startedAt = performance.now();
+      await finishTelemetry(output, error);
+      expect(performance.now() - startedAt).toBeLessThan(1500);
+      expect(requests).toHaveLength(1);
+      const events = requests[0]!.body.batch;
+      expect(events.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed', '$exception']);
+      expect(events[2]!.properties).toMatchObject({ error_code: 'INTERNAL', $exception_fingerprint: 'learning:cli:profile list:INTERNAL' });
+      expect(JSON.stringify(requests)).not.toContain('SECRET_');
+    } finally {
+      releaseHeldRequest();
+      await finishTelemetry(output);
+      output.close();
+      process.exitCode = 0;
+      process.env = previousEnv;
+    }
   });
 });

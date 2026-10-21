@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 import { ensureDataDir } from './data-dir.js';
 import { errorInfo, type Output } from './output.js';
-import { JobStatusSchema, type Job } from '@learning/sdk/public';
+import { ErrorCodeSchema, JobStatusSchema, type Job, type Json } from '@learning/sdk/public';
+import { ModelLabelSchema } from '@learning/sdk/node';
 import pkg from '../package.json' with { type: 'json' };
 
 const POSTHOG_HOST = 'https://p.cqu.moe';
@@ -28,7 +29,7 @@ const TelemetryStateSchema = z.object({
 
 type TelemetryState = z.infer<typeof TelemetryStateSchema>;
 type TelemetryEnvironment = 'production' | 'development' | 'test';
-type TelemetryPropertyValue = string | number | boolean | null | string[] | undefined;
+type TelemetryPropertyValue = Json | undefined;
 type TelemetryEvent = {
   uuid: string;
   event: string;
@@ -343,15 +344,15 @@ const AiGenerationSchema = z.object({
   $ai_session_id: z.uuid().nullable(),
   $ai_span_id: z.uuid(),
   $ai_span_name: z.enum(['model_answers_proposal', 'model_discussion_proposal']),
-  $ai_model: z.string().min(1).max(128),
+  $ai_model: ModelLabelSchema.catch('custom'),
   $ai_provider: z.literal('openai-compatible'),
   $ai_latency: z.number().nonnegative(),
   $ai_stream: z.literal(false),
   $ai_http_status: z.number().int().min(100).max(599).optional(),
   $ai_is_error: z.boolean(),
-  $ai_error: z.enum(['network_error', 'http_error', 'response_too_large', 'response_read_error', 'invalid_json_response', 'invalid_response_structure', 'invalid_proposal_json']).optional(),
-  $ai_input_tokens: countSchema.optional(),
-  $ai_output_tokens: countSchema.optional(),
+  $ai_error: z.enum(['network_error', 'http_error', 'response_too_large', 'response_read_error', 'invalid_json_response', 'invalid_response_structure', 'invalid_proposal_json', 'canceled']).optional(),
+  $ai_input_tokens: countSchema.optional().catch(undefined),
+  $ai_output_tokens: countSchema.optional().catch(undefined),
 });
 
 export function trackAiGeneration(output: Output, properties: unknown): void {
@@ -436,17 +437,29 @@ export async function finishTelemetry(output: Output, error?: unknown): Promise<
   if (controller === undefined || !controller.enabled) return;
 
   const info = error === undefined ? null : errorInfo(error);
+  const errorCode = info === null ? null : ErrorCodeSchema.safeParse(info.error.code).data ?? 'INTERNAL';
   const exitCode = Number(process.exitCode ?? 0);
   const properties: Record<string, TelemetryPropertyValue> = {
     ...baseProperties(controller, controller.command),
     operation_id: controller.commandOperationId,
     outcome: commandOutcome(exitCode, info?.error.code ?? null, output.signal.aborted),
     exit_code: exitCode,
-    error_code: info === null ? null : safeCode(info.error.code),
+    error_code: errorCode,
     duration_ms: Math.max(0, Date.now() - controller.startedAtMs),
     duration_basis: 'cli_process',
   };
   queueEvent(controller, 'cli_command_completed', properties);
+  // Classify handled failures without forwarding exception text or machine paths.
+  if (info?.exitCode === 1 && errorCode !== null && !output.signal.aborted) {
+    queueEvent(controller, '$exception', {
+      ...baseProperties(controller, controller.command),
+      operation_id: controller.commandOperationId,
+      error_code: errorCode,
+      $exception_level: 'error',
+      $exception_fingerprint: `learning:cli:${safeOperation(controller.command)}:${errorCode}`,
+      $exception_list: [{ type: 'LearningCliError', value: errorCode, mechanism: { handled: true, synthetic: true } }],
+    });
+  }
   cancelScheduledFlush(controller);
   if (controller.token === null) return;
   let timer: ReturnType<typeof setTimeout> | undefined;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCompatibleModelClient } from '../src/runtime/node/model.js';
+import { createCompatibleModelClient, ModelLabelSchema } from '../src/runtime/node/model.js';
 
 const commonEventKeys = [
   '$ai_is_error',
@@ -14,6 +14,21 @@ const commonEventKeys = [
 ].sort();
 
 describe('Node compatible model adapter', () => {
+  it('rejects unsafe model labels at the schema boundary', () => {
+    const labels = [
+      ['fixture-model', true],
+      ['org/model-v2:latest', true],
+      ['https://models.example.test/path', false],
+      ['foo@example.test', false],
+      ['/Users/SECRET/model', false],
+      ['C:/Users/SECRET/model', false],
+      ['fixture-model\n个人正文', false],
+    ] as const;
+    for (const [model, expected] of labels) {
+      expect(ModelLabelSchema.safeParse(model).success, model).toBe(expected);
+    }
+  });
+
   it('sends only selected content with the configured model and parses JSON output', async () => {
     let request: Request | null = null;
     const fetchFn: typeof fetch = async (input) => {
@@ -206,5 +221,93 @@ describe('Node compatible model adapter', () => {
     expect('$ai_error' in events[0]!).toBe(false);
     expect('$ai_input_tokens' in events[0]!).toBe(false);
     expect('$ai_output_tokens' in events[0]!).toBe(false);
+  });
+
+  it('sanitizes unsafe model labels without changing the model request', async () => {
+    let requestModel = '';
+    const events: Array<Record<string, unknown>> = [];
+    const client = createCompatibleModelClient({
+      baseUrl: 'https://model.example.test/v1',
+      model: 'https://models.example.test/SECRET/path',
+      apiKey: 'fixture-key',
+      fetchFn: async input => {
+        const body = JSON.parse(await (input as Request).text()) as { model: string };
+        requestModel = body.model;
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"text":"PRIVATE COMPLETION"}' } }] }));
+      },
+      captureAiGeneration: properties => { events.push(properties); },
+    });
+
+    await expect(client.propose({
+      purpose: 'discussion',
+      content: { topic: 'PRIVATE PROMPT' },
+      signal: new AbortController().signal,
+    })).resolves.toEqual({ text: 'PRIVATE COMPLETION' });
+
+    expect(requestModel).toBe('https://models.example.test/SECRET/path');
+    expect(events[0]!.$ai_model).toBe('custom');
+    expect(JSON.stringify(events[0])).not.toContain('SECRET');
+  });
+
+  it('keeps each valid usage field for valid and invalid proposal JSON', async () => {
+    const cases = [
+      { proposal: '{"text":"PRIVATE COMPLETION"}', succeeds: true, usage: { prompt_tokens: 2 }, inputTokens: 2, outputTokens: undefined },
+      { proposal: '{invalid proposal', succeeds: false, usage: { completion_tokens: 4 }, inputTokens: undefined, outputTokens: 4 },
+      { proposal: '{"text":"PRIVATE COMPLETION"}', succeeds: true, usage: { prompt_tokens: -1, completion_tokens: 3 }, inputTokens: undefined, outputTokens: 3 },
+      { proposal: '{invalid proposal', succeeds: false, usage: { prompt_tokens: 1.5, completion_tokens: 5 }, inputTokens: undefined, outputTokens: 5 },
+      { proposal: '{"text":"PRIVATE COMPLETION"}', succeeds: true, usage: { prompt_tokens: 6, completion_tokens: Number.MAX_SAFE_INTEGER + 1 }, inputTokens: 6, outputTokens: undefined },
+    ];
+    for (const testCase of cases) {
+      const events: Array<Record<string, unknown>> = [];
+      const client = createCompatibleModelClient({
+        baseUrl: 'https://model.example.test/v1',
+        model: 'fixture-model',
+        apiKey: 'fixture-key',
+        fetchFn: async () => new Response(JSON.stringify({
+          choices: [{ message: { content: testCase.proposal } }],
+          usage: testCase.usage,
+        })),
+        captureAiGeneration: properties => { events.push(properties); },
+      });
+
+      const proposal = client.propose({
+        purpose: 'discussion',
+        content: { topic: 'PRIVATE PROMPT' },
+        signal: new AbortController().signal,
+      });
+      if (testCase.succeeds) await expect(proposal).resolves.toEqual({ text: 'PRIVATE COMPLETION' });
+      else await expect(proposal).rejects.toMatchObject({ data: { code: 'PROTOCOL', message: 'model returned invalid proposal JSON' } });
+
+      expect(events).toHaveLength(1);
+      if (!testCase.succeeds) expect(events[0]!.$ai_error).toBe('invalid_proposal_json');
+      expect(events[0]!.$ai_input_tokens).toBe(testCase.inputTokens);
+      expect(events[0]!.$ai_output_tokens).toBe(testCase.outputTokens);
+    }
+  });
+
+  it('classifies aborted requests as canceled while preserving the network error', async () => {
+    const controller = new AbortController();
+    const events: Array<Record<string, unknown>> = [];
+    const client = createCompatibleModelClient({
+      baseUrl: 'https://model.example.test/v1',
+      model: 'fixture-model',
+      apiKey: 'fixture-key',
+      fetchFn: async () => {
+        controller.abort();
+        throw new DOMException('SECRET cancellation reason', 'AbortError');
+      },
+      captureAiGeneration: properties => { events.push(properties); },
+    });
+
+    await expect(client.propose({
+      purpose: 'discussion',
+      content: { topic: 'PRIVATE PROMPT' },
+      signal: controller.signal,
+    })).rejects.toMatchObject({ data: { code: 'NETWORK', message: 'model request failed' } });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.$ai_error).toBe('canceled');
+    expect(events[0]!.$ai_latency).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(events[0])).not.toContain('SECRET');
   });
 });
