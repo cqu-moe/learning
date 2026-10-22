@@ -36,7 +36,7 @@ describe('text prompt default submission', () => {
 });
 
 describe('course selection', () => {
- it('loads another page explicitly and keeps a duplicate title unambiguous', async () => {
+ it.each([false, true])('loads another page and keeps duplicate titles unambiguous, guided=%s', async guided => {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -49,16 +49,21 @@ describe('course selection', () => {
   const scope = { userId: 'local', profileId: 'one', platform: 'ykt' as const };
   const course = (key: string) => ({ ref: { scope, key, native: { kind: 'ykt' as const, classroomId: key } }, title: '同名课程', system: null, term: null, teachers: [], locked: null });
   const client = createLearningClient({ scope, runtime });
-  const courses = vi.spyOn(client.catalog, 'courses').mockResolvedValueOnce({ items: [course('1')], nextCursor: 'next', completeness: 'more', warnings: [] }).mockResolvedValueOnce({ items: [course('2')], nextCursor: null, completeness: 'complete', warnings: [] });
+  const first = 'a'.repeat(64), second = 'b'.repeat(64), third = 'c'.repeat(64);
+  const courses = vi.spyOn(client.catalog, 'courses').mockResolvedValueOnce({ items: [course(first)], nextCursor: 'next', completeness: 'more', warnings: [] }).mockResolvedValueOnce({ items: [course(second), { ...course(third), term: '2026 秋', teachers: ['示例教师'] }], nextCursor: null, completeness: 'complete', warnings: [] });
   const labels: string[] = [];
   let step = 0;
   try {
-   const ref = await chooseCourse(client, runtime, { interactive: true, ask: async field => { labels.push(...(field.options ?? []).map(option => option.label)); return step++ === 0 ? '__more__' : '2'; } });
-   expect(ref.key).toBe('2');
+   const ref = await chooseCourse(client, runtime, { interactive: true, guided, ask: async field => { labels.push(...(field.options ?? []).map(option => option.label)); return step++ === 0 ? '__more__' : second; } });
+   expect(ref.key).toBe(second);
    expect(courses).toHaveBeenNthCalledWith(2, { cursor: 'next' });
-   expect(labels.join(' ')).toContain('1');
-   expect(labels.join(' ')).toContain('2');
-   expect(await runtime.state.get('cli:course:2')).not.toBe(null);
+   if (guided) {
+    expect(labels).toContain('同名课程（1）');
+    expect(labels).toContain('同名课程（2）');
+    expect(labels).toContain('同名课程 · 2026 秋 · 示例教师');
+    expect(labels.join(' ')).not.toMatch(/[a-f0-9]{64}/);
+   } else { expect(labels.join(' ')).toContain(first); expect(labels.join(' ')).toContain(second); }
+   expect(await runtime.state.get(`cli:course:${second}`)).not.toBe(null);
   } finally { await client.close(); runtime.state.close(); rmSync(dir, { recursive: true, force: true }); }
  });
 });

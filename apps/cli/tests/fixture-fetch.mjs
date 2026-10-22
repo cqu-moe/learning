@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 const fixturePath = process.env.LEARNING_FIXTURE_FILE;
 if (!fixturePath) throw new Error('LEARNING_FIXTURE_FILE missing');
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+if (typeof fixture.now === 'number') Date.now = () => fixture.now;
 const interactions = fixture.interactions.slice();
 let consumed = 0;
 let socketOpened = false;

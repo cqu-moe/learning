@@ -7,7 +7,7 @@ import type { Writable } from 'node:stream';
 import { stripVTControlCharacters, styleText } from 'node:util';
 import type { createProgressDisplay, ProgressRow } from './progress.js';
 
-export const OutputModeSchema = z.object({ format: z.enum(['pretty', 'plain', 'json', 'jsonl']), interactive: z.boolean(), quiet: z.boolean(), color: z.boolean(), debug: z.boolean() });
+export const OutputModeSchema = z.object({ format: z.enum(['pretty', 'plain', 'json', 'jsonl']), interactive: z.boolean(), quiet: z.boolean(), color: z.boolean(), debug: z.boolean(), guided: z.boolean().optional() });
 export type OutputMode = z.infer<typeof OutputModeSchema>;
 const ErrorSchema = z.object({ code: z.string(), message: z.string(), hint: z.array(z.string()), fields: z.array(z.string()), operationId: z.string().nullable(), retryAfterMs: z.number().nullable() });
 const WarningSchema = z.object({ code: z.string(), message: z.string() });
@@ -140,6 +140,7 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
     await line(input);
   };
   const recordWarning = (code: string, message: string): void => {
+    if (mode.guided && code === 'ExperimentalWarning' && message.startsWith('SQLite is an experimental feature')) return;
     const warning = WarningSchema.parse({ code: cleanText(code), message: cleanText(message) });
     const key = JSON.stringify(warning);
     if (warningKeys.has(key)) return;
@@ -234,7 +235,13 @@ export function createOutput(mode: OutputMode, streams: { stdout: Writable; stde
       }
       if (mode.format === 'json') await write(streams.stdout, JSON.stringify(result) + '\n');
       else if (mode.format === 'jsonl') await event({ type: 'result', data: result });
-      else { if (human) await write(streams.stdout, human + '\n'); if (info) await write(streams.stderr, `${mode.color ? styleText(['red','bold'], '错误', {stream: process.stderr}) : '错误'} [${info.error.code}] ${info.error.message}\n`); if (result.error?.hint.length) await write(streams.stderr, result.error.hint.join('\n') + '\n'); }
+      else if (mode.guided && result.status === 'canceled') {
+        await write(streams.stdout, (human || '已取消。') + '\n');
+      } else {
+        if (human) await write(streams.stdout, human + '\n');
+        if (info) await write(streams.stderr, mode.guided ? `${info.error.message}\n` : `${mode.color ? styleText(['red','bold'], '错误', {stream: process.stderr}) : '错误'} [${info.error.code}] ${info.error.message}\n`);
+        if (result.error?.hint.length) await write(streams.stderr, result.error.hint.join('\n') + '\n');
+      }
       if (mode.debug && error !== undefined) await write(streams.stderr, JSON.stringify({ diagnostic: error instanceof Error ? error.name : typeof error, code: info?.error.code }) + '\n');
     },
     close() { pause(); promptBoundaries.delete(mode); commandSignals.delete(mode); progressPauses.delete(mode); streams.stdout.off('error', onError); streams.stderr.off('error', onError); },

@@ -1,6 +1,12 @@
 # learning 本机 CLI 用法
 
-直接运行 `learning` 进入菜单，每次操作后返回首页；也可用 `learning run --profile school` 选择课程并启动学习。脚本使用 `--no-interactive`、`--json` 或 `--output-format jsonl`。升级变化见 [迁移说明](CLI-MIGRATION.md)。
+直接运行 `learning`，首页只有「开始学习」「配置」「更多」「退出」。首次使用会自动准备数据目录；选择「开始学习」后，依次选择或添加账号、检查登录、选择课程，再选择「按默认设置开始」或「调整设置」。登录失效时直接扫码，完成后继续。默认使用平台允许的最高倍速并完成整门课，启动选项会显示具体设置，选定后不再重复确认。调整目标进度时直接输入百分比。
+
+课程列表只显示名称，同名课程补充已有的学期、教师信息；仍然相同的条目用序号区分。运行时按 Ctrl+C 暂停并保存，普通选择中按 Ctrl+C 取消并退出。每次操作完成后返回首页。
+
+「内测」只标在具体功能入口上，首页四项不标；开始学习、账号管理、环境检查和登录不标。初始化由程序自动完成，不占菜单项。内测功能的真实平台可用性仍需验收。
+
+以上引导仅用于交互终端中不带任何参数的 `learning`。`learning run --profile school` 等带参数调用保留原行为；脚本继续使用 `--no-interactive`、`--json` 或 `--output-format jsonl`。下面是直接调用子命令的示例，升级变化见 [迁移说明](CLI-MIGRATION.md)。
 
 构建后在仓库根目录运行 `node apps/cli/dist/index.js`，或将构建后的 CLI 以本机链接方式暴露为 `learning`。下例省略 `node apps/cli/dist/index.js` 前缀。
 
@@ -51,7 +57,7 @@ learning telemetry status
 
 共同字段为 `telemetry_version=2`、`product=learning`、`surface=cli`、`environment=production|development|test`、`release` / `cli_version`、`actor_type=installation`、`trigger=user`、`operation`、`is_test`、`runtime=node|bun`、`runtime_version`、`os`、`arch`。命令 `outcome` 是 `success|failure|partial|canceled|needs_input|unverified`；任务 `outcome` 同枚举，其中 warning `SKIPPED_UNKNOWN_DURATION` 导致的成功按 `partial`，`uncertain` 按 `unverified`，Ctrl+C 暂停按 `canceled`。逻辑任务按 `operation_id` 去重，恢复/重试按 `attempt_id` 分开；开始后没有权威终态不补发完成事件。
 
-学习默认选择整门课程。启动前显示课程名称、账号、资源数量、倍速和目标进度，确认后才开始。单个资源可通过命令参数指定，使用 `learning run --help` 查看。需要资源 key 时运行 `learning outline <course-key>`，或读取 JSON 输出。
+直接调用 `run` 默认选择整门课程。启动前显示课程名称、账号、资源数量、倍速和目标进度，确认后才开始。单个资源可通过命令参数指定，使用 `learning run --help` 查看。需要资源 key 时运行 `learning outline <course-key>`，或读取 JSON 输出。
 
 交互终端使用 `cli-progress` 固定显示整课和当前视频两条进度条，每 100 毫秒刷新。课程名加粗，整课条显示已完成资源数，视频条显示播放比例；下方保留播放时间、平台确认进度和已用时间。颜色分别为绿色与青色，`--no-color` 或 `NO_COLOR` 关闭配色，窄终端自动缩短进度条和标题。`本地估计` 只用于显示等待期间的计时，最多推算到下一次计划更新；平台确认进度始终来自读回。无法读取的时长或进度保持未知。普通文本输出按阶段和间隔记录，JSON/JSONL 保留机器协议；`--quiet` 关闭日常进度。
 

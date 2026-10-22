@@ -57,3 +57,18 @@ it('preserves SDK warnings when a command unwraps only the result value', async 
   expect(JSON.parse(receiver.read().stdout).warnings).toEqual([{code:'PARTIAL_CATALOG',message:'目录可能不完整'}]);
  } finally {output.close();}
 });
+
+it.each([false, true])('only hides the SQLite experimental notice in the guided home, guided=%s', async guided => {
+ const receiver = streams();
+ const output = createOutput({ format: 'plain', interactive: true, quiet: false, color: false, debug: false, guided }, receiver);
+ try {
+  output.recordWarning('ExperimentalWarning', 'SQLite is an experimental feature and might change at any time');
+  output.recordWarning('ExperimentalWarning', 'Another experimental API');
+  output.recordWarning('SKIPPED_UNKNOWN_DURATION', '未能读取视频时长，本次暂不处理。');
+  await output.finish();
+  const { stderr } = receiver.read();
+  expect(stderr.includes('SQLite is an experimental')).toBe(!guided);
+  expect(stderr).toContain('Another experimental API');
+  expect(stderr).toContain('未能读取视频时长');
+ } finally { output.close(); }
+});

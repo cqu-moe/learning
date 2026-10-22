@@ -28,7 +28,9 @@ try {
     process.exitCode = 0;
     let canceled = false;
     let commandError: unknown;
-    const output = createOutput(resolveOutputMode(flags));
+    const mode = resolveOutputMode(flags);
+    mode.guided = argv.length === 0 && mode.interactive;
+    const output = createOutput(mode);
     bindOutput(program, output);
     runtimeWarnings.attach(output.recordWarning);
     await runtimeWarnings.drain();

@@ -1013,3 +1013,25 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 先运行 `pnpm --filter @learning/cli build` 后定向 `vitest run tests/telemetry.test.ts -t 'preserves confirmation-required'`，实际 exit1，仅错误码断言收到 INTERNAL；未改生产实现前确认红灯，日志 `dist/confirmation-red.log`。修复后完整 CLI 17 文件 168/168（遥测 25/25）exit0，日志 `dist/confirmation-cli-green.log`。
 - 固定 Node24.11.1 / pnpm11.19.0：`pnpm lint`、`pnpm --filter @learning/cli typecheck`、`pnpm --filter @learning/cli build`、`pnpm --filter @learning/cli exec vitest run --maxWorkers 1`、`pnpm test:e2e`（7/7）、`node scripts/check-boundaries.mjs`、`node scripts/test-release.mjs`、`git diff --check` 均 exit0。检查有效 Git 身份后沿用现有身份提交；审查记录与修复一起纳入原 PR 分支。
 - 未重跑 SDK 全量测试或五目标独立程序；SDK 产品未变，独立程序由新提交 CI 验收。未访问真实平台、付费模型或 PostHog 入库，未合并或发布。下一步为本修复提交的远端检查，不推进其他 PLAN 或 Web。
+
+
+### 2026-10-19 · 无参数 learning 的首页与开始学习引导
+
+- 在 `codex/learning-simple-home` 隔离 worktree 从 `origin/main` 的 `2b9e80d` 实现；原 Learning 主工作区已有的 PROGRESS 改动保持原样。本轮只改变交互终端里不带任何参数的 `learning`，直接子命令、带选项的根菜单和 JSON/JSONL 保持原路径；无依赖、锁文件或版本变化。
+- 首页为「开始学习 / 配置 / 更多 / 退出」，首页四项不标内测。子功能按所属命令标「内测」，run/profile/doctor/init/login 除外；init 不展示。启动时自动准备数据目录，已有数据库缺失 master.key 则拒绝重建；保留写锁和已有密钥。
+- 开始学习依次选择或添加账号、在线核验登录、必要时复用原 QR 生命周期登录、选课、选默认或自定义设置、启动。智慧树扫码后身份未核验时补一次 probe，未通过不能继续选课；网络不确定不删除会话。默认沿用平台最高允许倍速和整课目标，自定义目标用百分比；选定开始后不重复确认。
+- 选课只显示标题，同名时补已有学期/教师信息，仍同名则编号，内部引用与缓存保持不变。短菜单使用现有 select，课程搜索保留。只在无参数引导中隐藏 SQLite 实验提示、等价命令、内部 key 和普通取消的错误码/回滚提示；真实业务警告、暂停状态、未知时长和不确定写入仍保留。
+- 文件涉及 CLI index/output/prompts/wizard/context、catalog/login/run，及 USAGE/INSTALL/APPS。home.test.ts 使用真实 PTY 和严格离线 transport 验证首次使用、过期登录、已登录、网络失败、默认/自定义启动、窄屏取消、密钥保护；扩展原课程分页测试、警告测试、auth-ui 智慧树身份核验和原生程序终端脚本。最初首页回归在旧实现准确失败；新测试修正过输入等待点、fixture 与类型错误，不将测试搭建失败算成产品缺陷。
+- 环境为 macOS arm64、Node 24.11.1、pnpm 11.19.0、Bun 1.4.3。lint/typecheck、SDK 279/279、消费者 E2E 7/7、check-boundaries、test-release、diff check 均 exit 0。首轮完整 CLI 165/166，原有 ffprobe 可用性测试失败；其定向 5/5 和完整 CLI 166/166 随后通过。补充智慧树场景后并行 CLI 166/167，原有 homework dry-run 用例超过既定 5000ms；doctor/catalog 原测试、生产实现及超时未改，不能据此认定具体系统根因。最终 `pnpm --filter @learning/cli exec vitest run --maxWorkers 1` 完整 18 文件、167/167 通过，exit 0（174.82s），不将此前的并行失败改写为通过。
+- Bun 来自官方固定版本资产且先核对 SHA256，编译本地 `--without-telemetry` macOS arm64 程序；test-binary 与 test-binary-terminal 均 exit 0，包含 PATH 无 Node、首次无参数自动初始化、新首页、中文窄终端和既有直接命令。该程序是本地验收产物，不是公开发行。
+- 未调用真实教学平台、未操作真实账号或学习任务，未执行其他系统原生验收或远程 CI；未推送、发布、替换已安装 learning。GLM 复审代理因配额被运行时拒绝，未取得独立模型复审，后续由本地自审完成。下一步仅为审查本地提交；真实平台、推送和发行仍按仓库要求另行授权。
+
+### 2026-10-22 · UX 整合最新 main 与 CLI 0.2.9（本地整合完成，待远端门禁）
+
+- 用户授权整合 UX、开 PR、CI 全过后合并并发布新版，再验收下载程序。隔离 worktree `learning-ux-release-029/learning`、分支 `codex/learning-ux-release-029` 基于最新 `039afee1308c6301a7e53bc2546f4999ee6fc67b`；主目录未提交的旧遥测改动保留，未复制进分支。
+- 整合 `ad40ae7` 的无参数 UX（CLI 源码、回归、窄终端程序脚本与 APPS/INSTALL/USAGE）；登录冲突在共享 `loginWithQr` 中保留 main 的 QR 完成事件，Cookie 导入/学习完成事件和 `createCliRuntime(dataDir, output)` 保留。CLI 版本 0.2.8→0.2.9，依赖、lockfile、SDK 和 CI 门禁未修改。
+- RED：先在原 main 构建上提取并运行首页/缺失密钥两项回归，exit 1，PTY 捕捉到旧 20 项首页并超时；这证明旧入口不支持新引导，不声称复现了密钥被覆盖。整合后 home/auth-ui/interaction/warnings/telemetry 五文件 56/56、exit 0，包含密钥不重建、网络不确定不重登和智慧树扫码身份核验失败时不选课。
+- 固定环境 macOS arm64 / Node v24.11.1 / pnpm 11.19.0 / Bun 1.4.3：离线冻结安装复用 196 包；lint、typecheck、SDK 286/286、build、CLI E2E 7/7、check-boundaries、check-source-lock（只读参考仓链接）、test-release、diff check 均 exit 0。
+- 完整 CLI 串行 18 文件 180/181，exit 1；原 `doctor.test.ts` 的 ffprobe 可用性失败，定向复现 4/5、exit 1。生产 owner 与测试均未改。独立启动探针实测新建相同类型脚本首次 2954ms、再次 31ms、直接 Node 32ms；预热该探针后真实 CLI doctor 正确识别版本。保留原 1000ms 上限和全部断言，不把本机失败改写为通过，远端完整测试仍为合并门禁。
+- `test-bun-runtime.mjs`、`build-cli.mjs --without-telemetry`、`test-distribution.mjs --without-telemetry` 均 exit 0；本机程序覆盖 SQLite/AES-GCM 互读、3976-byte PDF、PNG/JPEG QR、本机 HTTP/WS、空 PATH、中文/空格目录、权限、锁、失败清理与首次四项首页。该程序仅为本地 PR 模式验收，不作为公开发行。
+- 已授权 `zhipu/glm-5.3` / `max` 独立只读审查完成，主代理复核无阻塞发现。有效 Git 身份沿用配置，未覆盖作者配置。远端 PR/main/release CI、五目标正式程序、发布资产及下载验收尚待执行；未访问真实平台或付费模型，不推进 Web/其他 PLAN。

@@ -132,8 +132,13 @@ export async function chooseCourse(client: LearningClient, runtime: CliRuntime, 
     await cacheCourses(runtime, page.items);
     if (!courses.length && !page.nextCursor) throw new CliError('INTERACTION_REQUIRED', '没有可选择的课程，请检查账号登录状态。', 3);
     const more = page.completeness === 'more' && page.nextCursor !== null && !cursors.has(page.nextCursor);
-    const selected = await prompts.ask({ name: 'course', message: page.completeness === 'unknown' ? '选择课程（列表完整性未知）' : '搜索并选择课程', options: [
-      ...courses.map(course => ({ value: course.ref.key, label: `${course.title} · ${course.ref.scope.platform} · ${course.ref.key}` })),
+    const labels = courses.map(course => {
+      if (!prompts.guided) return `${course.title} · ${course.ref.scope.platform} · ${course.ref.key}`;
+      const duplicate = courses.some(other => other !== course && other.title === course.title);
+      return duplicate ? [course.title, course.term, course.teachers.join('、')].filter(Boolean).join(' · ') : course.title;
+    });
+    const selected = await prompts.ask({ name: 'course', message: page.completeness === 'unknown' ? prompts.guided ? '选择课程（部分课程暂未加载）' : '选择课程（列表完整性未知）' : '搜索并选择课程', options: [
+      ...courses.map((course, index) => ({ value: course.ref.key, label: prompts.guided && labels.filter(label => label === labels[index]).length > 1 ? `${labels[index]}（${labels.slice(0, index + 1).filter(label => label === labels[index]).length}）` : labels[index]! })),
       ...(more ? [{ value: '__more__', label: '加载下一页课程' }] : []),
     ] });
     if (selected === '__more__' && more) { cursor = page.nextCursor!; cursors.add(cursor); continue; }
@@ -150,7 +155,7 @@ export async function chooseResource(client: LearningClient, runtime: CliRuntime
   const flatten = (nodes: OutlineNode[]): Resource[] => nodes.flatMap(node => [...node.resources, ...flatten(node.children)]);
   const resources = flatten(outline.value.roots).filter(resource => kinds.includes(resource.kind) && resource.locked !== true);
   if (!resources.length) throw new CliError('UNSUPPORTED', '此课程没有符合操作要求的可用资源。', 3);
-  const key = await prompts.ask({ name: 'resource', message: '选择资源', options: resources.map(resource => ({ value: resource.ref.key, label: `${resource.path.join(' / ')} / ${resource.title} · ${resource.ref.key}` })) });
+  const key = await prompts.ask({ name: 'resource', message: '选择资源', options: resources.map(resource => ({ value: resource.ref.key, label: `${resource.path.join(' / ')} / ${resource.title}${prompts.guided ? '' : ` · ${resource.ref.key}`}` })) });
   const resource = resources.find(resource => resource.ref.key === key);
   if (!resource || resource.ref.course.scope.profileId !== client.scope.profileId) throw new CliError('INVALID_INPUT', '没有选中当前账号的有效资源。');
   return resource.ref;
