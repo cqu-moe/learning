@@ -8,14 +8,22 @@ import { root } from './build-cli.mjs';
 const home = mkdtempSync(resolve(tmpdir(), 'learning-binary-pty-'));
 const binary = resolve(process.argv[2]);
 const driver = resolve(root, 'apps/cli/tests/helpers/terminal-driver.py');
-function terminal(args, steps) {
+function terminal(args, steps, bare = false) {
   return JSON.parse(execFileSync('python3', [driver, JSON.stringify({
-    argv: [binary, '--home', home, ...args], steps, columns: 32,
-    env: { PATH: '', HOME: home, USERPROFILE: home, LEARNING_HOME: home, LEARNING_MODEL_API_KEY: '', NODE_OPTIONS: '', BUN_OPTIONS: '' },
+    argv: [binary, ...(bare ? [] : ['--home', home]), ...args], steps, columns: 32,
+    env: { PATH: '', HOME: home, USERPROFILE: home, LEARNING_HOME: bare ? resolve(home, '首次使用') : home, LEARNING_MODEL_API_KEY: '', NODE_OPTIONS: '', BUN_OPTIONS: '' },
   })], { encoding: 'utf8', timeout: 20_000 }));
 }
 const failures = [];
 try {
+  const guided = terminal([], [{ wait: '退出', send: '\u001b[B\u001b[B\u001b[B\r' }], true);
+  assert.equal(guided.code, 0, guided.screen);
+  assert.match(guided.screen, /开始学习/);
+  assert.match(guided.screen, /配置/);
+  assert.match(guided.screen, /更多/);
+  assert.doesNotMatch(guided.screen, /ExperimentalWarning|内测|等价命令|初始化本地|Type:/);
+  assert.equal(existsSync(resolve(home, '首次使用', 'master.key')), true);
+  assert.equal(existsSync(resolve(home, '首次使用', 'state.db')), true);
   execFileSync(binary, ['--home', home, 'init'], { stdio: 'pipe' });
   const add = terminal(['profile', 'add', '--platform', 'ykt'], [{ wait: '账号名称', send: 'binary-user\r' }]);
   assert.equal(add.code, 0, add.screen);

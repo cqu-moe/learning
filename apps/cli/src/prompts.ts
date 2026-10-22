@@ -26,6 +26,7 @@ export function createPrompts(mode: OutputMode) {
       let value: unknown;
       if (field.confirm) value = await clack.confirm({ ...base, initialValue: false, active: '是', inactive: '否' });
       else if (options && field.multiple) value = await clack.multiselect({ ...base, options, required: true });
+      else if (options && mode.guided && !['course', 'resource'].includes(field.name)) value = await clack.select({ ...base, options, ...(field.initialValue === undefined ? {} : { initialValue: field.initialValue }) });
       else if (options) value = await clack.autocomplete({ ...base, options, ...(field.initialValue === undefined ? {} : { initialValue: field.initialValue }) });
       else value = await clack.text({ ...base, ...(field.initialValue === undefined ? {} : { defaultValue: field.initialValue, placeholder: field.initialValue }), validate: value => field.validate?.(submittedText(value, field.initialValue)) });
       if (clack.isCancel(value) || signal?.aborted) throw new CliError('CANCELED', '操作已取消。', 3);
@@ -41,7 +42,8 @@ export function createPrompts(mode: OutputMode) {
     try {
       for (;;) {
         if (options) for (const [index, option] of options.entries()) process.stderr.write(`${index + 1}. ${option.label}${option.hint ? ` (${option.hint})` : ''}\n`);
-        const reply = (await input.question(`${message}${field.confirm ? ' [y/N]' : field.initialValue ? ` [${cleanText(field.initialValue)}]` : ''}: `, { signal: controller.signal })).trim();
+        const initialLabel = mode.guided && options && field.initialValue !== undefined ? String(options.findIndex(option => option.value === field.initialValue) + 1) : field.initialValue;
+        const reply = (await input.question(`${message}${field.confirm ? ' [y/N]' : initialLabel ? ` [${cleanText(initialLabel)}]` : ''}: `, { signal: controller.signal })).trim();
         let value: unknown = reply || field.initialValue || '';
         if (field.confirm) { if (!/^(y|yes|n|no|是|否)?$/i.test(reply)) { process.stderr.write('请输入 y 或 n。\n'); continue; } value = /^(y|yes|是)$/i.test(reply); }
         else if (options && reply === '' && field.initialValue !== undefined && options.some(option => option.value === field.initialValue)) value = field.multiple ? [field.initialValue] : field.initialValue;
@@ -62,7 +64,7 @@ export function createPrompts(mode: OutputMode) {
     try { return await askValue(field, signal); }
     finally { await endPrompt(mode); }
   };
-  return { interactive: mode.interactive, ask };
+  return { interactive: mode.interactive, ...(mode.guided ? { guided: true } : {}), ask };
 }
 export type Prompts = ReturnType<typeof createPrompts>;
 export async function fillMissing<T extends z.ZodRawShape>(schema: z.ZodObject<T>, supplied: Record<string, unknown>, fields: PromptField[], prompts: Pick<Prompts, 'interactive' | 'ask'>): Promise<z.infer<z.ZodObject<T>>> {

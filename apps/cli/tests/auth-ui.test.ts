@@ -196,6 +196,38 @@ describe('explicit machine QR login', () => {
   }
  }, 20_000);
 
+ it('stops guided learning when the post-QR identity check still reports expired', async () => {
+  const terminalHome = mkdtempSync(resolve(tmpdir(), 'learning-zhs-guided-'));
+  try {
+   expect(runIn(terminalHome, ['init']).code).toBe(0);
+   expect(runIn(terminalHome, ['profile', 'add', 'alpha', '--platform', 'zhs']).code).toBe(0);
+   const png = await qrcode.toBuffer('https://example.com/guided-login', { type: 'png' });
+   const fixture = writeWeChatFixture(resolve(terminalHome, 'guided.json'), png, 'image/png');
+   const source = JSON.parse(readFileSync(fixture, 'utf8'));
+   source.now = 1792368000000;
+   source.interactions.push({
+    request: { method: 'GET', host: 'studyservice-api.zhihuishu.com', path: '/gateway/t/v1/login/getLoginUserInfo',
+     query: { secretStr: 'R2e+WWCjMP7WJxyQeKOLcosWoSbM1DaY5ppuhn4Rk+Q=', dateFormate: '1792368000000' },
+     headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://studyvideoh5.zhihuishu.com', referer: 'https://studyvideoh5.zhihuishu.com/' } },
+    response: { status: 200, body: { code: 0, data: {} } },
+   });
+   writeFileSync(fixture, JSON.stringify(source));
+   const result = spawnSync('python3', [resolve(import.meta.dirname, 'helpers/terminal-driver.py'), JSON.stringify({
+    argv: [process.execPath, '--import', resolve(import.meta.dirname, 'fixture-fetch.mjs'), resolve(import.meta.dirname, '../dist/index.js')],
+    term: 'dumb', env: { LEARNING_HOME: terminalHome, LEARNING_FIXTURE_FILE: fixture, NO_COLOR: '1' },
+    steps: [{ wait: '请选择操作', send: '1\n' }, { wait: '选择账号', send: '1\n' }, { wait: '请选择操作', occurrences: 2, send: '4\n' }],
+   })], { encoding: 'utf8', timeout: 15_000 });
+   expect(result.status, result.stderr).toBe(0);
+   const terminal = JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
+   expect(terminal.code, terminal.screen).toBe(0);
+   expect(terminal.steps).toBe(3);
+   expect(terminal.screen).toContain('登录尚未完成');
+   expect(terminal.screen).not.toMatch(/已登录账号|搜索并选择课程/);
+   expect(JSON.parse(runIn(terminalHome, ['jobs', 'list', '--json']).stdout).data.jobs).toEqual([]);
+   expect(existsSync(resolve(terminalHome, 'learning.lock'))).toBe(false);
+  } finally { rmSync(terminalHome, { recursive: true, force: true }); }
+ }, 20_000);
+
  it.each([{ platform: 'zhs', kind: 'JPEG' }, { platform: 'ykt', kind: 'text' }])('renders $kind QR in the shared terminal style and completes $platform login', async ({ platform }) => {
   const terminalHome = mkdtempSync(resolve(tmpdir(), 'learning-zhs-jpeg-terminal-'));
   const driver = resolve(import.meta.dirname, 'helpers/terminal-driver.py');

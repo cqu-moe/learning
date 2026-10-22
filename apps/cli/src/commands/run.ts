@@ -7,6 +7,7 @@ import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } 
 import type { CourseRef, OutlineNode, ResourceKind, ResourceRef } from '@learning/sdk/public';
 import { printResult, selectProfile, withCliRuntime, unwrapResult, executeAction, inferTargetScope } from '../context.js';
 import { courseCacheKey, resourceCacheKey, resourceKindCacheKey, resourceTitleCacheKey, chooseCourse, cacheResources } from './catalog.js';
+import { loginWithQr } from './login.js';
 import { runJobForeground } from '../foreground.js';
 import type { CliRuntime } from '../context.js';
 import { trackWorkflowEvent } from '../telemetry.js';
@@ -59,12 +60,35 @@ export function registerRunCommands(program: Command): void {
     if (!Number.isFinite(speed) || speed < 1 || speed > 5 || !Number.isFinite(targetFraction) || targetFraction <= 0 || targetFraction > 1) {
       throw new LearningError({ code: 'INVALID_INPUT', message: 'speed must be 1..5 and target must be within (0,1]', retryAfterMs: null, operationId: null });
     }
-    await withCliRuntime(program, true, async (runtime) => {
+    const output = getOutput(program);
+    await withCliRuntime(program, true, async (runtime, dataDir) => {
       const profile = await selectProfile(program, runtime);
       if (profile.scope.platform !== 'zhs' && !Number.isSafeInteger(speed)) throw new LearningError({ code: 'INVALID_INPUT', message: 'Yuketang and Xuetang speed must be an integer', retryAfterMs: null, operationId: null });
       if (profile.scope.platform === 'zhs' && speed > 1.5) throw new LearningError({ code: 'INVALID_INPUT', message: 'ZHS speed cannot exceed 1.5', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
+        if (output.mode.guided) {
+          output.activity('正在检查登录…');
+          const probe = await client.auth.probe().catch((error: unknown) => {
+            if (error instanceof LearningError && ['AUTH_REQUIRED', 'AUTH_EXPIRED'].includes(error.data.code)) return { state: 'expired' as const };
+            throw error;
+          });
+          if (probe.state === 'indeterminate') throw new LearningError({ ...probe.error, message: '暂时无法核验登录，请检查网络后重试。' });
+          if (probe.state === 'expired') {
+            await output.message('请扫码登录，完成后继续选择课程。');
+            output.assertActive();
+            const session = await loginWithQr(client, output, dataDir, profile.name, { variant: 'default' });
+            output.set(null, '');
+            if (!session.identityVerified) {
+              output.assertActive();
+              const verified = await client.auth.probe();
+              if (verified.state === 'indeterminate') throw new LearningError({ ...verified.error, message: '暂时无法核验登录，请检查网络后重试。' });
+              if (verified.state !== 'valid') throw new CliError('AUTH_REQUIRED', '登录尚未完成，请重试。', 3);
+            }
+            await output.message(`已登录账号：${profile.name}`);
+          }
+        }
+        output.assertActive();
         let title: string;
         let scopeLabel: '整门课程' | '单个资源';
         let resources: StudyResource[];
@@ -103,7 +127,23 @@ export function registerRunCommands(program: Command): void {
           { name: 'target', message: '目标进度（大于 0、不超过 1）', initialValue: '1', validate: value => Number(value) > 0 && Number(value) <= 1 ? undefined : '请输入有效的目标进度。' },
         ];
         const explicit = run.getOptionValueSource('speed') === 'cli' || run.getOptionValueSource('target') === 'cli';
-        if (isWizard(program) && !explicit) {
+        if (output.mode.guided) {
+          speed = maxSpeed; targetFraction = 1;
+          const prompts = createPrompts(output.mode);
+          let customized = false;
+          for (;;) {
+            const choice = await prompts.ask({ name: 'preset', message: '开始学习', initialValue: 'start', options: [
+              { value: 'start', label: `按${customized ? '当前' : '默认'}设置开始（${speed} 倍速，${targetFraction === 1 ? '完成整门课' : `学到 ${Number((targetFraction * 100).toFixed(1))}%`}）` },
+              { value: 'custom', label: '调整设置' },
+            ] });
+            if (choice === 'start') break;
+            speed = Number(await prompts.ask({ ...settingFields[0]!, initialValue: String(speed) }));
+            targetFraction = Number(await prompts.ask({ name: 'target', message: '目标进度（%）', initialValue: String(targetFraction * 100), validate: value => Number(value) > 0 && Number(value) <= 100 ? undefined : '请输入大于 0、不超过 100 的数字。' })) / 100;
+            customized = true;
+          }
+          run.setOptionValueWithSource('speed', String(speed), 'prompt');
+          run.setOptionValueWithSource('target', String(targetFraction), 'prompt');
+        } else if (isWizard(program) && !explicit) {
           const preset = String(await createPrompts(getOutput(program).mode).ask({ name: 'preset', message: '学习配置', options: [
             { value: 'default', label: `默认配置（${maxSpeed} 倍速，${scopeLabel === '整门课程' ? '刷完整门课' : '完成这个资源'}）` },
             { value: 'custom', label: '自定义倍速和目标进度' },
@@ -142,7 +182,8 @@ export function registerRunCommands(program: Command): void {
         ].join('\n');
         if (options.dryRun) { getOutput(program).set(preview, summary, 'preview'); return; }
         getOutput(program).set(preview, '', 'preview');
-        await confirmAction(program, summary, options.yes);
+        if (output.mode.guided) { if (pendingSummary.length) await output.message(pendingSummary.join('\n')); }
+        else await confirmAction(program, summary, options.yes);
         const execution = await executeAction(getOutput(program), client, preview.id);
         if (execution.type !== 'job') throw new LearningError({ code: 'INTEGRITY', message: 'study action did not create a job', retryAfterMs: null, operationId: null });
         const job = await runJobForeground(client, runtime, execution.job.id, { study: { courseTitle: title, profileName: profile.name, speed, targetFraction } });
@@ -157,7 +198,7 @@ export function registerRunCommands(program: Command): void {
         printResult(program, job, [
           `课程：${title}`,
           `状态：${jobStates[job.status] ?? job.status}（${job.completed}/${job.total ?? '?'}）`,
-          `任务 ID：${job.id}`,
+          ...(output.mode.guided ? job.status === 'paused' ? ['可在「更多 → 任务记录」继续。'] : [] : [`任务 ID：${job.id}`]),
           ...pendingSummary,
           ...reasons,
         ].join('\n'));
