@@ -210,11 +210,13 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     expect(listing.stdout).not.toContain('package/src/');
     expect(listing.stdout).not.toContain('package/tests/');
     writeFileSync(resolve(directory, 'package.json'), JSON.stringify({ private: true, dependencies: { '@learning/sdk': `file:${sdkTar}`, '@learning/cli': `file:${cliTar}` } }));
-    writeFileSync(resolve(directory, 'pnpm-workspace.yaml'), `packages: []\noverrides:\n  '@learning/sdk': ${JSON.stringify(`file:${sdkTar}`)}\n`);
+    // An isolated consumer may resolve a different, empty default store (for example on another filesystem).
+    writeFileSync(resolve(directory, 'pnpm-workspace.yaml'), `packages: []\nstoreDir: ./empty-store\noverrides:\n  '@learning/sdk': ${JSON.stringify(`file:${sdkTar}`)}\n`);
     writeConsumerLockfile(directory, sdkRoot, sdkTar, cliTar);
+    const storeDir = execFileSync('pnpm', ['store', 'path', '--silent'], { cwd: cliRoot, env: { ...process.env, PATH: nodePath }, encoding: 'utf8' }).trim();
     // Registry entries come unchanged from the workspace lockfile verified by the normal install gate.
     // Trust only this derived lockfile so offline installation needs no fresh registry policy metadata.
-    const installed = spawnSync('pnpm', ['install', '--offline', '--frozen-lockfile', '--trust-lockfile', '--ignore-scripts'], { cwd: directory, env: { ...process.env, PATH: nodePath }, encoding: 'utf8' });
+    const installed = spawnSync('pnpm', ['install', '--offline', '--frozen-lockfile', '--trust-lockfile', '--ignore-scripts', '--store-dir', storeDir], { cwd: directory, env: { ...process.env, PATH: nodePath }, encoding: 'utf8' });
     expect(installed.status, installed.stdout + installed.stderr).toBe(0);
     const entry = resolve(directory, 'node_modules/@learning/cli/dist/index.js');
     const bin = resolve(directory, 'node_modules/.bin/learning');

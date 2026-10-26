@@ -3,6 +3,8 @@ import type { ErrorData } from '../types/errors.js';
 import type { AuthEvent, Probe, SessionView } from '../types/models.js';
 import type { Scope } from '../types/refs.js';
 import type { Clock, StateStore } from '../runtime/types.js';
+import { isCancellation, reportError } from '../runtime/diagnostics.js';
+import type { DiagnosticLog } from '../runtime/diagnostics.js';
 import { readSession, readSessionGeneration, writeSession } from '../session/store.js';
 import type { SessionRecord } from '../session/store.js';
 
@@ -42,6 +44,7 @@ export class AuthLifecycle {
   private readonly state: StateStore;
   private readonly masterKey: Uint8Array;
   private readonly budgetMs: number;
+  private readonly log: DiagnosticLog | undefined;
   private generationCounter = 0;
   private activeId: string | null = null;
 
@@ -51,12 +54,14 @@ export class AuthLifecycle {
     state: StateStore;
     masterKey: Uint8Array;
     budgetMs?: number;
+    log?: DiagnosticLog | undefined;
   }) {
     this.scope = options.scope;
     this.clock = options.clock;
     this.state = options.state;
     this.masterKey = options.masterKey;
     this.budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+    this.log = options.log;
   }
 
   begin(launch: AuthLaunch): AuthFlowLike {
@@ -88,14 +93,14 @@ export class AuthLifecycle {
       rejectResult = reject;
     });
 
-    const fail = (error: ErrorData) => {
+    const fail = (error: ErrorData, cause?: unknown) => {
       if (!isActive()) return;
       phase = 'done';
       this.activeId = null;
       controller.abort();
       push({ type: 'failed', error });
       closeStream();
-      rejectResult?.(new LearningError(error));
+      rejectResult?.(new LearningError(error, cause === undefined ? undefined : { cause }));
     };
 
     const context: AuthLaunchContext = {
@@ -129,7 +134,8 @@ export class AuthLifecycle {
           closeStream();
           resolveResult?.(view);
         } catch (error) {
-          fail(errorToData(error));
+          if (!isCancellation(error, controller.signal)) reportError(this.log, 'auth.finish', error, { platform: this.scope.platform });
+          fail(errorToData(error), error);
         }
       },
       fail,
@@ -169,7 +175,8 @@ export class AuthLifecycle {
         await launch(context);
       } catch (error) {
         if (controller.signal.aborted && phase !== 'active') return;
-        fail(errorToData(error));
+        if (!isCancellation(error, controller.signal)) reportError(this.log, 'auth.launch', error, { platform: this.scope.platform });
+        fail(errorToData(error), error);
       }
     })();
 
@@ -209,6 +216,8 @@ export async function probeSession(options: {
   state: StateStore;
   masterKey: Uint8Array;
   provider: ProbeProvider;
+  log?: DiagnosticLog | undefined;
+  signal?: AbortSignal;
 }): Promise<Probe> {
   const record = await readSession(options.state, options.masterKey, options.scope);
   if (record === null) return { state: 'expired' };
@@ -216,6 +225,7 @@ export async function probeSession(options: {
     const view = await options.provider.probe(record);
     return view === null ? { state: 'expired' } : { state: 'valid', session: view };
   } catch (error) {
+    if (!isCancellation(error, options.signal)) reportError(options.log, 'auth.probe', error, { platform: options.scope.platform });
     if (error instanceof LearningError && error.data.code !== 'NETWORK' && error.data.code !== 'TIMEOUT') {
       throw error;
     }

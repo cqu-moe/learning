@@ -12,7 +12,7 @@ import { JobRunner } from '../../../packages/sdk/src/services/jobs.js';
 import { CliError, createOutput } from '../src/output.js';
 import { createCliRuntime } from '../src/runtime.js';
 import { runJobForeground } from '../src/foreground.js';
-import { finishTelemetry, startTelemetry, trackWorkflowEvent, trackAiGeneration } from '../src/telemetry.js';
+import { finishTelemetry, startTelemetry, trackWorkflowEvent, trackAiGeneration, trackException } from '../src/telemetry.js';
 import pkg from '../package.json' with { type: 'json' };
 
 const cliEntry = resolve(import.meta.dirname, '../dist/index.js');
@@ -34,6 +34,7 @@ const requests: CapturedRequest[] = [];
 let baseUrl = '';
 let holdNextRequest = false;
 let heldResponse: ServerResponse | null = null;
+let responseStatus = 200;
 
 function startServer(): Promise<void> {
   server = createServer((request, response) => {
@@ -53,7 +54,7 @@ function startServer(): Promise<void> {
         heldResponse = response;
         return;
       }
-      response.writeHead(200, { 'content-type': 'application/json' });
+      response.writeHead(responseStatus, { 'content-type': 'application/json' });
       response.end('{}');
     });
   });
@@ -168,6 +169,7 @@ beforeEach(async () => {
   await new Promise(resolveWait => setTimeout(resolveWait, 50));
   requests.length = 0;
   holdNextRequest = false;
+  responseStatus = 200;
   releaseHeldRequest();
 });
 
@@ -253,7 +255,7 @@ describe('cli telemetry lifecycle', () => {
     expect(JSON.stringify(payloads)).not.toContain(home);
   });
 
-  it('preserves confirmation-required telemetry without reporting a fault', async () => {
+  it('captures confirmation-required errors while preserving the needs-input outcome', async () => {
     const home = freshHome('learning-telemetry-confirmation-');
     const setup = { ...userEnv(home), CI: '1' };
     expect((await runUserCli(['init'], home, setup)).status).toBe(0);
@@ -263,10 +265,11 @@ describe('cli telemetry lifecycle', () => {
     expect(result.status, result.stderr).toBe(3);
     expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, exitCode: 3, error: { code: 'CONFIRMATION_REQUIRED' } });
     const events = requests.flatMap(request => request.body.batch);
-    expect(events.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed']);
+    expect(events.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed', '$exception']);
     expect(events[1]!.properties).toMatchObject({
       operation: 'profile remove', outcome: 'needs_input', exit_code: 3, error_code: 'CONFIRMATION_REQUIRED',
     });
+    expect(events[2]!.properties.error_code).toBe('CONFIRMATION_REQUIRED');
     expect(JSON.stringify(requests)).not.toContain('SECRET_PROFILE');
     expect(JSON.stringify(requests)).not.toContain(home);
   });
@@ -674,7 +677,7 @@ describe('one privacy boundary for all telemetry', () => {
     expect(JSON.stringify(requests)).not.toMatch(/SECRET_|model\.example\.test|\$ai_input"|\$ai_output_choices/);
   });
 
-  it('captures a handled storage failure without raw exception text, paths or account data', async () => {
+  it('captures a handled storage failure with real frames and without account data', async () => {
     const home = freshHome('learning-telemetry-error-');
     await prepareProfiles(home);
     writeFileSync(resolve(home, 'master.key'), 'SECRET_INVALID_KEY');
@@ -685,7 +688,8 @@ describe('one privacy boundary for all telemetry', () => {
     const exceptions = events.filter(event => event.event === '$exception');
     expect(exceptions).toHaveLength(1);
     expect(exceptions[0]!.properties).toMatchObject({ error_code: 'STORAGE', product: 'learning', operation: 'profile list',
-      $process_person_profile: false, $exception_list: [{ type: 'LearningCliError', value: 'STORAGE', mechanism: { handled: true, synthetic: true } }] });
+      $process_person_profile: false, $exception_list: [{ type: 'LearningError', value: 'master.key must be 32 bytes', mechanism: { handled: true, synthetic: false },
+        stacktrace: { frames: expect.arrayContaining([expect.objectContaining({ filename: 'packages/sdk/src/runtime/node/index.ts', lineno: expect.any(Number) })]) } }] });
     expect(new Set(events.map(event => event.distinct_id)).size).toBe(1);
     expect(JSON.stringify(requests)).not.toContain('SECRET_');
     expect(JSON.stringify(requests)).not.toContain(home);
@@ -694,6 +698,143 @@ describe('one privacy boundary for all telemetry', () => {
 
 
 describe('diagnostic delivery limits', () => {
+  it('captures every recovered SDK error beyond one batch without counting propagation twice', async () => {
+    const home = freshHome('learning-telemetry-recovered-');
+    const previousEnv = process.env;
+    process.env = userEnv(home);
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    let runtime: ReturnType<typeof createCliRuntime> | undefined;
+    try {
+      await startTelemetry(output, home, 'download');
+      runtime = createCliRuntime(home, output);
+      for (let index = 0; index < 25; index++) {
+        const error = new Error(`transient failure ${index}`);
+        runtime.log({ level: 'error', message: 'request failed', error, fields: { stage: 'http.transport.read', recovered: true, attempt_id: index, method: 'GET', endpoint: 'https://example.com/api?token=SECRET_REQUEST' } });
+        runtime.log({ level: 'error', message: 'propagated failure', error: new Error('wrapper', { cause: error }), fields: { stage: 'job.item', attempt_id: index } });
+      }
+      const reused = new Error('transport reused its error object');
+      for (const attempt_id of [1, 2]) runtime.log({ level: 'error', message: 'retry failed', error: reused, fields: { stage: 'http.transport.read', recovered: true, attempt_id } });
+      await output.finish();
+      await finishTelemetry(output);
+      const events = requests.flatMap(request => request.body.batch).filter(event => event.event === '$exception');
+      expect(events).toHaveLength(27);
+      expect(new Set(events.map(event => event.uuid)).size).toBe(27);
+      expect(events.every(event => (event.properties.context as Record<string, unknown>).recovered === true)).toBe(true);
+      expect(JSON.stringify(events)).not.toContain('SECRET_REQUEST');
+      expect(Number(process.exitCode ?? 0)).toBe(0);
+    } finally {
+      runtime?.state.close();
+      await finishTelemetry(output);
+      output.close();
+      process.exitCode = 0;
+      process.env = previousEnv;
+    }
+  });
+
+  it('preserves fatal exit behavior and replays the crash after restart', async () => {
+    const home = freshHome('learning-telemetry-crash-');
+    await prepareProfiles(home);
+    const fatal = await runChild([resolve(import.meta.dirname, 'helpers/fatal-error.mjs'), 'profile', 'list', '--home', home, '--json'], userEnv(home));
+    expect(fatal.status).toBe(1);
+    expect(fatal.stderr).toContain('fatal fixture failure');
+    requests.length = 0;
+    expect((await runUserCli(['profile', 'list'], home)).status).toBe(0);
+    const events = requests.flatMap(request => request.body.batch).filter(event => event.event === '$exception');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.properties.$exception_list).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'fatal fixture failure', mechanism: expect.objectContaining({ handled: false }) }),
+    ]));
+  });
+
+  it('retains real frames and causes for a failure even when the exit code is not 1', async () => {
+    const home = freshHome('learning-telemetry-frames-');
+    const previousEnv = process.env;
+    process.env = userEnv(home);
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    try {
+      await startTelemetry(output, home, 'download');
+      const cause = new Error('connection closed; token=SECRET_CREDENTIAL');
+      const error = new CliError('AUTH_EXPIRED', 'session expired', 3);
+      error.cause = cause;
+      await output.finish(error);
+      await finishTelemetry(output, error);
+      const event = requests.flatMap(request => request.body.batch).find(event => event.event === '$exception');
+      expect(event).toBeDefined();
+      expect(event!.properties.error_code).toBe('AUTH_EXPIRED');
+      const exceptions = event!.properties.$exception_list as Array<{ type: string; stacktrace: { frames: Array<{ filename: string; lineno: number }> } }>;
+      expect(exceptions).toHaveLength(2);
+      expect(exceptions.some(exception => exception.stacktrace.frames.some(frame => frame.filename.endsWith('telemetry.test.ts') && frame.lineno > 0))).toBe(true);
+      expect(JSON.stringify(event)).not.toContain('SECRET_CREDENTIAL');
+      expect(JSON.stringify(event)).not.toContain(home);
+    } finally {
+      await finishTelemetry(output);
+      output.close();
+      process.exitCode = 0;
+      process.env = previousEnv;
+    }
+  });
+
+  it('replays an unacknowledged exception on a later command with the same event id', async () => {
+    const home = freshHome('learning-telemetry-retry-');
+    const previousEnv = process.env;
+    process.env = userEnv(home);
+    const makeOutput = () => createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const first = makeOutput();
+    const second = makeOutput();
+    const third = makeOutput();
+    try {
+      responseStatus = 503;
+      await startTelemetry(first, home, 'download');
+      const error = new Error('download transport unavailable');
+      await first.finish(error);
+      await finishTelemetry(first, error);
+      const pending = requests.flatMap(request => request.body.batch).find(event => event.event === '$exception');
+      expect(pending).toBeDefined();
+      requests.length = 0;
+      responseStatus = 200;
+      process.exitCode = 0;
+      await startTelemetry(second, home, 'profile list');
+      await finishTelemetry(second);
+      const replay = requests.flatMap(request => request.body.batch).filter(event => event.event === '$exception');
+      expect(replay).toHaveLength(1);
+      expect(replay[0]!.uuid).toBe(pending!.uuid);
+      expect(replay[0]!.properties.operation_id).toBe(pending!.properties.operation_id);
+      requests.length = 0;
+      await startTelemetry(third, home, 'profile list');
+      await finishTelemetry(third);
+      expect(requests.flatMap(request => request.body.batch).filter(event => event.event === '$exception')).toHaveLength(0);
+    } finally {
+      responseStatus = 200;
+      for (const output of [first, second, third]) { await finishTelemetry(output); output.close(); }
+      process.exitCode = 0;
+      process.env = previousEnv;
+    }
+  });
+
+  it('reports an unexpected AbortError and independent cleanup failure while excluding user cancellation', async () => {
+    const home = freshHome('learning-telemetry-abort-');
+    const previousEnv = process.env;
+    process.env = userEnv(home);
+    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    try {
+      await startTelemetry(output, home, 'download');
+      trackException(output, new DOMException('transport aborted without user cancellation', 'AbortError'), { stage: 'transport' });
+      output.markCanceled();
+      trackException(output, new DOMException('user canceled', 'AbortError'), { stage: 'transport' });
+      trackException(output, new Error('cleanup failed after cancellation'), { stage: 'cleanup' });
+      await finishTelemetry(output);
+      const errors = requests.flatMap(request => request.body.batch).filter(event => event.event === '$exception');
+      expect(errors).toHaveLength(2);
+      expect(errors[0]!.properties).toMatchObject({ error_code: 'INTERNAL', $exception_list: [{ type: 'AbortError', value: 'transport aborted without user cancellation' }] });
+      expect(errors[1]!.properties.$exception_list).toMatchObject([{ value: 'cleanup failed after cancellation' }]);
+    } finally {
+      await finishTelemetry(output);
+      output.close();
+      process.exitCode = 0;
+      process.env = previousEnv;
+    }
+  });
+
   it('does not report a canceled request as an exception', async () => {
     const home = freshHome('learning-telemetry-canceled-');
     const previousEnv = process.env;
@@ -702,7 +843,7 @@ describe('diagnostic delivery limits', () => {
     try {
       await startTelemetry(output, home, 'discuss draft');
       output.markCanceled();
-      const error = new CliError('NETWORK', 'SECRET_ABORTED_REQUEST', 1);
+      const error = new DOMException('aborted', 'AbortError');
       await output.finish(error);
       await finishTelemetry(output, error);
       const events = requests.flatMap(request => request.body.batch);
@@ -725,7 +866,7 @@ describe('diagnostic delivery limits', () => {
     try {
       await startTelemetry(output, home, 'profile list');
       holdNextRequest = true;
-      const error = Object.assign(new Error('SECRET_MESSAGE /Users/SECRET/file?token=SECRET_TOKEN'), { code: 'SECRET_CODE' });
+      const error = Object.assign(new Error('password=SECRET_MESSAGE /Users/SECRET/file?token=SECRET_TOKEN'), { code: 'SECRET_CODE' });
       error.stack = 'SECRET_STACK';
       await output.finish(error);
       const startedAt = performance.now();
@@ -734,7 +875,7 @@ describe('diagnostic delivery limits', () => {
       expect(requests).toHaveLength(1);
       const events = requests[0]!.body.batch;
       expect(events.map(event => event.event)).toEqual(['cli_command_started', 'cli_command_completed', '$exception']);
-      expect(events[2]!.properties).toMatchObject({ error_code: 'INTERNAL', $exception_fingerprint: 'learning:cli:profile list:INTERNAL' });
+      expect(events[2]!.properties).toMatchObject({ error_code: 'INTERNAL', $exception_list: [{ type: 'Error', mechanism: { handled: true, synthetic: false } }] });
       expect(JSON.stringify(requests)).not.toContain('SECRET_');
     } finally {
       releaseHeldRequest();

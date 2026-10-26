@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { advanceExport } from '../src/services/export-runner.js';
 import { JobRunner } from '../src/services/jobs.js';
 import { MemoryStateStore } from './helpers/memory.js';
-import { FakeClock } from './helpers/replay.js';
+import { FakeClock, FakeTransport } from './helpers/replay.js';
+import type { Runtime } from '../src/runtime/types.js';
 
 const scope = { userId: 'local', profileId: 'p1', platform: 'ykt' as const };
 
@@ -137,6 +139,109 @@ describe('job runner (T18, A181/A182)', () => {
     await expect(runner.advance(job.id, async () => { throw new Error('download stream stopped'); })).rejects.toThrow();
     expect((await runner.get(job.id)).status).toBe('paused');
     expect((await runner.resume(job.id)).status).toBe('queued');
+  });
+
+  it('reports a handler failure before persisting its recovery status', async () => {
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const runner = new JobRunner(new MemoryStateStore(), new FakeClock(), event => events.push(event));
+    const job = await runner.create(scope, 'export', { total: 1 });
+    const cause = new Error('download stream stopped');
+
+    const error = await runner.advance(job.id, async () => { throw cause; })
+      .catch((caught: unknown) => caught as Error);
+
+    expect(error).toBe(cause);
+    expect((await runner.get(job.id)).status).toBe('paused');
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: { stage: 'job.advance.export', job_id: job.id, platform: 'ykt', recovered: true },
+    }]);
+  });
+
+  it('reports timeout-style AbortError but keeps caller-canceled advances quiet', async () => {
+    const makeRunner = (events: Array<Parameters<Runtime['log']>[0]>) => new JobRunner(new MemoryStateStore(), new FakeClock(), event => events.push(event));
+    const timeoutEvents: Array<Parameters<Runtime['log']>[0]> = [];
+    const timeoutRunner = makeRunner(timeoutEvents);
+    const timeoutJob = await timeoutRunner.create(scope, 'export', { total: 1 });
+    const timeout = new DOMException('download timed out', 'AbortError');
+
+    await expect(timeoutRunner.advance(timeoutJob.id, async () => { throw timeout; }))
+      .rejects.toBe(timeout);
+
+    expect(timeoutEvents).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: timeout,
+      fields: { stage: 'job.advance.export', job_id: timeoutJob.id, platform: 'ykt', recovered: true },
+    }]);
+
+    const cancelEvents: Array<Parameters<Runtime['log']>[0]> = [];
+    const cancelRunner = makeRunner(cancelEvents);
+    const cancelJob = await cancelRunner.create(scope, 'export', { total: 1 });
+    const canceled = new DOMException('download canceled', 'AbortError');
+    const signal = new AbortController();
+    signal.abort();
+    await expect(cancelRunner.advance(cancelJob.id, async () => { throw canceled; }, { signal: signal.signal }))
+      .rejects.toBe(canceled);
+    expect(cancelEvents).toEqual([]);
+  });
+
+  it('reports an empty historical slide export while preserving its failed item result', async () => {
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const state = new MemoryStateStore();
+    const clock = new FakeClock();
+    const runner = new JobRunner(state, clock, event => events.push(event));
+    const lesson = { scope, course: null, lessonId: 'lesson-1' };
+    const saved = { type: 'slides' as const, lessons: [lesson], format: 'images' as const, liveJobId: null };
+    const created = await runner.create(scope, 'export', { total: 1, payload: saved });
+    const unexpected = async () => { throw new Error('unexpected call'); };
+    const runtime: Runtime = {
+      transport: new FakeTransport(),
+      state,
+      clock,
+      artifacts: {
+        create: unexpected,
+        resume: unexpected,
+        open: unexpected,
+        remove: async () => {},
+      },
+      masterKey: new Uint8Array(32),
+      heavy: null,
+      model: null,
+      log: () => {},
+      wake: async () => {},
+    };
+
+    const result = await advanceExport({
+      runner,
+      runtime,
+      job: created,
+      scope,
+      getAssessment: unexpected,
+      getSlides: async () => [],
+      getSlideImage: unexpected,
+      getMedia: unexpected,
+      getTranscript: unexpected,
+      getAsset: unexpected,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.items).toEqual([{ key: 'lesson-1', state: 'failed', message: 'no historical slide pages', artifacts: [] }]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      fields: {
+        stage: 'export.slides.empty',
+        job_id: created.id,
+        resource_key: 'lesson-1',
+        platform: 'ykt',
+        recovered: true,
+      },
+    });
+    expect(events[0]?.error).toMatchObject({ data: { code: 'PROTOCOL', message: 'no historical slide pages' } });
   });
 
   it('requeues only the same live job after an explicit rejoin', async () => {

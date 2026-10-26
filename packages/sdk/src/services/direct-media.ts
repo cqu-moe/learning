@@ -2,6 +2,7 @@ import { LearningError } from '../types/errors.js';
 import type { Json } from '../types/errors.js';
 import type { Runtime, BlobWriter } from '../runtime/types.js';
 import { decideRangeResume } from './exports.js';
+import { reportError, safeEndpoint } from '../runtime/diagnostics.js';
 
 export interface MediaAsset { status: number; headers: Headers; mimeType: string; stream: ReadableStream<Uint8Array> }
 interface SavedCheckpoint { url: string; validator: string | null; bytes: number; checkpoint: Json }
@@ -43,7 +44,16 @@ export async function downloadDirectMedia(input: {
     const decision = decideRangeResume({ status: asset.status, contentRangeStart: rangeStart === undefined ? -1 : Number(rangeStart), expectedOffset: saved.bytes, validatorMatches: validatorOf(asset.headers) === saved.validator });
     if (decision === 'append') {
       try { writer = await input.runtime.artifacts.resume({ id: input.artifactId, checkpoint: saved.checkpoint }); }
-      catch { await asset.stream.cancel().catch(() => {}); asset = null; }
+      catch (cause) {
+        reportError(input.runtime.log, 'media.resume', cause, {
+          job_id: input.jobId,
+          resource_key: input.resourceKey,
+          endpoint: safeEndpoint(input.url),
+          recovered: true,
+        });
+        await asset.stream.cancel().catch(() => {});
+        asset = null;
+      }
     } else if (asset.status !== 200) { await asset.stream.cancel().catch(() => {}); asset = null; }
   }
   if (writer === null) {
@@ -78,8 +88,22 @@ export async function downloadDirectMedia(input: {
     return result;
   } catch (cause) {
     try { await commit({ url: input.url, validator: saved!.validator, bytes, checkpoint: await writer.checkpoint() }); }
-    catch { /* partial remains; next run must restart instead of trusting it */ }
-    await writer.abort();
+    catch (checkpointError) {
+      reportError(input.runtime.log, 'media.checkpoint', checkpointError, {
+        job_id: input.jobId,
+        resource_key: input.resourceKey,
+        endpoint: safeEndpoint(input.url),
+        recovered: true,
+      });
+    }
+    await writer.abort().catch((cleanupError: unknown) => {
+      reportError(input.runtime.log, 'media.artifact.cleanup', cleanupError, {
+        job_id: input.jobId,
+        resource_key: input.resourceKey,
+        endpoint: safeEndpoint(input.url),
+        recovered: true,
+      });
+    });
     throw cause;
   } finally { reader.releaseLock(); }
 }

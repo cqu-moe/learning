@@ -1,10 +1,13 @@
 import { execFile } from 'node:child_process';
 import type { Options } from '../types.js';
+import { reportError, safeEndpoint } from '../diagnostics.js';
+import type { DiagnosticLog } from '../diagnostics.js';
+import { LearningError } from '../../types/errors.js';
 
 const MAX_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 
-export async function probeMediaDuration(url: string, options?: Options): Promise<number | null> {
+export async function probeMediaDuration(url: string, options?: Options, log?: DiagnosticLog): Promise<number | null> {
   if (options?.signal?.aborted) throw new DOMException('Media duration probe aborted', 'AbortError');
 
   let input: URL;
@@ -41,6 +44,12 @@ export async function probeMediaDuration(url: string, options?: Options): Promis
         return;
       }
       if (error) {
+        reportError(log, 'media.duration.probe', error, {
+          platform: 'ykt',
+          endpoint: safeEndpoint(url),
+          code: (error as NodeJS.ErrnoException).code ?? 'PROBE_FAILED',
+          recovered: true,
+        });
         resolve(null);
         return;
       }
@@ -48,7 +57,8 @@ export async function probeMediaDuration(url: string, options?: Options): Promis
       let parsed: unknown;
       try {
         parsed = JSON.parse(stdout);
-      } catch {
+      } catch (parseError) {
+        reportError(log, 'media.duration.probe', parseError, { platform: 'ykt', endpoint: safeEndpoint(url), code: 'PROTOCOL', recovered: true });
         resolve(null);
         return;
       }
@@ -59,10 +69,16 @@ export async function probeMediaDuration(url: string, options?: Options): Promis
         ? (duration as { duration?: unknown }).duration
         : null;
       if (typeof raw !== 'string') {
+        const invalid = new LearningError({ code: 'PROTOCOL', message: 'ffprobe returned no valid duration', retryAfterMs: null, operationId: null });
+        reportError(log, 'media.duration.probe', invalid, { platform: 'ykt', endpoint: safeEndpoint(url), code: invalid.data.code, recovered: true });
         resolve(null);
         return;
       }
       const seconds = Number(raw);
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        const invalid = new LearningError({ code: 'PROTOCOL', message: 'ffprobe returned an invalid duration', retryAfterMs: null, operationId: null });
+        reportError(log, 'media.duration.probe', invalid, { platform: 'ykt', endpoint: safeEndpoint(url), code: invalid.data.code, recovered: true });
+      }
       resolve(Number.isFinite(seconds) && seconds > 0 ? seconds : null);
     });
   });

@@ -15,6 +15,7 @@ import type { Output } from './output.js';
 import { addProfile, getProfile, listProfiles, validName } from './profiles.js';
 import type { LocalProfile } from './profiles.js';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
+import { redactDiagnosticValues } from './telemetry.js';
 
 export type CliRuntime = ReturnType<typeof createCliRuntime> & { output?: Output };
 
@@ -37,7 +38,6 @@ export async function withCliRuntime(
   }
   try {
     const runtime: CliRuntime = Object.assign(createCliRuntime(dataDir, getOutput(program)), { output: getOutput(program) });
-    runtime.log = event => { if (event.level === 'warn') getOutput(program).recordWarning(typeof event.fields.code === 'string' ? event.fields.code : 'SDK_WARNING', event.message); };
     try {
       await action(runtime, dataDir);
     } finally {
@@ -55,12 +55,14 @@ export function printResult(program: Command, value: unknown, human: string): vo
 export async function selectProfile(program: Command, runtime: CliRuntime, scope?: Scope): Promise<LocalProfile> {
   scope ??= targetScopes.get(program);
   const attach = (profile: LocalProfile): LocalProfile => {
+    redactDiagnosticValues(getOutput(program), [profile.name, profile.scope.profileId]);
     if (scope && (profile.scope.profileId !== scope.profileId || profile.scope.platform !== scope.platform || profile.scope.userId !== scope.userId)) throw new CliError('FORBIDDEN', '目标属于另一个账号。', 3);
     if (program.opts<{ profile?: string }>().profile === undefined) program.setOptionValueWithSource('profile', profile.name, 'inferred');
-    runtime.heavy = new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope: profile.scope });
+    runtime.heavy = new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope: profile.scope }, runtime.log);
     return profile;
   };
   const chosen = program.opts<{ profile?: string }>().profile;
+  if (chosen !== undefined) redactDiagnosticValues(getOutput(program), [chosen]);
   if (chosen !== undefined) {
     const profile = await getProfile(runtime.state, chosen);
     if (!profile) throw new CliError('INVALID_INPUT', `找不到账号：${chosen}`, 2, ['profile']);

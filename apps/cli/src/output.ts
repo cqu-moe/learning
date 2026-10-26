@@ -56,7 +56,7 @@ function progressRows(value: ProgressData, study: StudyDisplay | undefined, star
 }
 export type EventInput = CliEvent extends infer E ? E extends CliEvent ? Pick<E, 'type' | 'data'> : never : never;
 export class CliError extends Error {
-  constructor(public code: string, message: string, public exitCode = 2, public fields: string[] = [], public hint: string[] = [], public operationId: string | null = null) { super(message); }
+  constructor(public code: string, message: string, public exitCode = 2, public fields: string[] = [], public hint: string[] = [], public operationId: string | null = null, options?: ErrorOptions) { super(message, options); this.name = 'CliError'; }
 }
 export function cleanText(value: string): string { return [...stripVTControlCharacters(value)].filter(char => char === '\n' || char === '\t' || char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127).join(''); }
 export function resolveOutputMode(flags: Record<string, unknown>, terminal = { stdin: !!process.stdin.isTTY, stdout: !!process.stdout.isTTY, stderr: !!process.stderr.isTTY, term: process.env.TERM, ci: process.env.CI, noColor: process.env.NO_COLOR }): OutputMode {

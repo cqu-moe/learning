@@ -42,13 +42,15 @@ export async function yktReadProgress(http: SessionHttp, clock: Clock, resource:
 }
 
 interface StudyCursor { resourceKey: string; cp: number; sq: number; baseline: number; awaiting: boolean; stalls: number }
-function parseCursor(value: string | null): StudyCursor | null {
-  if (value === null) return null;
+function parseCursor(value: string | null): { cursor: StudyCursor | null; error?: unknown } {
+  if (value === null) return { cursor: null };
   try {
     const row = JSON.parse(value) as Partial<StudyCursor>;
-    if (typeof row.resourceKey !== 'string' || typeof row.cp !== 'number' || typeof row.sq !== 'number' || typeof row.baseline !== 'number' || typeof row.awaiting !== 'boolean' || typeof row.stalls !== 'number') return null;
-    return row as StudyCursor;
-  } catch { return null; }
+    if (typeof row.resourceKey !== 'string' || typeof row.cp !== 'number' || typeof row.sq !== 'number' || typeof row.baseline !== 'number' || typeof row.awaiting !== 'boolean' || typeof row.stalls !== 'number') {
+      return { cursor: null, error: new LearningError({ code: 'INTEGRITY', message: 'Yuketang study cursor is invalid', retryAfterMs: null, operationId: null }) };
+    }
+    return { cursor: row as StudyCursor };
+  } catch (error) { return { cursor: null, error }; }
 }
 
 /** One wall-clock heartbeat at most per advance; never backfills time spent offline. */
@@ -103,7 +105,11 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     const duration = progress.durationSeconds;
     if (duration === null || duration <= 0) return finish('needs-input', 'server duration is unknown');
     await runner.emitProgress(job.id, next.key, progress.serverFraction ?? 0, { title: observed.title, durationSeconds: duration, serverSeconds: progress.serverSeconds });
-    const previous = parseCursor((await runner.metadata(job.id)).cursor);
+    const parsedCursor = parseCursor((await runner.metadata(job.id)).cursor);
+    if (parsedCursor.error !== undefined) {
+      runner.reportRecovery('job.cursor.ykt', parsedCursor.error, { job_id: job.id, resource_key: next.key, platform: 'ykt', recovered: true });
+    }
+    const previous = parsedCursor.cursor;
     const cursor = previous?.resourceKey === next.key ? previous : null;
     if (cursor?.awaiting) {
       if ((progress.serverFraction ?? 0) <= cursor.baseline) {
@@ -134,7 +140,9 @@ export async function advanceYktStudy(input: { job: Job; action: Extract<ActionI
     if (body !== '') {
       let parsed: { success?: boolean };
       try { parsed = JSON.parse(body) as { success?: boolean }; }
-      catch { throw new LearningError({ code: 'UNCERTAIN', message: 'heartbeat acknowledgement is invalid', retryAfterMs: null, operationId: `heartbeat:${job.id}:${next.key}:${row.sq}` }); }
+      catch (error) {
+        throw new LearningError({ code: 'UNCERTAIN', message: 'heartbeat acknowledgement is invalid', retryAfterMs: null, operationId: `heartbeat:${job.id}:${next.key}:${row.sq}` }, { cause: error });
+      }
       if (parsed.success === false) throw new LearningError({ code: 'UNCERTAIN', message: 'heartbeat was rejected', retryAfterMs: null, operationId: `heartbeat:${job.id}:${next.key}:${row.sq}` });
     }
     await runner.setPendingOperation(job.id, null);
@@ -160,9 +168,10 @@ export async function reconcileYktHeartbeat(input: { job: Job; action: Extract<A
     await input.runner.confirmPendingAndPause(input.job.id, input.operationId);
     return { operationId: input.operationId, state: 'confirmed', message: 'article completion confirmed by leaf_info', result: { serverCompleted: true } };
   }
-  const cursor = parseCursor(meta.cursor);
+  const parsedCursor = parseCursor(meta.cursor);
+  const cursor = parsedCursor.cursor;
   if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') {
-    throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain heartbeat', retryAfterMs: null, operationId: input.operationId });
+    throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain heartbeat', retryAfterMs: null, operationId: input.operationId }, parsedCursor.error === undefined ? undefined : { cause: parsedCursor.error });
   }
   const resource = input.action.resources.find((item) => item.key === cursor.resourceKey);
   if (resource === undefined) throw new LearningError({ code: 'INTEGRITY', message: 'study cursor resource is missing', retryAfterMs: null, operationId: input.operationId });

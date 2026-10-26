@@ -38,7 +38,7 @@ export function registerAnswersCommands(program: Command): void {
           }) };
           try { await writeFile(options.output, exportDraftYaml(next), { flag: 'wx', mode: 0o600 }); }
           catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null });
+            if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null }, { cause: error });
             throw error;
           }
         }

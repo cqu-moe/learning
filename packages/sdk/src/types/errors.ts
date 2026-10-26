@@ -54,8 +54,8 @@ export type ErrorData = z.infer<typeof ErrorDataSchema>;
 export class LearningError extends Error {
   readonly data: ErrorData;
 
-  constructor(data: ErrorData) {
-    super(data.message);
+  constructor(data: ErrorData, options?: ErrorOptions) {
+    super(data.message, options);
     this.name = 'LearningError';
     this.data = data;
   }
@@ -119,7 +119,7 @@ export function parseDto<T extends z.ZodType>(schema: T, value: unknown, label: 
       message: `${label} invalid${path ? ` at ${path}` : ''}: ${detail}`,
       retryAfterMs: null,
       operationId: null,
-    });
+    }, { cause: result.error });
   }
   return result.data;
 }

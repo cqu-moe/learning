@@ -244,13 +244,13 @@ export async function yktCourses(http: SessionHttp, scope: Scope): Promise<Page<
   if (response.status !== 200) throw protocolError(`courses/list HTTP ${response.status}`);
   const payload = await response.json();
   const envelope = CourseListEnvelopeWire.safeParse(payload);
-  if (!envelope.success) throw protocolError('Yuketang courses/list envelope is invalid');
+  if (!envelope.success) throw protocolError('Yuketang courses/list envelope is invalid', { cause: envelope.error });
   if (envelope.data.errcode === 401002) throw authExpired();
   if (envelope.data.errcode !== 0) {
     throw protocolError(`courses/list errcode=${envelope.data.errcode}`);
   }
   const parsed = CourseListWire.safeParse(payload);
-  if (!parsed.success) throw protocolError('Yuketang courses/list data is invalid');
+  if (!parsed.success) throw protocolError('Yuketang courses/list data is invalid', { cause: parsed.error });
   const items = parsed.data.data.list.map((raw) => {
     const native = { kind: 'ykt' as const, classroomId: String(raw.classroom_id) };
     return {

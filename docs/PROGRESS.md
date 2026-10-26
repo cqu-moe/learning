@@ -1035,3 +1035,40 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 完整 CLI 串行 18 文件 180/181，exit 1；原 `doctor.test.ts` 的 ffprobe 可用性失败，定向复现 4/5、exit 1。生产 owner 与测试均未改。独立启动探针实测新建相同类型脚本首次 2954ms、再次 31ms、直接 Node 32ms；预热该探针后真实 CLI doctor 正确识别版本。保留原 1000ms 上限和全部断言，不把本机失败改写为通过，远端完整测试仍为合并门禁。
 - `test-bun-runtime.mjs`、`build-cli.mjs --without-telemetry`、`test-distribution.mjs --without-telemetry` 均 exit 0；本机程序覆盖 SQLite/AES-GCM 互读、3976-byte PDF、PNG/JPEG QR、本机 HTTP/WS、空 PATH、中文/空格目录、权限、锁、失败清理与首次四项首页。该程序仅为本地 PR 模式验收，不作为公开发行。
 - 已授权 `zhipu/glm-5.3` / `max` 独立只读审查完成，主代理复核无阻塞发现。有效 Git 身份沿用配置，未覆盖作者配置。远端 PR/main/release CI、五目标正式程序、发布资产及下载验收尚待执行；未访问真实平台或付费模型，不推进 Web/其他 PLAN。
+
+### 2026-10-26 · 全量错误诊断与真实源码堆栈（本地修复，未发布）
+
+- 用户要求核查 `LearningCliError / INTERNAL` 无堆栈，并明确要求所有真实错误及修复所需诊断信息；接受脱敏、限量离线暂存与补传方案。决策记录在 `docs/adr/0001-error-diagnostics.md`，替代此前只发固定码和 synthetic 异常的边界。未授权推送、合并、公开发布或真实教学平台操作。
+- 已按 PostHog CLI agent guide、安装的 error-tracking-node skill 进行只读查询。项目 662666 的 [原问题](https://us.posthog.com/project/662666/error_tracking/01a16997-b92e-7fa2-9824-533224171e78) 中，事件 `e3013d99-dd72-4866-b0c0-45e146f362b0` 来自 CLI 0.2.9 / Windows x64 / Bun 1.4.3，时间为 2026-10-24 00:28:32.847 +08；仅有 `LearningCliError`、`INTERNAL`、`synthetic:true`，没有任何 stacktrace frames。源码确认旧实现主动舍弃原始错误，只在 exit1 时生成固定码异常；历史缺失堆栈无法恢复。
+- 使用附加的隔离 worktree `learning-error-diagnostics/learning`、分支 `codex/learning-error-diagnostics`，基于本轮取得的 `origin/main=98a60dd255be274222606ab3222e863ec159e05d`；原工作目录已有改动未覆盖。未修改依赖、lockfile、SDK/CLI 版本；四个独立子任务使用用户授权的 `zhipu/glm-5.3` / `max`，主线程审查后整合。
+- SDK 沿用 `Runtime.log` 增加可选原始 error，不引入上传依赖或新运行时。HTTP、认证、动作/任务、学习游标、直播、媒体/课件/渲染和模型路径保留真实 cause，覆盖重试、恢复、返回失败 DTO 和主要清理边界。CLI 统一记录参数错误、非 exit1 错误、任务上下文和未捕获异常；同步记录崩溃后仍保留原 fatal exit 行为。相同异常传播去重，独立尝试保留；正常用户取消和成功的能力探测不算故障。
+- `exception.ts` 生成 PostHog raw/custom JavaScript 帧，按原始源码位置、异常类型和固定码分组，保留 cause/AggregateError；提供解析/校验位置和有界 HTTP/系统错误上下文，不编造缺失帧。凭据、已知账号/参数值、URL 查询、票据路径及本机身份脱敏；不传完整正文、题目答案或模型对话。异常属性上限 24 KiB，超限明确标记。`diagnostic-outbox.ts` 仅保存脱敏后的异常，0700/0600、原子落盘、按采集目标隔离，7 天/256 条/5 MiB/单条 32 KiB；HTTP 成功确认后删除，同一 UUID 重传。批次 16 条/64 KiB，退出预算仍为 750 ms。
+- Node 入口在加载业务模块前启用 source maps。Bun 1.4.3 改用 `Bun.build`，保留函数名、仅压缩空白、嵌入 sourcemap，并把四个 SDK workspace export 精确映射到原始 TS；原因是实测直接打包 SDK dist 仍只显示 JS。`scripts/test-error-diagnostics.mjs` 已接入原有五目标 `test-distribution.mjs`，检查函数名、TS 行列、cause、fatal monitor，以及实际 CLI 的本地 `/batch` 请求。安装、使用、SDK 和发行文档同步。
+- 已保留实际红灯：旧版漏非 exit1/原因链/崩溃补传，SDK 超时/取消归类、空历史课件失败和渲染主错误被清理错误覆盖，实际二进制 SDK 栈停在 dist JS；修复后相关专项通过。最后追加的 CLI 非用户 `DOMException(AbortError)` 用例先实际收到 1 条而非 2 条（exit1），过滤修复后 telemetry/exception/outbox 三文件 61/61 exit0，日志 `dist/error-diagnostics/abort-red.log`、`diagnostics-final.log`。
+- 固定 macOS arm64 / Node v24.11.1 / pnpm 11.19.0 / Bun 1.4.3。离线冻结安装 exit0；首轮整仓 lint/typecheck exit0、SDK 299/299 exit0。CLI 并行 215/216 仅原有 doctor 的 ffprobe 可用性失败；生产 doctor、测试超时和断言均未修改，完整串行复跑 20 文件 216/216 exit0（184.26s），日志 `dist/error-diagnostics/cli-final-serial.log`。该全量结果在最后追加取消边界用例前，追加后的诊断专项为上段 61/61。
+- 已完成正式 token 编译路径的离线检查：仅使用虚构公共 fixture token，默认 `build-cli.mjs` 与 `CI=1 test-binary.mjs` exit0；probe 另断言 `define` 值确实为字符串，日志 `dist/error-diagnostics/release-define-test-binary.log`。先前 macOS arm64 实际程序上报的本地请求含 1 条 LearningError、4 个真实帧，定位到 `packages/sdk/src/runtime/node/index.ts:24`；本地 collector 不代表真实 PostHog 入库。
+- 最后复核补齐 SDK 非用户 AbortError 与清理漏报：action/auth/job/live/render 六项先实际红灯，修复后专项 78/78、SDK 全量 305/305。取消判断要求明确 CANCELED 或关联 signal 已取消的 AbortError；独立清理错误继续记录，业务返回保持。CLI 同一错误跨阶段携带相同 attempt 的回归先误发 52 条，修正为预期 27 条，同时保留两次独立重试（`propagation-red.log` / `propagation-green.log`）。
+- 最终冻结代码再次运行 `pnpm lint`、`pnpm typecheck`、`pnpm --filter @learning/sdk test`（32 文件 305/305）、`pnpm build`、CLI telemetry/exception/outbox（3 文件 61/61）、`pnpm test:e2e`（7/7）、`node scripts/check-boundaries.mjs`、`node scripts/test-release.mjs`、`git diff --check`，均 exit0；完整日志 `dist/error-diagnostics/final-checks.log`。CLI 全量保持前述 216/216 证据，最后两处过滤/去重改动由完整诊断专项复验，未重复运行无关 CLI 长旅程。
+- 最终 macOS arm64 / Bun 1.4.3 的 `build-cli.mjs --without-telemetry`、`test-distribution.mjs --without-telemetry` 均 exit0，日志 `dist/error-diagnostics/native-final.log`。覆盖无 Node/Bun PATH 的实际程序、SQLite/权限/锁/失败清理、真实 PTY，以及真实程序本地采集到 1 条 LearningError / 4 个帧 / SDK TS 第 24 行；生成探针同时断言 embedded map、函数名、cause、公共 token define 字符串和 fatal monitor。产物仅为本机测试程序，CLI 版本仍 0.2.9，不是公开发行附件。
+- `check-source-lock` exit1：隔离目录缺少只读 `.reference/ykt-cli`（48a92c24498980d01aa045cf734ba3095d5f5bd1）、`.reference/xuetang-cli`（628a8fa8a4b90897f285a109aa591a8f6263846d）、`.reference/zhs-cli`（56d02171cf73c45694d69f886c902d2ecedadaaa）。未虚构源码检查通过，未更改 source lock 或私有参考仓。
+- 未运行真实平台、付费模型、真实 PostHog 事件发送/入库、其他四个原生目标或远程 CI；未推送、合并、发布或替换已安装 CLI。下一当前任务为本地变更审阅及另行授权后的远端五目标门禁，不推进其他 PLAN 或 Web。
+
+### 2026-10-27 · 错误诊断 PR #27（已创建，CI 待完成）
+
+- 用户明确授权「开 PR」。`git fetch origin main` exit0，main 仍为 `98a60dd255be274222606ab3222e863ec159e05d`；检查有效 Git 身份后沿用配置，未覆盖作者身份。审阅并暂存本次 67 个文件，`git diff --cached --check` 和 `node scripts/check-boundaries.mjs` exit0；实现、测试、文档以 `98170b1c23bcf6ac2b3cb3be0e00fe19237f8c0f` 提交并成功推送 `codex/learning-error-diagnostics`，未修改版本号。
+- GitHub connector 创建并读回 [PR #27](https://github.com/cqu-moe/learning/pull/27)，OPEN、非 draft、base=main、head=上述功能分支；PR 已附加到本聊天。说明包含真实堆栈与原因链、脱敏、限量补传、源码映射、完整本机证据和待验证边界。
+- 创建后读取 [CI 40355068354](https://github.com/cqu-moe/learning/actions/runs/40355068354)，headRevision 与上述实现提交一致：verify、macOS x64、Linux arm64/x64、Windows x64 正在运行，macOS arm64 排队；尚无最终结果，不记为 CI 通过。本条后续提交仅补充 PR 交接记录，不改产品或测试；合并门禁以最新 head 的检查为准。
+- 本轮未重复上一节已通过的 SDK/CLI/E2E 和本机程序测试；工作内容仅为审阅、提交、推送和创建 PR，沿用已记录的实际证据。未合并、发布、运行真实教学平台/模型或验证真实 PostHog 入库。下一当前任务为本 PR 的远端检查及审阅，不推进其他 PLAN 或 Web。
+
+### 2026-10-27 · PR #27 补充 CLI 0.2.10 版本
+
+- 用户要求升版本。仅把 `apps/cli/package.json` 的 CLI 版本从 0.2.9 升到 0.2.10，root/SDK 版本、依赖和 lockfile 保持不变；`git ls-remote --tags origin refs/tags/cli-v0.2.10` exit0 且无匹配，检查时目标标签尚未占用。
+- macOS arm64 / Node24.11.1 / pnpm11.19.0 / Bun1.4.3：`pnpm --filter @learning/cli build`、Node CLI `--version`、`node scripts/test-release.mjs`、`node scripts/build-cli.mjs --without-telemetry`、新独立程序 `--version`、`git diff --check` 均 exit0，两种 CLI 均输出 0.2.10；完整日志 `dist/error-diagnostics/version-0210.log`。本轮无产品逻辑修改，未重复 SDK/CLI 全量或真实平台测试。
+- 版本更新与本条记录提交至现有 PR #27；PR 标题/说明同步反映 0.2.10，移除此前“不更新版本”的表述。已核对 `.github/workflows/release.yml`：版本变更合入 main 后触发完整 CI，检查成功才进入 publish。当前仅准备发行版本，未合并或发布；下一步仍为最新 head 的五目标 CI 与审阅。
+
+### 2026-10-27 · PR #27 离线消费者 CI 缓存修复
+
+- 用户报告 CI 失败。[run 40355880636](https://github.com/cqu-moe/learning/actions/runs/40355880636) 的 head 为 `ded8e0567d7e6255c5f0d280affd6de6bcd5b3a1`；verify 中 lint/typecheck/build、SDK 305/305、CLI 217/217 已通过，E2E 6/7，唯一失败为打包消费者安装时 `ERR_PNPM_NO_OFFLINE_TARBALL`。日志显示工作区使用 `/home/runner/setup-pnpm/node_modules/.bin/store/v11`，临时消费者却查找 `/tmp/.pnpm-store/v11`，不能复用已安装依赖的缓存。
+- 只修改 `apps/cli/tests/e2e.test.ts` 的消费者装配：从 CLI 工作区取得 `pnpm store path --silent`，通过 `--store-dir` 显式复用；保留 offline/frozen-lockfile/trust-lockfile/ignore-scripts 和原打包、QR、目录、导出、Range 恢复断言。消费者配置刻意指向空默认缓存，使回归不依赖宿主机恰好跨文件系统；没有修改产品逻辑、工作流、依赖、lockfile 或 0.2.10 版本。
+- macOS arm64 / Node24.11.1 / pnpm11.19.0：先添加空默认缓存，运行 `pnpm --filter @learning/cli exec vitest run --config vitest.e2e.config.ts -t 'uses packed tarballs'`，真实 exit1、同类离线缺包错误（`dist/error-diagnostics/ci-store-red.log`）；加上显式缓存路径后原命令 exit0、1/1（其余 6 项按筛选未运行，`ci-store-green.log`）。完整 `pnpm test:e2e` 7/7、`pnpm lint`、`pnpm typecheck`、`git diff --check` 均 exit0，日志 `ci-store-e2e.log`、`ci-store-static.log`。
+- 本修复提交至现有 PR #27；远端结果以新 head 的 verify 和五目标程序检查为准。未重复不涉及本次测试装配的 SDK/CLI 单测或本机原生程序验收；未合并、发布、访问真实教学平台/模型或验证真实 PostHog 入库。下一当前任务为新提交的远端 CI，不推进其他 PLAN 或 Web。

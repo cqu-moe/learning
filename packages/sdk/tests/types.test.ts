@@ -194,6 +194,21 @@ describe('id validation (A022)', () => {
   });
 });
 
+describe('SDK errors', () => {
+  it('preserves the original error chain when wrapping ErrorData', () => {
+    const cause = new Error('transport reset');
+    const error = new LearningError({
+      code: 'NETWORK',
+      message: 'network failure',
+      retryAfterMs: null,
+      operationId: null,
+    }, { cause });
+
+    expect((error as Error).cause).toBe(cause);
+    expect(error.data).toMatchObject({ code: 'NETWORK' });
+  });
+});
+
 describe('page and outline contracts', () => {
   it('keeps completeness unknown without coercing to complete (A022)', () => {
     const Page = PageSchemaOf(WarningSchema);

@@ -7,7 +7,7 @@ import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { LearningClient } from '@learning/sdk';
 import { LearningError } from '@learning/sdk';
-import { trackJobCompleted, trackJobStarted } from './telemetry.js';
+import { trackException, trackJobCompleted, trackJobStarted } from './telemetry.js';
 import { ActionInputSchema, CourseSchema } from '@learning/sdk/public';
 import type { Job, JobEvent } from '@learning/sdk/public';
 import type { CliRuntime } from './context.js';
@@ -150,6 +150,7 @@ export async function publishJobArtifacts(runtime: CliRuntime, job: Job, dataDir
       if (bytes !== artifact.bytes || hash.digest('hex') !== artifact.sha256) throw new Error('saved artifact digest mismatch');
       paths.push(path);
     } catch (error) {
+      if (runtime.output !== undefined) trackException(runtime.output, error, { stage: 'export.publish', job_id: job.id });
       await handle.close();
       await unlink(path);
       if (error instanceof CliError && error.code === 'CANCELED') return paths;

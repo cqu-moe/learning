@@ -8,6 +8,7 @@ import { safeFilename } from './exports.js';
 import { downloadDirectMedia } from './direct-media.js';
 import type { MediaAsset } from './direct-media.js';
 import { sha256Hex } from '../types/sha256.js';
+import { reportError, safeEndpoint } from '../runtime/diagnostics.js';
 
 type MediaInput = Extract<ExportInput, { type: 'media' }>;
 type Asset = MediaAsset;
@@ -82,7 +83,14 @@ async function downloadHls(input: { runtime: Runtime; jobId: string; resourceKey
       writer = await input.runtime.artifacts.resume({ id: input.artifactId, checkpoint: saved.checkpoint, truncateUncommitted: true });
       nextIndex = saved.nextIndex;
       total = saved.bytes;
-    } catch { /* corrupted or unavailable partial must restart from the first segment */ }
+    } catch (cause) {
+      reportError(input.runtime.log, 'media.resume', cause, {
+        job_id: input.jobId,
+        resource_key: input.resourceKey,
+        endpoint: safeEndpoint(input.urls[0] ?? ''),
+        recovered: true,
+      });
+    }
   }
   if (writer === undefined) {
     await input.runtime.artifacts.remove(input.artifactId);
@@ -111,7 +119,13 @@ async function downloadHls(input: { runtime: Runtime; jobId: string; resourceKey
     const result = await writer.finish();
     await commit(null);
     return result;
-  } catch (cause) { await writer.abort(); throw cause; }
+  } catch (cause) {
+    try { await writer.abort(); }
+    catch (cleanupError) {
+      reportError(input.runtime.log, 'media.artifact.cleanup', cleanupError, { job_id: input.jobId, recovered: true });
+    }
+    throw cause;
+  }
 }
 
 export async function advanceMedia(input: {
@@ -152,6 +166,7 @@ export async function advanceMedia(input: {
       filename: `${safeFilename(next.key)}.${extension}`, mimeType, bytes: result.bytes, sha256: result.sha256,
       createdAtMs: input.runtime.clock.nowMs() }];
     let transcriptWarning: string | null = null;
+    let transcriptFailureReported = false;
     if (saved.subtitles) {
       try {
         const transcript = await input.getTranscript(next);
@@ -162,9 +177,34 @@ export async function advanceMedia(input: {
             await writer.write(new TextEncoder().encode(JSON.stringify(transcript, null, 2) + '\n'));
             const result = await writer.finish();
             artifacts.push({ id, scope: input.scope, filename: `${safeFilename(next.key)}.transcript.json`, mimeType: 'application/json', bytes: result.bytes, sha256: result.sha256, createdAtMs: input.runtime.clock.nowMs() });
-          } catch (cause) { await writer.abort(); await input.runtime.artifacts.remove(id); throw cause; }
+          } catch (cause) {
+            reportError(input.runtime.log, 'export.transcript', cause, {
+              job_id: input.job.id,
+              resource_key: next.key,
+              recovered: true,
+            });
+            transcriptFailureReported = true;
+            try {
+              await writer.abort();
+              await input.runtime.artifacts.remove(id);
+            } catch (cleanupError) {
+              reportError(input.runtime.log, 'export.transcript.cleanup', cleanupError, {
+                job_id: input.job.id,
+                resource_key: next.key,
+                recovered: true,
+              });
+            }
+            throw cause;
+          }
         }
-      } catch {
+      } catch (cause) {
+        if (!transcriptFailureReported) {
+          reportError(input.runtime.log, 'export.transcript', cause, {
+            job_id: input.job.id,
+            resource_key: next.key,
+            recovered: true,
+          });
+        }
         transcriptWarning = 'transcript unavailable; video kept';
         input.runtime.log({ level: 'warn', message: transcriptWarning, fields: { resourceKey: next.key } });
       }

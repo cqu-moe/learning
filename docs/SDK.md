@@ -86,7 +86,7 @@ ModelClient 只提供一个 propose 方法；用所配置的兼容 API 与普通
 
 close 释放该实例 socket/timer，不注销账户或删除后台任务。CLI 的 Ctrl+C 记录暂停、处理在途 uncertain、关闭本机连接后退出；本期不实现 Web 刷新/订阅控制。auth flow 被用户取消后销毁临时票据，迟到事件不得提交会话。
 
-SDK 抛 ErrorData 包装的 Error；安全 message 不含原始 cause/body/URL query。批量 aggregateCourses 每 profile 独立成功或错误，保持调用顺序，不跨 profile 合并同名课程。可选模块没实现就返回相应 capability 状态与 UNSUPPORTED/MISSING_RUNTIME，不能 return [] 假成功。
+SDK 抛 ErrorData 包装的 Error，包装时保留原始 `cause`，安全 message 不拼接原始 body/URL query。`Runtime.log` 可携带 `error?: unknown` 和有限的标量阶段字段；被捕获、重试、降级或转换成任务结果的错误在原始边界记录，CLI 负责脱敏、去重及投递，SDK 不直接访问采集服务。批量 aggregateCourses 每 profile 独立成功或错误，保持调用顺序，不跨 profile 合并同名课程。可选模块没实现就返回相应 capability 状态与 UNSUPPORTED/MISSING_RUNTIME，不能 return [] 假成功。
 
 需要新增方法时先看现有服务分组；一个 provider 的缺失 wire 资料记入 SOURCES/PROGRESS，不能通过给全部方法增加 any/Record<string,any> 来逃避建模。
 

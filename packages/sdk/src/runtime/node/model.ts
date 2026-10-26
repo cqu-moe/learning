@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { LearningError } from '../../types/errors.js';
 import type { ModelClient } from '../types.js';
+import { isCancellation, reportError, safeEndpoint } from '../diagnostics.js';
+import type { DiagnosticLog } from '../diagnostics.js';
 
 const ChatResponse = z.object({
   choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1),
@@ -34,13 +36,24 @@ function usageFrom(value: unknown): { promptTokens?: number; completionTokens?: 
   };
 }
 
-function failure(code: 'INVALID_INPUT' | 'NETWORK' | 'PROTOCOL', message: string): LearningError {
-  return new LearningError({ code, message, retryAfterMs: null, operationId: null });
+function failure(code: 'INVALID_INPUT' | 'NETWORK' | 'PROTOCOL', message: string, options?: ErrorOptions): LearningError {
+  return new LearningError({ code, message, retryAfterMs: null, operationId: null }, options);
 }
 
-async function boundedText(response: Response): Promise<string> {
+function canceled(options?: ErrorOptions): LearningError {
+  return new LearningError({ code: 'CANCELED', message: 'model request canceled', retryAfterMs: null, operationId: null }, options);
+}
+
+function responseBytesOf(response: Response): number | null {
+  const header = response.headers.get('content-length');
+  if (header === null) return null;
+  const value = Number(header);
+  return Number.isFinite(value) ? value : null;
+}
+
+async function boundedText(response: Response): Promise<{ text: string; bytes: number }> {
   const reader = response.body?.getReader();
-  if (reader === undefined) return '';
+  if (reader === undefined) return { text: '', bytes: 0 };
   const decoder = new TextDecoder();
   let total = 0;
   let text = '';
@@ -52,7 +65,7 @@ async function boundedText(response: Response): Promise<string> {
       if (total > MAX_RESPONSE_BYTES) throw failure('PROTOCOL', 'model response exceeds 1 MiB');
       text += decoder.decode(value, { stream: true });
     }
-    return text + decoder.decode();
+    return { text: text + decoder.decode(), bytes: total };
   } finally { reader.releaseLock(); }
 }
 
@@ -64,10 +77,15 @@ export function createCompatibleModelClient(config: {
   fetchFn?: typeof fetch;
   aiSessionId?: string;
   captureAiGeneration?: (properties: Record<string, unknown>) => void;
+  log?: DiagnosticLog;
 }): ModelClient {
   let base: URL;
   try { base = new URL(config.baseUrl); }
-  catch { throw failure('INVALID_INPUT', 'model base URL is invalid'); }
+  catch (error) {
+    const invalid = failure('INVALID_INPUT', 'model base URL is invalid', { cause: error });
+    reportError(config.log, 'model.config', invalid, { code: invalid.data.code });
+    throw invalid;
+  }
   if (base.protocol !== 'https:' || base.username !== '' || base.password !== '' || base.search !== '' || base.hash !== '') throw failure('INVALID_INPUT', 'model base URL must be HTTPS without credentials, query or fragment');
   if (config.model.trim() === '' || config.apiKey.trim() === '') throw failure('INVALID_INPUT', 'model name and API key are required');
   const endpoint = new URL('chat/completions', `${base.toString().replace(/\/$/, '')}/`);
@@ -112,41 +130,87 @@ export function createCompatibleModelClient(config: {
       const request = new Request(endpoint, { method: 'POST', headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({ model: config.model, messages, stream: false }),
         signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]), credentials: 'omit', redirect: 'error' });
+      const report = (stage: string, error: unknown, fields: Record<string, string | number | boolean | null> = {}) => {
+        reportError(config.log, stage, error, {
+          method: 'POST',
+          endpoint: safeEndpoint(endpoint.toString()),
+          ...fields,
+        });
+      };
       let response: Response;
       try { response = await fetchFn(request); }
-      catch {
-        capture({ isError: true, error: signal.aborted ? 'canceled' : 'network_error' });
-        throw failure('NETWORK', 'model request failed');
+      catch (error) {
+        const callerCanceled = signal.aborted && isCancellation(error, signal);
+        capture({ isError: true, error: callerCanceled ? 'canceled' : 'network_error' });
+        if (callerCanceled) throw canceled({ cause: error });
+        report(`model.request.${purpose}`, error, { code: 'NETWORK' });
+        throw failure('NETWORK', 'model request failed', { cause: error });
       }
       if (!response.ok) {
         capture({ httpStatus: response.status, isError: true, error: 'http_error' });
-        throw failure('PROTOCOL', `model returned HTTP ${response.status}`);
+        const error = failure('PROTOCOL', `model returned HTTP ${response.status}`);
+        report(`model.response.${purpose}`, error, {
+          status: response.status,
+          code: error.data.code,
+          content_type: response.headers.get('content-type'),
+          response_bytes: responseBytesOf(response),
+        });
+        throw error;
       }
       let payload: unknown;
       let text: string;
-      try { text = await boundedText(response); }
+      let responseBytes: number;
+      try { ({ text, bytes: responseBytes } = await boundedText(response)); }
       catch (error) {
-        capture({ httpStatus: response.status, isError: true, error: signal.aborted ? 'canceled' : error instanceof LearningError ? 'response_too_large' : 'response_read_error' });
+        const callerCanceled = signal.aborted && isCancellation(error, signal);
+        capture({ httpStatus: response.status, isError: true, error: callerCanceled ? 'canceled' : error instanceof LearningError ? 'response_too_large' : 'response_read_error' });
+        if (callerCanceled) throw canceled({ cause: error });
+        {
+          report(`model.response.${error instanceof LearningError ? 'size' : 'read'}.${purpose}`, error, {
+            status: response.status,
+            code: error instanceof LearningError ? error.data.code : 'PROTOCOL',
+            content_type: response.headers.get('content-type'),
+          });
+        }
         if (error instanceof LearningError) throw error;
-        throw failure('PROTOCOL', 'model response is not JSON');
+        throw failure('PROTOCOL', 'model response is not JSON', { cause: error });
       }
       try { payload = JSON.parse(text); }
-      catch {
+      catch (error) {
         capture({ httpStatus: response.status, isError: true, error: 'invalid_json_response' });
-        throw failure('PROTOCOL', 'model response is not JSON');
+        report(`model.response.json.${purpose}`, error, {
+          status: response.status,
+          code: 'PROTOCOL',
+          content_type: response.headers.get('content-type'),
+          response_bytes: responseBytes,
+        });
+        throw failure('PROTOCOL', 'model response is not JSON', { cause: error });
       }
       const parsed = ChatResponse.safeParse(payload);
       if (!parsed.success) {
         capture({ httpStatus: response.status, isError: true, error: 'invalid_response_structure' });
-        throw failure('PROTOCOL', 'model completion has no text choice');
+        const error = failure('PROTOCOL', 'model completion has no text choice', { cause: parsed.error });
+        report(`model.response.schema.${purpose}`, error, {
+          status: response.status,
+          code: 'PROTOCOL',
+          content_type: response.headers.get('content-type'),
+          response_bytes: responseBytes,
+        });
+        throw error;
       }
       const output = parsed.data.choices[0]!.message.content;
       const usage = usageFrom(parsed.data.usage);
       let proposal: unknown;
       try { proposal = JSON.parse(output); }
-      catch {
+      catch (error) {
         capture({ httpStatus: response.status, isError: true, error: 'invalid_proposal_json', usage });
-        throw failure('PROTOCOL', 'model returned invalid proposal JSON');
+        report(`model.proposal.json.${purpose}`, error, {
+          status: response.status,
+          code: 'PROTOCOL',
+          content_type: response.headers.get('content-type'),
+          response_bytes: responseBytes,
+        });
+        throw failure('PROTOCOL', 'model returned invalid proposal JSON', { cause: error });
       }
       capture({ httpStatus: response.status, isError: false, usage });
       return proposal;

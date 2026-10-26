@@ -5,10 +5,16 @@ import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
-import { trackAiGeneration } from './telemetry.js';
+import { trackAiGeneration, trackException, redactDiagnosticValues } from './telemetry.js';
 import type { Output } from './output.js';
 
 export function createCliRuntime(dataDir: string, output?: Output): Runtime & { state: SqliteStateStore; waitForWake: (ms: number, signal: AbortSignal) => Promise<void> } {
+  const log: Runtime['log'] = event => {
+    if (output === undefined) return;
+    if (event.error !== undefined) trackException(output, event.error, event.fields);
+    else if (event.level === 'error') trackException(output, event.message, event.fields);
+    if (event.level === 'warn') output.recordWarning(typeof event.fields.code === 'string' ? event.fields.code : 'SDK_WARNING', event.message);
+  };
   const masterKey = loadOrCreateMasterKey(dataDir);
   const clock = { nowMs: () => Date.now(), sleep: (ms: number, signal: AbortSignal) => new Promise<void>((resolveSleep, reject) => {
     const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolveSleep(); }, ms);
@@ -20,6 +26,10 @@ export function createCliRuntime(dataDir: string, output?: Output): Runtime & { 
   const modelBaseUrl = process.env.LEARNING_MODEL_BASE_URL;
   const modelName = process.env.LEARNING_MODEL_NAME;
   const modelKey = process.env.LEARNING_MODEL_API_KEY;
+  if (output !== undefined && modelBaseUrl) {
+    redactDiagnosticValues(output, [modelBaseUrl]);
+    try { redactDiagnosticValues(output, [new URL(modelBaseUrl).href.replace(/\/$/, '')]); } catch { /* SDK validates the URL. */ }
+  }
   const model = modelBaseUrl && modelName && modelKey
     ? createCompatibleModelClient({
       baseUrl: modelBaseUrl,
@@ -27,6 +37,7 @@ export function createCliRuntime(dataDir: string, output?: Output): Runtime & { 
       apiKey: modelKey,
       aiSessionId: randomUUID(),
       captureAiGeneration: properties => { if (output !== undefined) trackAiGeneration(output, properties); },
+      log,
     })
     : null;
   const waitForWake = (ms: number, signal: AbortSignal) => new Promise<void>((resolveWait, reject) => {
@@ -45,10 +56,10 @@ export function createCliRuntime(dataDir: string, output?: Output): Runtime & { 
     artifacts: new NodeArtifactStore(resolve(dataDir, 'artifacts')),
     clock,
     masterKey,
-    heavy: new LocalHeavyRenderer(),
+    heavy: new LocalHeavyRenderer(undefined, log),
     model,
-    probeMediaDuration,
-    log: () => {},
+    probeMediaDuration: (url, options) => probeMediaDuration(url, options, log),
+    log,
     wake: async () => { for (const listener of [...wakeListeners]) listener(); },
     waitForWake,
   };

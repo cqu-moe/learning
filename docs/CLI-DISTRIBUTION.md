@@ -4,11 +4,11 @@
 
 ## 构建选择
 
-Bun 1.4.3 固定于 `.bun-version`，用 `build --compile --minify --bytecode --format=esm` 编译完整 CLI。明确关闭当前目录 dotenv/bunfig 自动加载。CLI 包版本是发行版本，root/SDK 的 0.1.0 不参与发行命名。
+Bun 1.4.3 固定于 `.bun-version`，通过 `Bun.build` API 使用等价的 `compile`、`minify: { whitespace: true }`、`bytecode`、`format: "esm"` 与 external sourcemap 编译完整 CLI；`scripts/bun-build-cli.mjs` 将 `@learning/sdk`、`/public`、`/node`、`/render-node` 四个 workspace export 精确解析到 `packages/sdk/src` 的原始 TS 输入，避免异常栈停在 SDK dist。不做 identifier/syntax 压缩，避免 Bun 1.4.3 把栈帧函数名或小型 cause 构造内联掉；内嵌 source map 随单文件程序携带，运行时崩溃可还原原始 TS 位置和函数名，构建产生的临时 `.map` 会被删除。明确关闭当前目录 dotenv/bunfig 自动加载；CLI 包版本是发行版本，root/SDK 的 0.1.0 不参与发行命名。
 
 Bun 内置运行时，用户无需安装 Node/Bun；比把当前含顶层 await 的 ESM 项目改为固定 Node 24 SEA 的 CommonJS 入口更直接。Deno 引入另一套兼容面，Rust/Go 重写成本不符合本轮小幅优化的范围。bytecode 是启动优化，不提供源码保密；程序与源码均公开可读。Release 直接提供以下程序，不再制作压缩包；不附源码、声明、source map、用户数据或密钥。
 
-官方独立程序必须默认开启匿名使用统计。五个原生目标构建时从 GitHub repository variable `POSTHOG_PROJECT_TOKEN` 读取公共 PostHog token，并用 Bun `--define process.env.LEARNING_BUNDLED_TELEMETRY_TOKEN=<token>` 写入二进制；token 不进入源码、lockfile 或附件。构建脚本会验证 token 格式，变量缺失或非法时直接失败，防止产出永久无法上报的正式包。运行时 `LEARNING_TELEMETRY_TOKEN` 或 `POSTHOG_PROJECT_TOKEN` 可覆盖该公共 token；不提供用户侧关闭开关，旧关闭偏好及 `LEARNING_TELEMETRY_DISABLED` / `DO_NOT_TRACK` 不再生效。开发、测试与 CI 环境自动隔离，上报故障不影响业务结果。
+官方独立程序必须默认开启匿名使用统计。五个原生目标构建时从 GitHub repository variable `POSTHOG_PROJECT_TOKEN` 读取公共 PostHog token，并通过 `Bun.build` 的 `define` 配置把 `process.env.LEARNING_BUNDLED_TELEMETRY_TOKEN` 替换为 JSON 字符串字面量写入二进制；token 不进入源码、lockfile 或附件。构建脚本会验证 token 格式，变量缺失或非法时直接失败，防止产出永久无法上报的正式包。运行时 `LEARNING_TELEMETRY_TOKEN` 或 `POSTHOG_PROJECT_TOKEN` 可覆盖该公共 token；不提供用户侧关闭开关，旧关闭偏好及 `LEARNING_TELEMETRY_DISABLED` / `DO_NOT_TRACK` 不再生效。开发、测试与 CI 环境自动隔离，上报故障不影响业务结果。
 
 | 目标 | 实际 CI runner | 程序文件 |
 | --- | --- | --- |
@@ -25,6 +25,7 @@ Bun 内置运行时，用户无需安装 Node/Bun；比把当前含顶层 await 
 - 原 Node lint、类型、SDK/CLI 单测、打包消费者 E2E 保留。
 - 每个 runner 用相同 Bun 参数编译测试探针，验证 SQLite 与 AES-GCM 的 Node/Bun 双向互读、冲突回滚、二维码、PDF、本机 HTTP/流/取消、WebSocket 收发与关闭；该探针不进入发布包。
 - 将实际发行程序单独复制到仓库外的中文/空格路径，按下载后的说明恢复 POSIX 执行权限，清空 PATH 后运行真正的 CLI，验证无 Node/Bun、随附文件时的启动、版本、doctor、中文/空格相对路径、初始化与密钥保留、账号隔离、进程锁、失败清理和 dotenv/bunfig 隔离。
+- 使用同一生产编译参数生成最小真实 TS 崩溃探针，并单独复制到仓库外清空 PATH 运行；断言外层与 `cause` 链的 `Error.stack` 均包含原始 `.ts` 行列和函数名，`uncaughtExceptionMonitor` 会被调用且不阻止默认 fatal exit，且没有伴行 source map。实际发行程序再用公共 fixture token 和仅回环 collector 复现损坏 `master.key` 的 `LearningError`，断言 JSON body 中恰好一条 `$exception`、SDK 原始 TS 帧非空，且属性不包含 token 或本机 home/run 路径；该验收不访问真实 PostHog。
 - 二进制验收读取 `telemetry status`：不得显示 token，必须确认公共 token 已嵌入；CI 环境同时断言自动禁用，因此测试不访问 PostHog，也不代表产出包永久禁用。需要真实发包验收时，父流程可在明确设置 `CI=0`、`LEARNING_TELEMETRY_IS_TEST=1` 的受控进程中发起不带课程参数的命令；事件会带 `is_test:true`，不得执行真实课程操作。
 - macOS/Linux 再做真实 PTY 交互、取消与锁释放；Windows 检查当前用户目录/密钥/数据库 ACL。Windows 原生终端交互不以 POSIX PTY 测试替代。
 - 发布前必须凑齐五个准确版本程序与独立 LICENSES.txt，逐个核对构建任务生成的 SHA256。缺目标、缺许可证、错误版本、多余压缩包或校验失败均拒绝发布。
@@ -51,6 +52,7 @@ pnpm install --frozen-lockfile
 pnpm build
 node scripts/test-bun-runtime.mjs
 node scripts/build-cli.mjs
+node scripts/test-error-diagnostics.mjs
 pnpm licenses list --prod --json > dist/licenses.json
 node scripts/package-licenses.mjs
 node scripts/test-distribution.mjs

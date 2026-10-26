@@ -1,10 +1,11 @@
 import { LearningError } from '../types/errors.js';
 import type { Clock, Transport } from '../runtime/types.js';
+import { reportError, safeEndpoint } from '../runtime/diagnostics.js';
+import type { DiagnosticLog } from '../runtime/diagnostics.js';
 import type { SessionCookieJar } from './cookies.js';
 import {
   canceledError,
   forbiddenHostError,
-  networkError,
   protocolError,
   rateLimitedError,
   timeoutError,
@@ -56,6 +57,13 @@ function stripIdentityHeaders(headers: Record<string, string>): Record<string, s
   return out;
 }
 
+function responseBytesOf(response: Response): number | null {
+  const header = response.headers.get('content-length');
+  if (header === null) return null;
+  const value = Number(header);
+  return Number.isFinite(value) ? value : null;
+}
+
 export interface HttpInput {
   kind: 'read' | 'write';
   method: string;
@@ -81,6 +89,7 @@ export interface SessionHttpOptions {
   clock: Clock;
   jar: SessionCookieJar;
   allowHosts: string[];
+  log?: DiagnosticLog;
 }
 
 /** Cookie-managing, allowlisted, manual-redirect HTTP client (SDK S03). */
@@ -89,18 +98,38 @@ export class SessionHttp {
   private readonly clock: Clock;
   private readonly jar: SessionCookieJar;
   private readonly allowHosts: string[];
+  private readonly log: DiagnosticLog | undefined;
 
   constructor(options: SessionHttpOptions) {
     this.transport = options.transport;
     this.clock = options.clock;
     this.jar = options.jar;
     this.allowHosts = options.allowHosts;
+    this.log = options.log;
+  }
+
+  private report(
+    stage: string,
+    error: unknown,
+    input: HttpInput,
+    url: URL,
+    attempt: number,
+    fields: Record<string, string | number | boolean | null> = {},
+  ): void {
+    reportError(this.log, stage, error, {
+      method: input.method,
+      endpoint: safeEndpoint(url.toString()),
+      attempt_id: attempt,
+      ...fields,
+    });
   }
 
   async request(input: HttpInput): Promise<HttpResult> {
     let url = new URL(input.url);
     if (!hostAllowed(url.hostname, this.allowHosts)) {
-      throw forbiddenHostError(url.hostname);
+      const error = forbiddenHostError(url.hostname);
+      this.report('http.request', error, input, url, 0, { code: error.data.code });
+      throw error;
     }
     let headers = { ...input.headers };
     const deadline = this.clock.nowMs() + (input.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -109,7 +138,11 @@ export class SessionHttp {
 
     for (;;) {
       if (input.signal?.aborted) throw canceledError();
-      if (this.clock.nowMs() > deadline) throw timeoutError();
+      if (this.clock.nowMs() > deadline) {
+        const error = timeoutError();
+        this.report('http.deadline', error, input, url, attempts, { code: error.data.code });
+        throw error;
+      }
       attempts += 1;
       const requestHeaders = new Headers(headers);
       const cookieHeader = await this.jar.cookiesFor(url);
@@ -130,9 +163,24 @@ export class SessionHttp {
         response = await this.transport.fetch(request);
       } catch (error) {
         if (input.signal?.aborted) throw canceledError();
-        if (error instanceof LearningError) throw error;
-        if (input.kind === 'write') throw uncertainError();
-        if (attempts >= TOTAL_READ_ATTEMPTS) throw networkError();
+        if (error instanceof LearningError) {
+          this.report(`http.transport.${input.kind}`, error, input, url, attempts, { code: error.data.code, recovered: false });
+          throw error;
+        }
+        const willRetry = input.kind === 'read' && attempts < TOTAL_READ_ATTEMPTS;
+        const failure = input.kind === 'write'
+          ? uncertainError({ cause: error })
+          : new LearningError({
+              code: 'NETWORK',
+              message: `network failure on attempt ${attempts}`,
+              retryAfterMs: null,
+              operationId: null,
+            }, { cause: error });
+        this.report(`http.transport.${input.kind}`, failure, input, url, attempts, {
+          code: failure.data.code,
+          recovered: willRetry,
+        });
+        if (!willRetry) throw failure;
         await this.wait(computeBackoffMs(attempts, null), input.signal);
         continue;
       }
@@ -143,14 +191,18 @@ export class SessionHttp {
 
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
-        if (location === null) return this.result(response, url);
+        if (location === null) return this.result(response, url, input);
         const next = new URL(location, url);
         hops += 1;
         if (hops > MAX_REDIRECT_HOPS) {
-          throw protocolError(`too many redirects (>${MAX_REDIRECT_HOPS})`);
+          const error = protocolError(`too many redirects (>${MAX_REDIRECT_HOPS})`);
+          this.report('http.redirect', error, input, next, attempts, { code: error.data.code });
+          throw error;
         }
         if (!hostAllowed(next.hostname, this.allowHosts) || isPrivateHost(next.hostname)) {
-          throw forbiddenHostError(next.hostname);
+          const error = forbiddenHostError(next.hostname);
+          this.report('http.redirect', error, input, next, attempts, { code: error.data.code });
+          throw error;
         }
         if (!sameOrigin(url, next)) headers = stripIdentityHeaders(headers);
         url = next;
@@ -161,19 +213,41 @@ export class SessionHttp {
       const retryAfterMs = parseRetryAfterMs(retryHeader, this.clock.nowMs());
       const retriable = input.kind === 'read' && attempts < TOTAL_READ_ATTEMPTS;
       if (retriable && (response.status === 429 || response.status >= 500)) {
+        const failure = response.status === 429
+          ? rateLimitedError(retryAfterMs)
+          : new LearningError({ code: 'PROTOCOL', message: `server error ${response.status} on attempt ${attempts}`, retryAfterMs: null, operationId: null });
+        this.report('http.response', failure, input, url, attempts, { status: response.status, code: failure.data.code, recovered: true });
         await this.wait(computeBackoffMs(attempts, retryAfterMs), input.signal);
         continue;
       }
-      if (response.status === 429) throw rateLimitedError(retryAfterMs);
+      if (response.status === 429) {
+        const failure = rateLimitedError(retryAfterMs);
+        this.report('http.response', failure, input, url, attempts, { status: response.status, code: failure.data.code, recovered: false });
+        throw failure;
+      }
       if (response.status >= 500) {
-        throw new LearningError({
+        const failure = new LearningError({
           code: 'PROTOCOL',
-          message: `server error ${response.status} after ${TOTAL_READ_ATTEMPTS} attempts`,
+          message: `server error ${response.status} on attempt ${attempts}`,
           retryAfterMs: null,
           operationId: null,
         });
+        this.report('http.response', failure, input, url, attempts, { status: response.status, code: failure.data.code, recovered: false });
+        throw failure;
       }
-      return this.result(response, url);
+      const expectedStatusProbe =
+        input.headers?.range !== undefined && response.status === 416 ||
+        response.status === 404 && url.pathname === '/api/v3/user/login/app-web-login' ||
+        (response.status === 401 || response.status === 403) && url.pathname === '/api/v1/lms/user/user-courses/';
+      if ((response.status < 200 || response.status >= 300) && !expectedStatusProbe) {
+        const failure = protocolError(`endpoint returned HTTP ${response.status}`);
+        this.report('http.response.status', failure, input, url, attempts, {
+          status: response.status,
+          code: failure.data.code,
+          recovered: false,
+        });
+      }
+      return this.result(response, url, input);
     }
   }
 
@@ -182,21 +256,43 @@ export class SessionHttp {
       await this.clock.sleep(ms, signal ?? new AbortController().signal);
     } catch (error) {
       if (signal?.aborted) throw canceledError();
+      reportError(this.log, 'http.backoff', error, { code: error instanceof LearningError ? error.data.code : null });
       throw error;
     }
   }
 
-  private result(response: Response, url: URL): HttpResult {
+  private result(response: Response, url: URL, input: HttpInput): HttpResult {
+    const reportBody = (stage: string, error: unknown, fields: Record<string, string | number | boolean | null> = {}): void => {
+      reportError(this.log, stage, error, {
+        method: input.method,
+        endpoint: safeEndpoint(url.toString()),
+        status: response.status,
+        content_type: response.headers.get('content-type'),
+        response_bytes: responseBytesOf(response),
+        ...fields,
+      });
+    };
     return {
       status: response.status,
       url: url.toString(),
       headers: response.headers,
-      json: () => response.json(),
-      text: () => response.text(),
+      json: async () => {
+        try { return await response.json(); }
+        catch (error) { reportBody('http.body.json', error); throw error; }
+      },
+      text: async () => {
+        try { return await response.text(); }
+        catch (error) { reportBody('http.body.text', error); throw error; }
+      },
       bytes: async (maxBytes) => {
-        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid binary size limit', retryAfterMs: null, operationId: null });
         const declared = Number(response.headers.get('content-length'));
-        if (Number.isFinite(declared) && declared > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+        const invalidLimit = new LearningError({ code: 'INVALID_INPUT', message: 'invalid binary size limit', retryAfterMs: null, operationId: null });
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) { reportBody('http.body.bytes', invalidLimit, { code: invalidLimit.data.code }); throw invalidLimit; }
+        if (Number.isFinite(declared) && declared > maxBytes) {
+          const overBudget = new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+          reportBody('http.body.bytes', overBudget, { code: overBudget.data.code });
+          throw overBudget;
+        }
         if (response.body === null) return new Uint8Array();
         const reader = response.body.getReader();
         const chunks: Uint8Array[] = [];
@@ -206,9 +302,16 @@ export class SessionHttp {
             const { done, value } = await reader.read();
             if (done) break;
             total += value.byteLength;
-            if (total > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+            if (total > maxBytes) {
+              const overBudget = new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+              reportBody('http.body.bytes', overBudget, { code: overBudget.data.code, response_bytes: total });
+              throw overBudget;
+            }
             chunks.push(value);
           }
+        } catch (error) {
+          if (!(error instanceof LearningError && error.data.code === 'BUDGET')) reportBody('http.body.bytes', error, { response_bytes: total });
+          throw error;
         } finally { await reader.cancel().catch(() => {}); }
         const out = new Uint8Array(total);
         let offset = 0;
@@ -216,15 +319,24 @@ export class SessionHttp {
         return out;
       },
       stream: (maxBytes) => {
-        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid binary size limit', retryAfterMs: null, operationId: null });
+        const invalidLimit = new LearningError({ code: 'INVALID_INPUT', message: 'invalid binary size limit', retryAfterMs: null, operationId: null });
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) { reportBody('http.body.stream', invalidLimit, { code: invalidLimit.data.code }); throw invalidLimit; }
         const declared = Number(response.headers.get('content-length'));
-        if (Number.isFinite(declared) && declared > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+        if (Number.isFinite(declared) && declared > maxBytes) {
+          const overBudget = new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+          reportBody('http.body.stream', overBudget, { code: overBudget.data.code });
+          throw overBudget;
+        }
         let total = 0;
         const source = response.body ?? new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
         return source.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
           transform(chunk, controller) {
             total += chunk.byteLength;
-            if (total > maxBytes) throw new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+            if (total > maxBytes) {
+              const overBudget = new LearningError({ code: 'BUDGET', message: 'binary response exceeds size limit', retryAfterMs: null, operationId: null });
+              reportBody('http.body.stream', overBudget, { code: overBudget.data.code, response_bytes: total });
+              throw overBudget;
+            }
             controller.enqueue(chunk);
           },
         }));

@@ -6,6 +6,7 @@ import { createSessionHttp, SessionCookieJar, hostAllowed, isPrivateHost } from 
 import { computeBackoffMs, parseRetryAfterMs } from '../src/http/retry.js';
 import { FakeClock, FakeTransport } from './helpers/replay.js';
 import type { Fixture } from './helpers/replay.js';
+import type { Runtime } from '../src/runtime/types.js';
 
 const testsDir = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const allowHosts = ['yuketang.cn', 'xuetangx.com'];
@@ -154,6 +155,69 @@ describe('session http client', () => {
       http.request({ kind: 'write', method: 'POST', url: 'https://www.yuketang.cn/api/save', body: '{"a":1}' }),
     ).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
     expect(transport.requests).toHaveLength(1);
+  });
+
+  it('reports each transport failure before retry-safe conversion without URL secrets', async () => {
+    const transport = new FakeTransport();
+    const cause = new Error('connection reset');
+    transport.failNext(cause);
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const http = createSessionHttp({
+      transport,
+      clock: new FakeClock(),
+      jar: new SessionCookieJar(),
+      allowHosts,
+      log: event => events.push(event),
+    });
+
+    const error = await http.request({
+      kind: 'write',
+      method: 'POST',
+      url: 'https://www.yuketang.cn/api/save?ticket=SECRET',
+      body: '{"answer":"SECRET"}',
+    }).catch((caught: unknown) => caught as Error);
+
+    expect(error).toMatchObject({ data: { code: 'UNCERTAIN' } });
+    expect((error as Error).cause).toBe(cause);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error,
+      fields: {
+        stage: 'http.transport.write',
+        method: 'POST',
+        endpoint: 'https://www.yuketang.cn/api/save',
+        attempt_id: 1,
+        code: 'UNCERTAIN',
+        recovered: false,
+      },
+    });
+    expect((events[0]?.error as Error).cause).toBe(cause);
+    expect(JSON.stringify(events[0]?.fields)).not.toContain('SECRET');
+  });
+
+  it('treats caller cancellation as a normal branch, not a diagnostics error', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const transport = new FakeTransport();
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const http = createSessionHttp({
+      transport,
+      clock: new FakeClock(),
+      jar: new SessionCookieJar(),
+      allowHosts,
+      log: event => events.push(event),
+    });
+
+    await expect(http.request({
+      kind: 'read',
+      method: 'GET',
+      url: 'https://www.yuketang.cn/api/read',
+      signal: controller.signal,
+    })).rejects.toMatchObject({ data: { code: 'CANCELED' } });
+    expect(transport.requests).toHaveLength(0);
+    expect(events).toEqual([]);
   });
 
   it('read abort terminates immediately with CANCELED (A042)', async () => {

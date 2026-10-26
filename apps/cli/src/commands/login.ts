@@ -9,7 +9,7 @@ import { lstatSync, readFileSync, unlinkSync, openSync, closeSync, fstatSync, ft
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
-import { trackWorkflowEvent } from '../telemetry.js';
+import { trackWorkflowEvent, trackException } from '../telemetry.js';
 
 function readCookieFile(path: string): string {
   const stat = lstatSync(path);
@@ -18,8 +18,8 @@ function readCookieFile(path: string): string {
   }
   const text = readFileSync(path, 'utf8');
   let parsed: unknown;
-  try { parsed = JSON.parse(text); } catch {
-    throw new LearningError({ code: 'INVALID_INPUT', message: 'cookie import is not JSON', retryAfterMs: null, operationId: null });
+  try { parsed = JSON.parse(text); } catch (error) {
+    throw new LearningError({ code: 'INVALID_INPUT', message: 'cookie import is not JSON', retryAfterMs: null, operationId: null }, { cause: error });
   }
   if (!Array.isArray(parsed) || parsed.some((item) => item === null || typeof item !== 'object' ||
     typeof item.name !== 'string' || typeof item.value !== 'string' || typeof item.domain !== 'string' ||
@@ -40,7 +40,7 @@ export async function loginWithQr(client: LearningClient, output: Output, dataDi
     if (options.variant === 'native' && client.scope.platform !== 'zhs') throw new CliError('INVALID_INPUT', 'native 二维码仅用于智慧树。');
     const openQr = (path: string) => {
       try { descriptor = openSync(path, 'wx', 0o600); qrPath = path; }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new CliError('CONFLICT', '二维码文件已存在，请指定一个新路径。', 3); throw error; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new CliError('CONFLICT', '二维码文件已存在，请指定一个新路径。', 3, [], [], null, { cause: error }); throw error; }
     };
     if (options.qrFile !== undefined) openQr(resolve(options.qrFile));
     const flow = await client.auth.begin({ method: 'qr', variant: options.variant as 'default' | 'native' });
@@ -61,7 +61,8 @@ export async function loginWithQr(client: LearningClient, output: Output, dataDi
               terminal = event.qr.type === 'text'
                 ? renderer.renderTextQrTerminal(event.qr.value)
                 : renderer.renderImageQrTerminal(Buffer.from(event.qr.base64, 'base64'));
-            } catch {
+            } catch (error) {
+              trackException(output, error, { stage: 'login.qr.render', recovered: true });
               terminal = null;
             }
           }
@@ -99,7 +100,7 @@ export async function loginWithQr(client: LearningClient, output: Output, dataDi
       closeSync(descriptor);
       if (qrPath !== null) {
         try { const current = lstatSync(qrPath); if (current.ino === owned.ino && current.dev === owned.dev) unlinkSync(qrPath); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') await output.warning('QR_CLEANUP', `二维码文件无法清理，请手动检查：${qrPath}`); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { trackException(output, error, { stage: 'login.qr.cleanup' }); await output.warning('QR_CLEANUP', `二维码文件无法清理，请手动检查：${qrPath}`); } }
       }
     }
   }

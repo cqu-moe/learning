@@ -4,6 +4,8 @@ import type { Scope } from '../../types/refs.js';
 import { LearningError } from '../../types/errors.js';
 import { composePdfFromImages } from '../../content/pdf.js';
 import { safeFilename } from '../../services/exports.js';
+import { isCancellation, reportError } from '../diagnostics.js';
+import type { DiagnosticLog } from '../diagnostics.js';
 
 const MAX_INPUT_BYTES = 256 * 1024 * 1024;
 const MAX_PAGE_PIXELS = 40_000_000;
@@ -16,7 +18,14 @@ function problem(code: 'BUDGET' | 'INTEGRITY' | 'CANCELED' | 'CONFLICT' | 'MISSI
   return new LearningError({ code, message, retryAfterMs: null, operationId: null });
 }
 
-async function readBounded(store: ArtifactStore, id: string, remaining: number, signal: AbortSignal): Promise<Uint8Array> {
+async function readBounded(
+  store: ArtifactStore,
+  id: string,
+  remaining: number,
+  signal: AbortSignal,
+  attempt: number,
+  log: DiagnosticLog | undefined,
+): Promise<Uint8Array> {
   const reader = (await store.open(id, { signal })).getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
@@ -29,7 +38,11 @@ async function readBounded(store: ArtifactStore, id: string, remaining: number, 
       if (length > remaining) throw problem('BUDGET', 'PDF input exceeds 256 MiB');
       chunks.push(value);
     }
-  } finally { await reader.cancel().catch(() => {}); }
+  } finally {
+    await reader.cancel().catch((cleanup: unknown) => {
+      reportError(log, 'render.read.cleanup', cleanup, { attempt_id: attempt });
+    });
+  }
   return Buffer.concat(chunks, length);
 }
 
@@ -46,7 +59,10 @@ function checkPng(image: Uint8Array): void {
 /** Bounded, local PDF renderer. Font and legacy browser paths fail explicitly until inputs exist. */
 export class LocalHeavyRenderer implements HeavyRenderer {
   private readonly tasks = new Map<string, Task>();
-  constructor(private readonly deps?: { artifacts: ArtifactStore; scope: Scope }) {}
+  constructor(
+    private readonly deps?: { artifacts: ArtifactStore; scope: Scope },
+    private readonly log?: DiagnosticLog,
+  ) {}
 
   async start(input: { taskId: string; attempt: number; request: RenderInput; deadlineAtMs: number }, options?: Options): Promise<void> {
     const key = `${input.taskId}:${input.attempt}`;
@@ -71,7 +87,7 @@ export class LocalHeavyRenderer implements HeavyRenderer {
       const images: Uint8Array[] = [];
       let total = 0;
       for (const id of ids) {
-        const image = await readBounded(this.deps.artifacts, id, MAX_INPUT_BYTES - total, task.controller.signal);
+        const image = await readBounded(this.deps.artifacts, id, MAX_INPUT_BYTES - total, task.controller.signal, input.attempt, this.log);
         checkPng(image);
         total += image.byteLength;
         images.push(image);
@@ -88,7 +104,11 @@ export class LocalHeavyRenderer implements HeavyRenderer {
         await writer.write(composed.pdfBytes);
         if (task.canceled || task.controller.signal.aborted) throw problem('CANCELED', 'render canceled');
         written = await writer.finish();
-      } catch (error) { await writer.abort(); throw error; }
+      } catch (error) {
+        if (!isCancellation(error, task.controller.signal)) reportError(this.log, 'render.write', error, { attempt_id: input.attempt });
+        await writer.abort();
+        throw error;
+      }
       if (task.canceled || task.controller.signal.aborted) { await this.deps.artifacts.remove(artifactId); return; }
       task.state = { status: 'succeeded', result: { type: 'pdf.compose', artifact: {
         id: artifactId,
@@ -97,6 +117,11 @@ export class LocalHeavyRenderer implements HeavyRenderer {
         mimeType: 'application/pdf', bytes: written.bytes, sha256: written.sha256, createdAtMs: Date.now(),
       } } };
     } catch (error) {
+      if (!isCancellation(error, task.controller.signal)) {
+        reportError(this.log, `render.task.${input.request.type}`, error, {
+          attempt_id: input.attempt,
+        });
+      }
       if (!task.canceled) task.state = { status: 'failed', error: error instanceof LearningError ? error.data : {
         code: 'INTEGRITY', message: error instanceof Error ? error.message : 'render failed', retryAfterMs: null, operationId: null,
       } };

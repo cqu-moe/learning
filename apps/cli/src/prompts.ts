@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { CliError, cleanText, getOutput, pauseProgress, commandSignal, errorInfo, beginPrompt, endPrompt } from './output.js';
 import type { OutputMode } from './output.js';
 import type { Command } from 'commander';
+import { trackException } from './telemetry.js';
 
 export type Choice = { value: string; label: string; hint?: string };
 export type PromptField = { name: string; message: string; options?: Choice[]; initialValue?: string; multiple?: boolean; confirm?: boolean; validate?: (value: unknown) => string | undefined };
@@ -140,7 +141,7 @@ export function installInputCompletion(program: Command): void {
           for (;;) {
             const value = await prompts.ask(field, signal);
             try { await inferTargetScope(program, field.name, value, command.parent?.name() === 'discuss'); return value; }
-            catch (error) { const info = errorInfo(error); if (info.exitCode !== 2) throw error; await output.message(`${info.error.message} 请重新输入。`, true); }
+            catch (error) { const info = errorInfo(error); if (info.exitCode !== 2) throw error; trackException(output, error, { stage: 'prompt.validate', recovered: true }); await output.message(`${info.error.message} 请重新输入。`, true); }
           }
         }
         if (field.name === 'resource') {

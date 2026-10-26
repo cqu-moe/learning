@@ -46,7 +46,7 @@ learning telemetry status
 
 任务默认在当前终端运行，Ctrl+C 请求暂停并释放本机写锁。响应丢失造成的 `uncertain` 任务不能直接 resume；先用 `jobs reconcile <job-id>` 只读核对。确认原 PID 已退出后才可 `profile unlock` 清理遗留锁。升级前备份整个 `LEARNING_HOME`，尤其是 `master.key`、SQLite 状态库和 `artifacts`。
 
-匿名使用统计默认开启，首次提示只写入 stderr；`telemetry status` 查看状态，`LEARNING_HOME/telemetry.json` 只保留安装标识与提示时间，不提供关闭功能。命令遥测与任务遥测分开：命令使用静态命令路径和一次进程结果，任务使用稳定 `job.id` 作为 `operation_id`，每次前台恢复/重试另用随机 `attempt_id`，起止事件成对关联且未确认的任务状态不伪造终态。允许字段限于平台、系统/运行时、版本、资源计数、警告码和结果；不采集参数、课程/资源标题、账号身份、路径、终端输出、异常原文或 SDK JobEvent 原文。新增业务事件与 `$ai_generation` 共用该匿名身份和批量通道；AI 只发送模型、耗时、用量与结果，不发送提示词、回答和模型 URL。发送失败不影响业务输出和退出码。
+匿名使用统计及脱敏错误诊断默认开启，首次提示只写入 stderr；`telemetry status` 查看状态，`LEARNING_HOME/telemetry.json` 只保留安装标识与提示时间，不提供关闭功能。命令使用静态命令路径和一次进程结果；任务使用稳定 `job.id` 作为 `operation_id`，每次前台恢复/重试另用随机 `attempt_id`，未确认的任务状态不伪造终态。统计字段限于平台、系统/运行时、版本、资源计数、警告码和结果；错误事件另外保留真实类型、脱敏限长消息、堆栈与 cause，以及出错阶段、HTTP 状态、响应大小和结构校验位置。命令失败、恢复/重试、任务子项和进程未捕获异常均记录，同一异常传播去重，主动取消不算故障。凭据、已知账号/参数值、URL 查询及本机路径会脱敏；不上传完整请求/响应正文、题目答案、终端输出或 SDK JobEvent 原文。业务事件与 `$ai_generation` 共用匿名身份和批量通道；AI 只发送模型、耗时、用量与结果，不发送提示词、回答和模型 URL。错误先在 `diagnostic-outbox` 限量暂存，成功接收后删除，失败后补传；具体容量和保留期限见 INSTALL。发送失败不影响业务结果或退出码。
 
 | 事件 | 字段 |
 | --- | --- |
@@ -54,6 +54,7 @@ learning telemetry status
 | `cli_command_completed` | 共同字段 + 同一 `operation_id`、`outcome`、`exit_code`、`error_code`、`duration_ms`、`duration_basis=cli_process` |
 | `learning_job_started` | 共同字段 + 逻辑任务 `operation_id=job_id=job.id`、本次 `attempt_id`、`platform`、`job_kind`、`total_count`、`duration_basis=foreground_attempt` |
 | `learning_job_completed` | 共同字段 + 同一 `operation_id` / `attempt_id`、`platform`、`job_kind`、`job_id`、`outcome`、资源与 artifact 计数、最多 8 个 `warning_codes`、`duration_ms`、`duration_basis=foreground_attempt` |
+| `$exception` | 共同字段 + 命令 `operation_id`、可用的 `job_id` / `attempt_id`、`error_code`、真实 `$exception_list`、fingerprint、诊断与阶段上下文；无原始堆栈时明确标记缺失 |
 
 共同字段为 `telemetry_version=2`、`product=learning`、`surface=cli`、`environment=production|development|test`、`release` / `cli_version`、`actor_type=installation`、`trigger=user`、`operation`、`is_test`、`runtime=node|bun`、`runtime_version`、`os`、`arch`。命令 `outcome` 是 `success|failure|partial|canceled|needs_input|unverified`；任务 `outcome` 同枚举，其中 warning `SKIPPED_UNKNOWN_DURATION` 导致的成功按 `partial`，`uncertain` 按 `unverified`，Ctrl+C 暂停按 `canceled`。逻辑任务按 `operation_id` 去重，恢复/重试按 `attempt_id` 分开；开始后没有权威终态不补发完成事件。
 

@@ -39,6 +39,72 @@ describe('pdf compose (T24)', () => {
 });
 
 describe('local heavy renderer (T24)', () => {
+  it('reports both a failed PDF write and a failing cleanup', async () => {
+    const primary = new Error('PDF write failed');
+    const cleanup = new Error('PDF cleanup failed');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const unexpected = async (): Promise<never> => { throw new Error('unexpected artifact operation'); };
+    const errors: unknown[] = [];
+    const renderer = new LocalHeavyRenderer({
+      artifacts: {
+        create: async () => ({ write: async () => { throw primary; }, finish: unexpected, checkpoint: unexpected, abort: async () => { throw cleanup; } }),
+        open: async () => new ReadableStream({ start(controller) { controller.enqueue(png); controller.close(); } }),
+        resume: unexpected,
+        remove: unexpected,
+      },
+      scope: { userId: 'local', profileId: 'fixture', platform: 'ykt' },
+    }, event => errors.push(event.error));
+    await renderer.start({ taskId: 'dual-failure', attempt: 1, request: { type: 'pdf.compose', imageArtifactIds: ['page'], title: 'fixture' }, deadlineAtMs: Date.now() + 60_000 });
+    expect(errors).toEqual([primary, cleanup]);
+    expect(await renderer.status('dual-failure', 1)).toMatchObject({ status: 'failed' });
+  });
+
+  it('reports a failed reader cleanup while preserving the primary read failure', async () => {
+    const primary = new DOMException('artifact read timed out', 'AbortError');
+    const cleanup = new Error('reader cancel failed');
+    const events: Array<Record<string, unknown>> = [];
+    const failingReader = {
+      read: () => Promise.reject(primary),
+      cancel: () => Promise.reject(cleanup),
+    };
+    const renderer = new LocalHeavyRenderer({
+      artifacts: {
+        open: async () => ({ getReader: () => failingReader }) as unknown as ReadableStream<Uint8Array>,
+        create: async () => { throw new Error('unexpected artifact operation'); },
+        resume: async () => { throw new Error('unexpected artifact operation'); },
+        remove: async () => {},
+      },
+      scope: { userId: 'local', profileId: 'fixture', platform: 'ykt' },
+    }, event => events.push(event));
+
+    await renderer.start({
+      taskId: 'read-cleanup',
+      attempt: 2,
+      request: { type: 'pdf.compose', imageArtifactIds: ['page'], title: 'fixture' },
+      deadlineAtMs: Date.now() + 60_000,
+    });
+
+    expect(events).toHaveLength(2);
+    expect(events).toEqual(expect.arrayContaining([
+      {
+        level: 'error',
+        message: 'Learning SDK operation failed',
+        error: primary,
+        fields: { stage: 'render.task.pdf.compose', attempt_id: 2 },
+      },
+      {
+        level: 'error',
+        message: 'Learning SDK operation failed',
+        error: cleanup,
+        fields: { stage: 'render.read.cleanup', attempt_id: 2 },
+      },
+    ]));
+    expect(await renderer.status('read-cleanup', 2)).toMatchObject({
+      status: 'failed',
+      error: { code: 'INTEGRITY' },
+    });
+  });
+
   it('never claims font decoding succeeded without the reference corpus', async () => {
     const renderer = new LocalHeavyRenderer();
     await renderer.start({ taskId: 't1', attempt: 1, request: { type: 'font.decode', fontArtifactId: 'f', characters: ['甲'] }, deadlineAtMs: Date.now() + 60_000 });
@@ -72,5 +138,35 @@ describe('local heavy renderer (T24)', () => {
       await expect(renderer.start({ taskId: 'pdf1', attempt: 1, request: { ...request, title: 'changed' }, deadlineAtMs: Date.now() + 60_000 })).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
       expect((await renderer.status('pdf1', 1)).status).toBe('succeeded');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('reports renderer failures before storing safe RenderState error data', async () => {
+    const cause = new Error('artifact disk unavailable');
+    const events: unknown[] = [];
+    const renderer = new LocalHeavyRenderer({
+      artifacts: {
+        create: async () => { throw cause; },
+        resume: async () => { throw cause; },
+        open: async () => { throw cause; },
+        remove: async () => {},
+      },
+      scope: { userId: 'local', profileId: 'p1', platform: 'ykt' },
+    }, event => events.push(event));
+
+    await renderer.start({
+      taskId: 'render-diagnostic',
+      attempt: 1,
+      request: { type: 'pdf.compose', imageArtifactIds: ['missing'], title: 'lesson' },
+      deadlineAtMs: Date.now() + 60_000,
+    });
+    const state = await renderer.status('render-diagnostic', 1);
+
+    expect(state).toMatchObject({ status: 'failed', error: { code: 'INTEGRITY' } });
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: { stage: 'render.task.pdf.compose', attempt_id: 1 },
+    }]);
   });
 });

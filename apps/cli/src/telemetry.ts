@@ -1,19 +1,21 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, closeSync, existsSync, openSync, readFileSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { ensureDataDir } from './data-dir.js';
-import { errorInfo, type Output } from './output.js';
-import { ErrorCodeSchema, JobStatusSchema, type Job, type Json } from '@learning/sdk/public';
+import { CliError, errorInfo, type Output } from './output.js';
+import { ErrorCodeSchema, JobStatusSchema, LearningError, type Job, type Json } from '@learning/sdk/public';
 import { ModelLabelSchema } from '@learning/sdk/node';
 import pkg from '../package.json' with { type: 'json' };
+import { buildException } from './exception.js';
+import { DiagnosticOutbox } from './diagnostic-outbox.js';
 
 const POSTHOG_HOST = 'https://p.cqu.moe';
 const BACKGROUND_REQUEST_TIMEOUT_MS = 500;
 const FINISH_TIMEOUT_MS = 750;
 const FLUSH_DELAY_MS = 100;
 const MAX_EVENTS = 16;
-const MAX_BODY_BYTES = 16 * 1024;
+const MAX_BODY_BYTES = 64 * 1024;
 const STATE_VERSION = 1;
 const CommandErrorCodeSchema = ErrorCodeSchema.or(z.literal('CONFIRMATION_REQUIRED'));
 
@@ -49,10 +51,16 @@ interface TelemetryController {
   token: string | null;
   endpoint: URL;
   events: TelemetryEvent[];
-  jobAttempts: Map<string, { attemptId: string; startedAtMs: number; completed: boolean }>;
+  jobAttempts: Map<string, { attemptId: string; startedAtMs: number; completed: boolean; platform: Job['scope']['platform'] }>;
   flushTail: Promise<void>;
   transportAbort: AbortController | null;
   flushTimer: ReturnType<typeof setTimeout> | null;
+  outbox: DiagnosticOutbox | null;
+  seenErrors: WeakMap<object, Set<string>>;
+  attempted: Set<string>;
+  retryAfter: number;
+  redactions: Set<string>;
+  diagnosticWarnings: Set<string>;
 }
 
 const controllers = new WeakMap<Output, TelemetryController>();
@@ -163,10 +171,20 @@ function loadOrCreateState(dataDir: string): { state: TelemetryState; created: b
 
 function writeFirstNotice(): void {
   try {
-    process.stderr.write('learning 会发送匿名使用统计帮助改进 CLI，不采集账号、课程正文或 AI 对话内容。\n');
+    process.stderr.write('learning 会发送匿名使用统计及脱敏错误诊断（含堆栈），不采集凭据、课程正文或 AI 对话内容。\n');
   } catch {
     // The notice is best-effort and must never affect command output or exit status.
   }
+}
+
+function diagnosticWarning(controller: TelemetryController, code: string, message: string): void {
+  if (controller.diagnosticWarnings.has(code)) return;
+  controller.diagnosticWarnings.add(code);
+  try { process.stderr.write(`learning [${code}] ${message}\n`); } catch { /* Keep the original result. */ }
+}
+
+function reportDropped(controller: TelemetryController): void {
+  if ((controller.outbox?.droppedCount ?? 0) > 0) diagnosticWarning(controller, 'DIAGNOSTICS_DROPPED', `部分诊断暂存已因保留期限、容量限制或损坏而清理（当前 ${controller.outbox!.droppedCount} 条）。`);
 }
 
 function baseProperties(controller: TelemetryController, operation: string): Record<string, TelemetryPropertyValue> {
@@ -193,14 +211,21 @@ function queueEvent(
   properties: Record<string, TelemetryPropertyValue>,
   timestamp = new Date(),
 ): void {
-  if (controller.events.length >= MAX_EVENTS) return;
-  controller.events.push({
+  const queued = {
     uuid: randomUUID(),
     event,
     distinct_id: `cli:${controller.state.installationId}`,
     timestamp: timestamp.toISOString(),
     properties,
-  });
+  };
+  let persisted = false;
+  if (event === '$exception') {
+    try { if (controller.outbox !== null) { controller.outbox.add(queued); persisted = true; } }
+    catch { diagnosticWarning(controller, 'DIAGNOSTICS_STORAGE', '诊断暂存失败，本次将尝试直接发送。'); }
+    reportDropped(controller);
+  }
+  if (controller.events.length < MAX_EVENTS || event === '$exception' && !persisted && controller.events.length < 256) controller.events.push(queued);
+  else if (event === '$exception' && !persisted) diagnosticWarning(controller, 'DIAGNOSTICS_DROPPED', '诊断暂存不可用且内存队列已满，一条错误诊断未能保留。');
   scheduleFlush(controller);
 }
 
@@ -216,9 +241,9 @@ function takeBatch(controller: TelemetryController): TelemetryEvent[] {
   return batch;
 }
 
-async function sendBatch(controller: TelemetryController, batch: TelemetryEvent[], deadline: number): Promise<void> {
+async function sendBatch(controller: TelemetryController, batch: TelemetryEvent[], deadline: number): Promise<boolean> {
   const payload = JSON.stringify({ api_key: controller.token, batch });
-  if (Buffer.byteLength(payload, 'utf8') > MAX_BODY_BYTES) return;
+  if (Buffer.byteLength(payload, 'utf8') > MAX_BODY_BYTES) return false;
 
   const timeout = new AbortController();
   controller.transportAbort = timeout;
@@ -232,8 +257,9 @@ async function sendBatch(controller: TelemetryController, batch: TelemetryEvent[
       signal: timeout.signal,
     }));
     if (response.body !== null) await response.body.cancel().catch(() => {});
+    return response.ok;
   } catch {
-    // Delivery is single-shot and best-effort, including background start events.
+    return false;
   } finally {
     clearTimeout(timer);
     if (controller.transportAbort === timeout) controller.transportAbort = null;
@@ -241,9 +267,32 @@ async function sendBatch(controller: TelemetryController, batch: TelemetryEvent[
 }
 
 async function flushQueued(controller: TelemetryController, deadline: number): Promise<void> {
-  while (controller.enabled && controller.token !== null && controller.events.length > 0 && Date.now() < deadline) {
-    await sendBatch(controller, takeBatch(controller), deadline);
+  while (controller.enabled && controller.token !== null && Date.now() < deadline && Date.now() >= controller.retryAfter) {
+    try {
+      const queued = new Set(controller.events.map(event => event.uuid));
+      for (const event of controller.outbox?.pending(256) ?? []) {
+        if (controller.events.length >= MAX_EVENTS) break;
+        if (!queued.has(event.uuid) && !controller.attempted.has(event.uuid)) controller.events.push(event);
+      }
+      reportDropped(controller);
+    } catch { diagnosticWarning(controller, 'DIAGNOSTICS_STORAGE', '无法读取诊断暂存，其他操作继续。'); }
+    if (controller.events.length === 0) break;
+    const batch = takeBatch(controller);
+    for (const event of batch) if (event.event === '$exception') controller.attempted.add(event.uuid);
+    if (!await sendBatch(controller, batch, deadline)) {
+      for (const event of batch) controller.attempted.delete(event.uuid);
+      controller.retryAfter = Date.now() + 60_000;
+      scheduleFlush(controller);
+      break;
+    }
+    for (const event of batch) if (event.event === '$exception') {
+      try { controller.outbox?.acknowledge(event.uuid); controller.attempted.delete(event.uuid); }
+      catch { diagnosticWarning(controller, 'DIAGNOSTICS_STORAGE', '诊断已发送，但暂存清理失败，后续可能按同一事件 ID 重传。'); }
+    }
   }
+  try {
+    if (controller.events.length > 0 || controller.outbox?.pending(256).some(event => !controller.attempted.has(event.uuid))) scheduleFlush(controller);
+  } catch { diagnosticWarning(controller, 'DIAGNOSTICS_STORAGE', '无法读取诊断暂存，其他操作继续。'); }
 }
 
 function flush(controller: TelemetryController, timeoutMs: number): Promise<void> {
@@ -259,7 +308,7 @@ function scheduleFlush(controller: TelemetryController): void {
   controller.flushTimer = setTimeout(() => {
     controller.flushTimer = null;
     void flush(controller, BACKGROUND_REQUEST_TIMEOUT_MS).catch(() => {});
-  }, FLUSH_DELAY_MS);
+  }, Math.max(FLUSH_DELAY_MS, controller.retryAfter - Date.now()));
   controller.flushTimer.unref();
 }
 
@@ -286,6 +335,9 @@ export async function startTelemetry(output: Output, dataDir: string, command: s
 
   const loaded = loadOrCreateState(dataDir);
   if (loaded === null) return;
+  let outbox: DiagnosticOutbox | null = null;
+  try { if (token !== null) outbox = new DiagnosticOutbox(dataDir, `${endpoint.href}:${token}`); }
+  catch { output.recordWarning('DIAGNOSTICS_STORAGE', '无法建立诊断暂存，本次将尝试直接发送。'); }
   const controller: TelemetryController = {
     state: loaded.state,
     command,
@@ -300,6 +352,12 @@ export async function startTelemetry(output: Output, dataDir: string, command: s
     flushTail: Promise.resolve(),
     transportAbort: null,
     flushTimer: null,
+    outbox,
+    seenErrors: new WeakMap(),
+    attempted: new Set(),
+    retryAfter: 0,
+    redactions: new Set(),
+    diagnosticWarnings: new Set(),
   };
   controllers.set(output, controller);
   if (loaded.created) writeFirstNotice();
@@ -373,7 +431,7 @@ export function trackJobStarted(output: Output, job: Job, options: { newAttempt?
   if (controller === undefined || !controller.enabled) return;
   const existing = controller.jobAttempts.get(job.id);
   if (existing !== undefined && (!existing.completed || !options.newAttempt)) return;
-  const attempt = { attemptId: randomUUID(), startedAtMs: Date.now(), completed: false };
+  const attempt = { attemptId: randomUUID(), startedAtMs: Date.now(), completed: false, platform: job.scope.platform };
   controller.jobAttempts.set(job.id, attempt);
   queueEvent(controller, 'learning_job_started', {
     ...baseProperties(controller, job.kind),
@@ -434,7 +492,6 @@ export function trackJobCompleted(output: Output, job: Job, options: { canceled?
 
 export async function finishTelemetry(output: Output, error?: unknown): Promise<void> {
   const controller = controllers.get(output);
-  controllers.delete(output);
   if (controller === undefined || !controller.enabled) return;
 
   const info = error === undefined ? null : errorInfo(error);
@@ -449,18 +506,10 @@ export async function finishTelemetry(output: Output, error?: unknown): Promise<
     duration_ms: Math.max(0, Date.now() - controller.startedAtMs),
     duration_basis: 'cli_process',
   };
+  if (controller.outbox?.droppedCount) properties.diagnostic_dropped_count = controller.outbox.droppedCount;
   queueEvent(controller, 'cli_command_completed', properties);
-  // Classify handled failures without forwarding exception text or machine paths.
-  if (info?.exitCode === 1 && errorCode !== null && !output.signal.aborted) {
-    queueEvent(controller, '$exception', {
-      ...baseProperties(controller, controller.command),
-      operation_id: controller.commandOperationId,
-      error_code: errorCode,
-      $exception_level: 'error',
-      $exception_fingerprint: `learning:cli:${safeOperation(controller.command)}:${errorCode}`,
-      $exception_list: [{ type: 'LearningCliError', value: errorCode, mechanism: { handled: true, synthetic: true } }],
-    });
-  }
+  if (error !== undefined) trackException(output, error, { stage: 'command' });
+  controllers.delete(output);
   cancelScheduledFlush(controller);
   if (controller.token === null) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -469,9 +518,57 @@ export async function finishTelemetry(output: Output, error?: unknown): Promise<
     new Promise<void>(resolve => { timer = setTimeout(resolve, FINISH_TIMEOUT_MS); }),
   ]);
   clearTimeout(timer);
+  cancelScheduledFlush(controller);
   controller.enabled = false;
   controller.events.length = 0;
   controller.transportAbort?.abort();
+}
+
+export function trackException(output: Output, error: unknown, context: Record<string, string | number | boolean | null> = {}, handled = true): void {
+  const controller = controllers.get(output);
+  if (controller === undefined || !controller.enabled) return;
+  try {
+    const info = errorInfo(error);
+    const explicitlyCanceled = error instanceof CliError && error.code === 'CANCELED' || error instanceof LearningError && error.data.code === 'CANCELED';
+    if (explicitlyCanceled || handled && output.signal.aborted && error instanceof Error && error.name === 'AbortError') return;
+    const chain: object[] = [];
+    const occurrence = !handled ? 'unhandled' : context.attempt_id === undefined ? undefined : String(context.attempt_id);
+    let current = error;
+    while (current !== null && typeof current === 'object' && !chain.includes(current) && chain.length < 16) {
+      const seen = controller.seenErrors.get(current);
+      if (seen !== undefined && (occurrence === undefined || seen.has(occurrence))) return;
+      chain.push(current);
+      current = current instanceof Error ? current.cause : undefined;
+    }
+    for (const item of chain) {
+      const seen = controller.seenErrors.get(item) ?? new Set<string>();
+      seen.add(occurrence ?? 'handled');
+      controller.seenErrors.set(item, seen);
+    }
+    const secrets = [...controller.redactions, ...Object.entries(process.env).filter(([key, value]) => value && /(?:key|token|password|secret|cookie)/i.test(key)).map(([, value]) => value!)];
+    const activeJobs = [...controller.jobAttempts].filter(([id, attempt]) => context.job_id === id || context.job_id === undefined && !attempt.completed);
+    const activeJob = activeJobs.length === 1 ? activeJobs[0] : undefined;
+    const errorCode = CommandErrorCodeSchema.safeParse(context.code).data ?? (info.error.code === 'CANCELED' ? 'INTERNAL' : CommandErrorCodeSchema.safeParse(info.error.code).data) ?? 'INTERNAL';
+    const diagnosticContext: Record<string, string | number | boolean | null> = { ...context, code: errorCode };
+    if (typeof context.resource_key === 'string') diagnosticContext.resource_key_hash = createHash('sha256').update(context.resource_key).digest('hex').slice(0, 24);
+    delete diagnosticContext.resource_key;
+    queueEvent(controller, '$exception', {
+      ...baseProperties(controller, controller.command),
+      operation_id: controller.commandOperationId,
+      ...(activeJob === undefined ? {} : { job_id: safeId(activeJob[0]), attempt_id: activeJob[1].attemptId, platform: activeJob[1].platform }),
+      error_code: errorCode,
+      $exception_level: 'error',
+      ...buildException(error, { handled, context: diagnosticContext, secrets }),
+    });
+  } catch {
+    // Diagnostic failures must not change the original command or recurse into themselves.
+    diagnosticWarning(controller, 'DIAGNOSTICS_CAPTURE', '无法记录一条错误诊断，原操作结果保留。');
+  }
+}
+
+export function redactDiagnosticValues(output: Output, values: readonly string[]): void {
+  const controller = controllers.get(output);
+  if (controller !== undefined) for (const value of values) if (value) controller.redactions.add(value);
 }
 
 export function telemetryStatus(dataDir: string): {

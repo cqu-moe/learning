@@ -73,7 +73,7 @@ export interface Runtime {
   heavy: HeavyRenderer | null;
   model: ModelClient | null;
   probeMediaDuration?: (url: string, options?: Options) => Promise<number | null>;
-  log(event: { level: 'debug' | 'info' | 'warn' | 'error'; message: string; fields: Record<string, string | number | boolean | null> }): void;
+  log(event: { level: 'debug' | 'info' | 'warn' | 'error'; message: string; error?: unknown; fields: Record<string, string | number | boolean | null> }): void;
   wake(): Promise<void>;
 }
 

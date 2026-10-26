@@ -67,6 +67,53 @@ describe('action store (T14, A141/A142)', () => {
     expect(attempts).toBe(1);
   });
 
+  it('reports the original send failure before persisting an uncertain operation', async () => {
+    const cause = new Error('connection reset after send');
+    const events: unknown[] = [];
+    const store = new ActionStore(new MemoryStateStore(), new FakeClock(), masterKey, event => events.push(event));
+    const preview = await store.prepare(input, 2, async () => { throw cause; });
+
+    const error = await store.execute(preview.id).catch((caught: unknown) => caught as Error);
+
+    expect(error).toMatchObject({ data: { code: 'UNCERTAIN' } });
+    expect((error as Error).cause).toBe(cause);
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: { stage: 'action.execute' },
+    }]);
+  });
+
+  it('reports timeout-style AbortError but keeps caller-canceled sends quiet', async () => {
+    const makeStore = (events: unknown[]) => new ActionStore(new MemoryStateStore(), new FakeClock(), masterKey, event => events.push(event));
+    const timeoutEvents: unknown[] = [];
+    const timeoutStore = makeStore(timeoutEvents);
+    const timeout = new DOMException('send timed out', 'AbortError');
+    const timeoutPreview = await timeoutStore.prepare(input, 2, async () => { throw timeout; });
+
+    const timeoutError = await timeoutStore.execute(timeoutPreview.id)
+      .catch((caught: unknown) => caught as Error);
+
+    expect(timeoutError).toMatchObject({ data: { code: 'UNCERTAIN' } });
+    expect((timeoutError as Error).cause).toBe(timeout);
+    expect(timeoutEvents).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: timeout,
+      fields: { stage: 'action.execute' },
+    }]);
+
+    const cancelEvents: unknown[] = [];
+    const cancelStore = makeStore(cancelEvents);
+    const canceled = new DOMException('send canceled', 'AbortError');
+    const cancelPreview = await cancelStore.prepare(input, 2, async () => { throw canceled; });
+    const signal = new AbortController();
+    signal.abort();
+    await expect(cancelStore.execute(cancelPreview.id, undefined, { signal: signal.signal })).rejects.toMatchObject({ data: { code: 'UNCERTAIN' } });
+    expect(cancelEvents).toEqual([]);
+  });
+
   it('reconcile confirms only from authoritative upstream state', async () => {
     const store = makeStore();
     const preview = await store.prepare(input, 2, async () => {

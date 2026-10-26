@@ -138,7 +138,7 @@ export function registerProfileCommands(program: Command): void {
         throw new CliError('INTERACTION_REQUIRED', `writer process ${pid} is still running`, 3);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-          throw new CliError('INTERACTION_REQUIRED', `cannot prove writer process ${pid} has exited`, 3);
+          throw new CliError('INTERACTION_REQUIRED', `cannot prove writer process ${pid} has exited`, 3, [], [], null, { cause: error });
         }
       }
       if (readFileSync(lockPath, 'utf8') !== original) {

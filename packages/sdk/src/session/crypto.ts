@@ -70,12 +70,12 @@ export async function decryptJson(
       fromBase64(dataPart),
     );
     return new TextDecoder().decode(plaintext);
-  } catch {
+  } catch (error) {
     throw new LearningError({
       code: 'STORAGE',
       message: 'decryption failed (wrong key, AAD, or corrupted record)',
       retryAfterMs: null,
       operationId: null,
-    });
+    }, { cause: error });
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LiveMailbox, expiredQuestionGuard } from '../src/providers/ykt/live.js';
+import { LiveMailbox, YktLiveSession, expiredQuestionGuard } from '../src/providers/ykt/live.js';
 import { createLearningClient } from '../src/index.js';
 import { FakeWsTransport } from './helpers/ws.js';
 import { FakeClock } from './helpers/replay.js';
@@ -31,6 +31,53 @@ describe('ykt live (T22, A221/A222)', () => {
     mailbox.noteDisconnect();
     const events = mailbox.drain(3000);
     expect(events.some((event) => event.type === 'gap')).toBe(true);
+  });
+
+  it('reports a non-user live abort separately from a failed socket cleanup', async () => {
+    const primary = new DOMException('live socket timed out', 'AbortError');
+    const cleanup = new Error('live socket close failed');
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const socket = {
+      send: async () => {},
+      messages: {
+        [Symbol.asyncIterator]() {
+          return { next: () => Promise.reject(primary) };
+        },
+      },
+      close: async () => { throw cleanup; },
+    };
+    const transport = {
+      fetch: async () => { throw new Error('unexpected HTTP call'); },
+      connect: async () => socket,
+    };
+    const live = new YktLiveSession({
+      transport,
+      clock: new FakeClock(),
+      wake: async () => {},
+      log: event => events.push(event),
+      jobId: 'job-1',
+      lessonId: 'lesson-1',
+      userId: 'user-1',
+      lessonToken: 'token',
+    });
+
+    await live.connect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toEqual([
+      {
+        level: 'error',
+        message: 'Learning SDK operation failed',
+        error: primary,
+        fields: { stage: 'live.socket', platform: 'ykt', job_id: 'job-1', code: 'NETWORK', recovered: true },
+      },
+      {
+        level: 'error',
+        message: 'Learning SDK operation failed',
+        error: cleanup,
+        fields: { stage: 'live.socket.cleanup', platform: 'ykt', job_id: 'job-1', recovered: true },
+      },
+    ]);
   });
 
   it('checks in only after preview, connects with lesson token, persists a question and closes on finish', async () => {
