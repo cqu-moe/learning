@@ -1065,3 +1065,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 用户要求升版本。仅把 `apps/cli/package.json` 的 CLI 版本从 0.2.9 升到 0.2.10，root/SDK 版本、依赖和 lockfile 保持不变；`git ls-remote --tags origin refs/tags/cli-v0.2.10` exit0 且无匹配，检查时目标标签尚未占用。
 - macOS arm64 / Node24.11.1 / pnpm11.19.0 / Bun1.4.3：`pnpm --filter @learning/cli build`、Node CLI `--version`、`node scripts/test-release.mjs`、`node scripts/build-cli.mjs --without-telemetry`、新独立程序 `--version`、`git diff --check` 均 exit0，两种 CLI 均输出 0.2.10；完整日志 `dist/error-diagnostics/version-0210.log`。本轮无产品逻辑修改，未重复 SDK/CLI 全量或真实平台测试。
 - 版本更新与本条记录提交至现有 PR #27；PR 标题/说明同步反映 0.2.10，移除此前“不更新版本”的表述。已核对 `.github/workflows/release.yml`：版本变更合入 main 后触发完整 CI，检查成功才进入 publish。当前仅准备发行版本，未合并或发布；下一步仍为最新 head 的五目标 CI 与审阅。
+
+### 2026-10-27 · PR #27 离线消费者 CI 缓存修复
+
+- 用户报告 CI 失败。[run 40355880636](https://github.com/cqu-moe/learning/actions/runs/40355880636) 的 head 为 `ded8e0567d7e6255c5f0d280affd6de6bcd5b3a1`；verify 中 lint/typecheck/build、SDK 305/305、CLI 217/217 已通过，E2E 6/7，唯一失败为打包消费者安装时 `ERR_PNPM_NO_OFFLINE_TARBALL`。日志显示工作区使用 `/home/runner/setup-pnpm/node_modules/.bin/store/v11`，临时消费者却查找 `/tmp/.pnpm-store/v11`，不能复用已安装依赖的缓存。
+- 只修改 `apps/cli/tests/e2e.test.ts` 的消费者装配：从 CLI 工作区取得 `pnpm store path --silent`，通过 `--store-dir` 显式复用；保留 offline/frozen-lockfile/trust-lockfile/ignore-scripts 和原打包、QR、目录、导出、Range 恢复断言。消费者配置刻意指向空默认缓存，使回归不依赖宿主机恰好跨文件系统；没有修改产品逻辑、工作流、依赖、lockfile 或 0.2.10 版本。
+- macOS arm64 / Node24.11.1 / pnpm11.19.0：先添加空默认缓存，运行 `pnpm --filter @learning/cli exec vitest run --config vitest.e2e.config.ts -t 'uses packed tarballs'`，真实 exit1、同类离线缺包错误（`dist/error-diagnostics/ci-store-red.log`）；加上显式缓存路径后原命令 exit0、1/1（其余 6 项按筛选未运行，`ci-store-green.log`）。完整 `pnpm test:e2e` 7/7、`pnpm lint`、`pnpm typecheck`、`git diff --check` 均 exit0，日志 `ci-store-e2e.log`、`ci-store-static.log`。
+- 本修复提交至现有 PR #27；远端结果以新 head 的 verify 和五目标程序检查为准。未重复不涉及本次测试装配的 SDK/CLI 单测或本机原生程序验收；未合并、发布、访问真实教学平台/模型或验证真实 PostHog 入库。下一当前任务为新提交的远端 CI，不推进其他 PLAN 或 Web。
