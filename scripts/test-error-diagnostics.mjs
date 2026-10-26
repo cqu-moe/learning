@@ -15,10 +15,13 @@ const bundledTelemetryToken = 'phc_public_fixture_token_1234567890abcdef';
 
 const outputDirectory = resolve(root, 'dist/error-diagnostics');
 const sourcePath = resolve(outputDirectory, 'learning-error-source.ts');
-const executable = resolve(outputDirectory, `learning-error-diagnostics-${target}${process.platform === 'win32' ? '.exe' : ''}`);
+// Exercise Bun's .exe map naming on every host, including local macOS checks.
+const executable = resolve(outputDirectory, `learning-error-diagnostics-${target}.exe`);
+const sourceMap = resolve(outputDirectory, `learning-error-diagnostics-${target}.map`);
 mkdirSync(outputDirectory, { recursive: true });
 rmSync(executable, { force: true });
 rmSync(`${executable}.map`, { force: true });
+rmSync(sourceMap, { force: true });
 
 writeFileSync(sourcePath, `function createRootCause(): Error {
   return new Error('diagnostic root cause');
@@ -54,6 +57,7 @@ try {
 
 compile(sourcePath, executable, { bundledTelemetryToken });
 assert.equal(existsSync(`${executable}.map`), false, 'diagnostic maps must be embedded, not shipped beside the program');
+assert.equal(existsSync(sourceMap), false, 'a compiled .exe must not leave its external map beside the program');
 
 const runDirectory = realpathSync(mkdtempSync(resolve(tmpdir(), 'learning 堆栈诊断 ')));
 const program = resolve(runDirectory, basename(executable));
