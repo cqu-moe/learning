@@ -1059,3 +1059,9 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - GitHub connector 创建并读回 [PR #27](https://github.com/cqu-moe/learning/pull/27)，OPEN、非 draft、base=main、head=上述功能分支；PR 已附加到本聊天。说明包含真实堆栈与原因链、脱敏、限量补传、源码映射、完整本机证据和待验证边界。
 - 创建后读取 [CI 40355068354](https://github.com/cqu-moe/learning/actions/runs/40355068354)，headRevision 与上述实现提交一致：verify、macOS x64、Linux arm64/x64、Windows x64 正在运行，macOS arm64 排队；尚无最终结果，不记为 CI 通过。本条后续提交仅补充 PR 交接记录，不改产品或测试；合并门禁以最新 head 的检查为准。
 - 本轮未重复上一节已通过的 SDK/CLI/E2E 和本机程序测试；工作内容仅为审阅、提交、推送和创建 PR，沿用已记录的实际证据。未合并、发布、运行真实教学平台/模型或验证真实 PostHog 入库。下一当前任务为本 PR 的远端检查及审阅，不推进其他 PLAN 或 Web。
+
+### 2026-10-27 · PR #27 补充 CLI 0.2.10 版本
+
+- 用户要求升版本。仅把 `apps/cli/package.json` 的 CLI 版本从 0.2.9 升到 0.2.10，root/SDK 版本、依赖和 lockfile 保持不变；`git ls-remote --tags origin refs/tags/cli-v0.2.10` exit0 且无匹配，检查时目标标签尚未占用。
+- macOS arm64 / Node24.11.1 / pnpm11.19.0 / Bun1.4.3：`pnpm --filter @learning/cli build`、Node CLI `--version`、`node scripts/test-release.mjs`、`node scripts/build-cli.mjs --without-telemetry`、新独立程序 `--version`、`git diff --check` 均 exit0，两种 CLI 均输出 0.2.10；完整日志 `dist/error-diagnostics/version-0210.log`。本轮无产品逻辑修改，未重复 SDK/CLI 全量或真实平台测试。
+- 版本更新与本条记录提交至现有 PR #27；PR 标题/说明同步反映 0.2.10，移除此前“不更新版本”的表述。已核对 `.github/workflows/release.yml`：版本变更合入 main 后触发完整 CI，检查成功才进入 publish。当前仅准备发行版本，未合并或发布；下一步仍为最新 head 的五目标 CI 与审阅。
