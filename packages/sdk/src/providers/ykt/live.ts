@@ -45,6 +45,8 @@ import type { Clock, Socket, Transport } from '../../runtime/types.js';
 import { LearningError } from '../../types/errors.js';
 import type { Answer } from '../../types/models.js';
 import type { SessionHttp } from '../../http/client.js';
+import { isCancellation, reportError } from '../../runtime/diagnostics.js';
+import type { DiagnosticLog } from '../../runtime/diagnostics.js';
 
 /** One foreground live socket; the pump is owned and awaited on close. */
 export class YktLiveSession {
@@ -57,7 +59,11 @@ export class YktLiveSession {
   private readonly openQuestions = new Map<string, { phaseId: string; problemType: number; closesAtMs: number | null }>();
   private jwt: string;
 
-  constructor(private readonly input: { transport: Transport; clock: Clock; wake: () => Promise<void>; lessonId: string; userId: string; lessonToken: string; jwt?: string }) { this.jwt = input.jwt ?? ''; }
+  constructor(private readonly input: { transport: Transport; clock: Clock; wake: () => Promise<void>; log?: DiagnosticLog; jobId?: string; lessonId: string; userId: string; lessonToken: string; jwt?: string }) { this.jwt = input.jwt ?? ''; }
+
+  private diagnosticFields(): Record<string, string | number | boolean | null> {
+    return { platform: 'ykt', ...(this.input.jobId === undefined ? {} : { job_id: this.input.jobId }) };
+  }
 
   async connect(): Promise<void> {
     if (this.closed) throw new Error('live session already closed');
@@ -71,7 +77,10 @@ export class YktLiveSession {
         for await (const frame of socket.messages) {
           let data: Record<string, unknown>;
           try { data = JSON.parse(typeof frame === 'string' ? frame : new TextDecoder().decode(frame)) as Record<string, unknown>; }
-          catch { continue; }
+          catch (error) {
+            reportError(this.input.log, 'live.frame', error, { ...this.diagnosticFields(), code: 'PROTOCOL', recovered: true });
+            continue;
+          }
           if (data.op === 'unlockproblem') {
             const problem = (data.problem ?? {}) as { prob?: number | string; problemType?: number; limit?: number };
             const questionId = String(problem.prob ?? '');
@@ -86,17 +95,27 @@ export class YktLiveSession {
             const problem = (data.problem ?? {}) as { prob?: number | string };
             this.openQuestions.delete(String(problem.prob ?? data.problemid ?? ''));
           } else if (data.op === 'lessonfinished') this.finished = true;
-          await this.input.wake().catch(() => {});
+          await this.input.wake().catch((error: unknown) => {
+            reportError(this.input.log, 'live.wake', error, { ...this.diagnosticFields(), recovered: true });
+          });
           if (this.finished) break;
         }
-      } catch { /* disconnected; report the gap below */ }
+      } catch (error) {
+        if (!this.controller.signal.aborted && !isCancellation(error, this.controller.signal)) {
+          reportError(this.input.log, 'live.socket', error, { ...this.diagnosticFields(), code: 'NETWORK', recovered: true });
+        }
+      }
       finally {
         if (!this.closed) {
           if (!this.finished) this.mailbox.noteDisconnect();
           this.openQuestions.clear();
           this.socket = null;
-          await socket.close().catch(() => {});
-          await this.input.wake().catch(() => {});
+          await socket.close().catch((cleanup: unknown) => {
+            reportError(this.input.log, 'live.socket.cleanup', cleanup, { ...this.diagnosticFields(), recovered: true });
+          });
+          await this.input.wake().catch((error: unknown) => {
+            if (!this.controller.signal.aborted) reportError(this.input.log, 'live.wake', error, { ...this.diagnosticFields(), recovered: true });
+          });
         }
       }
     })();

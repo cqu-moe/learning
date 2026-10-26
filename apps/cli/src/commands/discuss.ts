@@ -29,7 +29,7 @@ export function registerDiscussCommands(program: Command): void {
         const result = options.ai ? await client.discussions.propose(ref) : await client.discussions.draft(ref);
         try { await writeFile(options.output, JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
         catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null });
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null }, { cause: error });
           throw error;
         }
         trackWorkflowEvent(getOutput(program), { event: 'discussion_draft_created', properties: { used_ai_suggestion: options.ai === true } });
@@ -51,9 +51,9 @@ export function registerDiscussCommands(program: Command): void {
       if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new LearningError({ code: 'INVALID_INPUT', message: 'discussion draft must be a regular file under 4 MiB', retryAfterMs: null, operationId: null });
       let parsed: unknown;
       try { parsed = JSON.parse(await readFile(path, 'utf8')); }
-      catch { throw new LearningError({ code: 'INVALID_INPUT', message: 'discussion draft is not JSON', retryAfterMs: null, operationId: null }); }
+      catch (error) { throw new LearningError({ code: 'INVALID_INPUT', message: 'discussion draft is not JSON', retryAfterMs: null, operationId: null }, { cause: error }); }
       const discussion = DiscussionDraftSchema.safeParse(parsed);
-      if (!discussion.success) throw new LearningError({ code: 'INVALID_INPUT', message: 'discussion draft schema is invalid', retryAfterMs: null, operationId: null });
+      if (!discussion.success) throw new LearningError({ code: 'INVALID_INPUT', message: 'discussion draft schema is invalid', retryAfterMs: null, operationId: null }, { cause: discussion.error });
       if (discussion.data.ref.resource.course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'discussion draft belongs to another profile', retryAfterMs: null, operationId: null });
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {

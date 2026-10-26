@@ -47,6 +47,7 @@ import { encodeExamAnswer, xtxReadStartCover, xtxSaveExam, xtxStartExam } from '
 import { advanceHikeStudy, advanceShareStudy, reconcileHikeSave, reconcileShareSave, zhsHikeReadProgress, zhsSharePopupPoints, zhsSharePrelearningNote, zhsShareReadProgress, zhsShareReadState, zhsShareSave } from './providers/zhs/study.js';
 import { YktLiveSession } from './providers/ykt/live.js';
 import { z } from 'zod';
+import { reportError } from './runtime/diagnostics.js';
 
 const PLATFORM_HOSTS: Record<Platform, string[]> = {
   ykt: ['yuketang.cn', 'xuetangx.com'],
@@ -112,8 +113,8 @@ function zhsUuid(raw: string | null): string | null {
 
 export function createLearningClient(input: { scope: Scope; runtime: Runtime }): LearningClient {
   const { scope, runtime } = input;
-  const jobRunner = new JobRunner(runtime.state, runtime.clock);
-  const actionStore = new ActionStore(runtime.state, runtime.clock, runtime.masterKey);
+  const jobRunner = new JobRunner(runtime.state, runtime.clock, runtime.log);
+  const actionStore = new ActionStore(runtime.state, runtime.clock, runtime.masterKey, runtime.log);
   const liveSessions = new Map<string, YktLiveSession>();
   const ownsScope = (other: Scope): boolean => other.userId === scope.userId && other.profileId === scope.profileId && other.platform === scope.platform;
   const assertOwnedJob = async (id: string): Promise<Job> => {
@@ -122,7 +123,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     return job;
   };
   const sessionBox = { jar: new SessionCookieJar(), hydrated: false };
-  const lifecycle = new AuthLifecycle({ scope, clock: runtime.clock, state: runtime.state, masterKey: runtime.masterKey });
+  const lifecycle = new AuthLifecycle({ scope, clock: runtime.clock, state: runtime.state, masterKey: runtime.masterKey, log: runtime.log });
   const clientRef: { current: LearningClient | null } = { current: null };
   const httpBound = async () => {
     if (!sessionBox.hydrated) {
@@ -137,6 +138,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       clock: runtime.clock,
       jar: sessionBox.jar,
       allowHosts: PLATFORM_HOSTS[scope.platform],
+      log: runtime.log,
     });
   };
   const liveCheckin = async (lessonId: string): Promise<{ lessonToken: string; jwt: string }> => {
@@ -147,7 +149,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     return { lessonToken: payload.data.lessonToken, jwt: response.headers.get('set-auth') ?? '' };
   };
   const platform = scope.platform;
-  const resolveYktDuration = createYktDurationResolver(runtime.probeMediaDuration);
+  const resolveYktDuration = createYktDurationResolver(runtime.probeMediaDuration, runtime.log);
   const client: LearningClient = {
     scope,
     capabilities: () => capabilitiesFor(platform),
@@ -164,18 +166,20 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         }
         if (platform === 'zhs' && loginInput.method === 'qr') {
           await httpBound();
-          const http = createSessionHttp({ transport: runtime.transport, clock: runtime.clock, jar: sessionBox.jar, allowHosts: [...PLATFORM_HOSTS.zhs, 'weixin.qq.com'] });
+          const http = createSessionHttp({ transport: runtime.transport, clock: runtime.clock, jar: sessionBox.jar, allowHosts: [...PLATFORM_HOSTS.zhs, 'weixin.qq.com'], log: runtime.log });
           return lifecycle.begin((loginInput.variant === 'native' ? zhsQrLaunch : zhsWechatQrLaunch)({ http, jar: sessionBox.jar, clock: runtime.clock }));
         }
         throw unsupported(platform, `auth.begin(${loginInput.method})`);
       },
-      probe: async () => {
+      probe: async (options) => {
         if (platform === 'ykt') {
           const result = await probeSession({
             scope,
             state: runtime.state,
             masterKey: runtime.masterKey,
             provider: yktProbeProvider({ http: await httpBound(), clock: runtime.clock }),
+            log: runtime.log,
+            ...(options?.signal === undefined ? {} : { signal: options.signal }),
           });
           if (result.state === 'valid') {
             const record = await readSession(runtime.state, runtime.masterKey, scope);
@@ -192,6 +196,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             state: runtime.state,
             masterKey: runtime.masterKey,
             provider: xtxProbeProvider({ http: await httpBound(), clock: runtime.clock }),
+            log: runtime.log,
+            ...(options?.signal === undefined ? {} : { signal: options.signal }),
           });
           if (result.state === 'valid') {
             const record = await readSession(runtime.state, runtime.masterKey, scope);
@@ -203,7 +209,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         }
         if (platform === 'zhs') {
           const http = await httpBound();
-          return probeSession({ scope, state: runtime.state, masterKey: runtime.masterKey, provider: { probe: async (record) => {
+          return probeSession({ scope, state: runtime.state, masterKey: runtime.masterKey, log: runtime.log, ...(options?.signal === undefined ? {} : { signal: options.signal }), provider: { probe: async (record) => {
             if (record === null) return null;
             const expectedUuid = zhsUuid(record.platformUserId);
             const payload = await zhidaoQuery(http, runtime.clock, '/login/getLoginUserInfo', {}, { method: 'GET' });
@@ -289,7 +295,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       resolveLesson: async (url) => {
         if (platform !== 'ykt') return asyncUnsupported(platform, `resources.resolveLesson(${url})`);
         let parsed: URL;
-        try { parsed = new URL(url); } catch { throw new LearningError({ code: 'INVALID_INPUT', message: 'lesson must be an HTTPS URL', retryAfterMs: null, operationId: null }); }
+        try { parsed = new URL(url); }
+        catch (error) { throw new LearningError({ code: 'INVALID_INPUT', message: 'lesson must be an HTTPS URL', retryAfterMs: null, operationId: null }, { cause: error }); }
         if (parsed.protocol !== 'https:' || !/^(?:[a-z0-9-]+\.)*yuketang\.cn$/i.test(parsed.hostname)) {
           throw new LearningError({ code: 'FORBIDDEN', message: 'lesson URL host is not Yuketang', retryAfterMs: null, operationId: null });
         }
@@ -373,7 +380,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         if (thread.body.decodeState !== 'complete' && thread.body.decodeState !== 'not-needed') throw new LearningError({ code: 'CONTENT_UNREADABLE', message: 'discussion topic is not decoded', retryAfterMs: null, operationId: null });
         const result = await runtime.model.propose({ purpose: 'discussion', content: { topic: thread.body.plainText }, signal: new AbortController().signal });
         const parsed = z.object({ text: z.string().trim().min(1).max(10_000) }).safeParse(result);
-        if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'model returned an invalid discussion draft', retryAfterMs: null, operationId: null });
+        if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'model returned an invalid discussion draft', retryAfterMs: null, operationId: null }, { cause: parsed.error });
         return { id: `discussion-${ref.topicId}-model`, ref, text: parsed.data.text, sourceHash: thread.body.sourceHash, origin: 'model' };
       },
     },
@@ -399,7 +406,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           return actionStore.prepare(actionInput, session.generation, async () => {
             const { lessonToken, jwt } = await liveCheckin(actionInput.lesson.lessonId);
             const job = await jobRunner.create(scope, 'live', { total: null, payload: actionInput, generation: session.generation });
-            liveSessions.set(job.id, new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, wake: async () => { await jobRunner.wake(job.id); await runtime.wake(); },
+            liveSessions.set(job.id, new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, log: runtime.log, jobId: job.id, wake: async () => { await jobRunner.wake(job.id); await runtime.wake(); },
               lessonId: actionInput.lesson.lessonId, userId: session.platformUserId!, lessonToken, jwt }));
             return { operationId: 'ack', state: 'confirmed', message: 'live checkin acknowledged', result: { jobId: job.id } };
           });
@@ -571,12 +578,12 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           return { operationId: 'ack', state: 'confirmed', message: 'homework problem acknowledged', result: { questionId } };
         });
       },
-      execute: async (previewId) => {
+      execute: async (previewId, options) => {
         const operation = await actionStore.inspect(previewId);
         if (!ownsScope(operation.preview.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'preview belongs to another profile', retryAfterMs: null, operationId: operation.operationId });
         const session = await readSession(runtime.state, runtime.masterKey, scope);
         if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login is required before action execution', retryAfterMs: null, operationId: null });
-        const receipt = await actionStore.execute(previewId, { generation: session.generation });
+        const receipt = await actionStore.execute(previewId, { generation: session.generation }, options);
         if (operation.preview.kind === 'study' || operation.preview.kind === 'live.join') {
           const result = receipt.result;
           if (result === null || typeof result !== 'object' || Array.isArray(result) || typeof result.jobId !== 'string') {
@@ -727,7 +734,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         const saved = ActionInputSchema.parse(await jobRunner.input(jobId));
         if (saved.kind !== 'live.join') throw new LearningError({ code: 'INTEGRITY', message: 'live job has invalid input', retryAfterMs: null, operationId: jobId });
         const { lessonToken, jwt } = await liveCheckin(saved.lesson.lessonId);
-        const live = new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, wake: async () => { await jobRunner.wake(jobId); await runtime.wake(); },
+        const live = new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, log: runtime.log, jobId, wake: async () => { await jobRunner.wake(jobId); await runtime.wake(); },
           lessonId: saved.lesson.lessonId, userId: session.platformUserId, lessonToken, jwt });
         liveSessions.set(jobId, live);
         try {
@@ -746,7 +753,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
 
 export async function aggregateCourses(
   clients: LearningClient[],
-  _options?: Options,
+  options?: Options & { log?: Runtime['log'] },
 ): Promise<({ scope: Scope; page: Page<Course> } | { scope: Scope; error: ErrorData })[]> {
   const results: ({ scope: Scope; page: Page<Course> } | { scope: Scope; error: ErrorData })[] = [];
   for (const client of clients) {
@@ -754,6 +761,7 @@ export async function aggregateCourses(
       const page = await client.catalog.courses();
       results.push({ scope: client.scope, page });
     } catch (error) {
+      reportError(options?.log, 'aggregate.courses', error, { platform: client.scope.platform });
       results.push({
         scope: client.scope,
         error:

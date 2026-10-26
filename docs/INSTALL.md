@@ -59,9 +59,9 @@ node apps/cli/dist/index.js init --home ~/.learning
 
 ## 匿名使用统计
 
-独立程序默认开启匿名使用统计，用于聚合命令、平台、版本和任务结果分布。首次执行会在 stderr 提示一次，不污染 JSON/机器输出；随后在数据目录保存 0600 的 `telemetry.json`，其中包含随机安装 UUID 和首次提示时间。统计不包含命令参数、课程/资源标题或 key、账号/学校身份、profile 名、导出路径、终端输出、Cookie、API 响应或异常原文。
+独立程序默认开启匿名使用统计及脱敏错误诊断。首次执行会在 stderr 提示一次，不污染 JSON/机器输出；随后在数据目录保存 0600 的 `telemetry.json`，其中包含随机安装 UUID 和首次提示时间。错误诊断保留真实异常类型、脱敏限长消息、堆栈、cause 链、出错阶段及可用的 HTTP 状态、响应大小和结构校验位置；覆盖命令失败、恢复/重试、任务子项和未捕获异常，不以退出码 1 为限。不会上传完整请求/响应正文、题目答案、模型对话、凭据或命令参数列表；已知账号值、参数值、URL 查询和本机绝对路径会脱敏。
 
-可运行 `learning telemetry status` 查看状态；不提供用户侧关闭开关，旧版关闭偏好和 `LEARNING_TELEMETRY_DISABLED` / `DO_NOT_TRACK` 不再生效。CI、Vitest、Node test / development 环境自动隔离。发送是单次、无重试、750 ms 超时、最多 16 个事件 / 16 KiB 的 best-effort 请求；断网、代理失败或缺少配置不改变命令 stdout、业务结果或退出码。独立程序在构建时嵌入公共采集 token，不包含私人 API key；源码运行可用 `LEARNING_TELEMETRY_TOKEN` 或 `POSTHOG_PROJECT_TOKEN` 显式提供公共 token；Node 启动不会自动读取 `.env`，需由进程环境传入。统一通过 `https://p.cqu.moe/batch` 上报，`POSTHOG_HOST` 不参与配置。
+可运行 `learning telemetry status` 查看状态；不提供用户侧关闭开关，旧版关闭偏好和 `LEARNING_TELEMETRY_DISABLED` / `DO_NOT_TRACK` 不再生效。CI、Vitest、Node test / development 环境自动隔离。每批最多 16 个事件 / 64 KiB，退出时最多等待 750 ms；统计事件尽力发送，错误事件先以 0600 权限暂存在数据目录的 `diagnostic-outbox`，按采集项目隔离。暂存最多 7 天、256 条、5 MiB，单条不超过 32 KiB；超限或损坏会清理并提示。收到成功响应后删除，失败后在运行中或下次命令补传，沿用事件 UUID；硬杀进程、磁盘不可写和超出保留上限不能保证送达。诊断失败不改变业务结果或退出码。独立程序在构建时嵌入公共采集 token，不包含私人 API key；源码运行可用 `LEARNING_TELEMETRY_TOKEN` 或 `POSTHOG_PROJECT_TOKEN` 显式提供公共 token；Node 启动不会自动读取 `.env`，需由进程环境传入。统一通过 `https://p.cqu.moe/batch` 上报，`POSTHOG_HOST` 不参与配置。
 
 业务事件覆盖学习、下载、作业、考试、讨论、登录和实时课堂的操作边界，只记录计数、状态和结果类型；提交事件表示已确认发送处理，不保证服务端最终成功。AI Observability 仅记录模型、耗时、token 用量、随机 session/trace 标识和错误类别，不上传提示词、回答或模型端点 URL；模型未返回用量时不估算费用。事件沿用匿名安装 UUID，不使用平台 profile 身份。重复的独立 SDK / OpenTelemetry 日志出口不启用。
 

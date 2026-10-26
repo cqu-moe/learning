@@ -29,7 +29,7 @@ export async function proposeMatches(model: ModelClient | null, draft: AnswerDra
   const controller = new AbortController();
   const raw = await model.propose({ purpose: 'answers', content: payload, signal: controller.signal });
   const parsed = ResponseWire.safeParse(raw);
-  if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'model returned an invalid answer suggestion', retryAfterMs: null, operationId: null });
+  if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'model returned an invalid answer suggestion', retryAfterMs: null, operationId: null }, { cause: parsed.error });
   const byId = new Map(parsed.data.suggestions.map((suggestion) => [suggestion.questionId, suggestion]));
   return draft.entries.map((entry) => {
     if (!readable(questionById.get(entry.questionId))) return { questionId: entry.questionId, state: 'blocked', answer: null, sourceId: null, reason: 'selected decoded question is unavailable' };

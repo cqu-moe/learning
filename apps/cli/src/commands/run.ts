@@ -10,7 +10,7 @@ import { courseCacheKey, resourceCacheKey, resourceKindCacheKey, resourceTitleCa
 import { loginWithQr } from './login.js';
 import { runJobForeground } from '../foreground.js';
 import type { CliRuntime } from '../context.js';
-import { trackWorkflowEvent } from '../telemetry.js';
+import { trackWorkflowEvent, trackException } from '../telemetry.js';
 
 type StudyResource = { kind: ResourceKind; ref: ResourceRef; title: string };
 
@@ -70,6 +70,7 @@ export function registerRunCommands(program: Command): void {
         if (output.mode.guided) {
           output.activity('正在检查登录…');
           const probe = await client.auth.probe().catch((error: unknown) => {
+            trackException(output, error, { stage: 'auth.probe', recovered: true });
             if (error instanceof LearningError && ['AUTH_REQUIRED', 'AUTH_EXPIRED'].includes(error.data.code)) return { state: 'expired' as const };
             throw error;
           });

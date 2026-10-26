@@ -45,6 +45,7 @@ export async function advanceExport(input: {
       await writer.write(new TextEncoder().encode(content));
       result = await writer.finish();
     } catch (error) {
+      input.runner.reportRecovery('export.write', error, { job_id: input.job.id, resource_key: next.resource.key });
       await writer.abort();
       throw error;
     }
@@ -78,6 +79,13 @@ async function advanceSlides(input: {
     const decks = await input.getSlides(next);
     const pages = decks.flatMap((deck) => deck.pages.map((page) => ({ deck, page })));
     if (pages.length === 0) {
+      const failure = new LearningError({ code: 'PROTOCOL', message: 'no historical slide pages', retryAfterMs: null, operationId: input.job.id });
+      input.runner.reportRecovery('export.slides.empty', failure, {
+        job_id: input.job.id,
+        resource_key: next.lessonId,
+        platform: input.scope.platform,
+        recovered: true,
+      });
       const items: ItemResult[] = [...input.job.items, { key: next.lessonId, state: 'failed', message: 'no historical slide pages', artifacts: [] }];
       return { completed: items.length === saved.lessons.length, items };
     }
@@ -92,7 +100,11 @@ async function advanceSlides(input: {
         const writer = await input.runtime.artifacts.create({ id, mimeType: asset.mimeType });
         let result: { bytes: number; sha256: string };
         try { await writer.write(asset.bytes); result = await writer.finish(); }
-        catch (error) { await writer.abort(); throw error; }
+        catch (error) {
+          input.runner.reportRecovery('export.slides.write', error, { job_id: input.job.id, resource_key: next.lessonId });
+          await writer.abort();
+          throw error;
+        }
         const artifact = { id, scope: input.scope,
           filename: `${safeFilename(next.lessonId)}-${safeFilename(deck.presentationId)}-${page.index}.png`,
           mimeType: asset.mimeType, bytes: result.bytes, sha256: result.sha256, createdAtMs: input.runtime.clock.nowMs() };
@@ -113,6 +125,9 @@ async function advanceSlides(input: {
       }
       const items: ItemResult[] = [...input.job.items, { key: next.lessonId, state: 'succeeded', message: null, artifacts }];
       return { completed: items.length === saved.lessons.length, items };
+    } catch (error) {
+      input.runner.reportRecovery('export.slides', error, { job_id: input.job.id, resource_key: next.lessonId });
+      throw error;
     } finally {
       if (saved.format === 'pdf') for (const id of temporary) await input.runtime.artifacts.remove(id);
     }

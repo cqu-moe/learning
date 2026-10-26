@@ -104,18 +104,30 @@ describe('media Range resume', () => {
       const state = new MemoryStateStore();
       const clock = new FakeClock();
       const artifacts = new NodeArtifactStore(dir);
-      const runtime: Runtime = { transport: new FakeTransport(), state, clock, artifacts, masterKey: new Uint8Array(32), heavy: null, model: null, log: () => {}, wake: async () => {} };
+      const cause = new Error('subtitle service unavailable');
+      const events: Array<Parameters<Runtime['log']>[0]> = [];
+      const runtime: Runtime = { transport: new FakeTransport(), state, clock, artifacts, masterKey: new Uint8Array(32), heavy: null, model: null, log: event => events.push(event), wake: async () => {} };
       const runner = new JobRunner(state, clock);
       const saved = { type: 'media' as const, resources: [resource], quality: 'best' as const, subtitles: true };
       const job = await runner.create(scope, 'export', { total: 1, payload: saved });
       const result = await advanceMedia({ runner, runtime, job, scope,
         getMedia: async () => ({ resource, variants: [{ id: 'https://www.xuetangx.com/video.mp4', quality: 'hd', mimeType: 'video/mp4', durationSeconds: 10 }] }),
-        getTranscript: async () => { throw new Error('subtitle service unavailable'); },
+        getTranscript: async () => { throw cause; },
         getAsset: async () => ({ status: 200, headers: new Headers({ etag: '"v1"' }), mimeType: 'video/mp4', stream: new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode('video')); controller.close(); } }) }),
       }, saved);
       expect(result.status).toBe('succeeded');
       expect(result.items[0]?.artifacts).toHaveLength(1);
       expect(result.items[0]?.message).toContain('transcript');
+      expect(events).toEqual([{
+        level: 'error',
+        message: 'Learning SDK operation failed',
+        error: cause,
+        fields: { stage: 'export.transcript', job_id: job.id, resource_key: 'video', recovered: true },
+    }, {
+      level: 'warn',
+      message: 'transcript unavailable; video kept',
+      fields: { resourceKey: 'video' },
+      }]);
       expect((await artifacts.open(result.items[0]!.artifacts[0]!.id)).getReader).toBeTypeOf('function');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -153,4 +165,57 @@ describe('media Range resume', () => {
       } finally { rmSync(dir, { recursive: true, force: true }); }
     });
   }
+
+  it('reports a rejected resume before restarting a direct download', async () => {
+    const cause = new Error('partial file checksum mismatch');
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const body = (value: string) => new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode(value)); controller.close(); } });
+    const runtime: Runtime = {
+      transport: new FakeTransport(),
+      state: new MemoryStateStore(),
+      clock: new FakeClock(),
+      artifacts: {
+        create: async () => ({
+          write: async () => {},
+          checkpoint: async () => ({ bytes: 0 }),
+          finish: async () => ({ bytes: 5, sha256: '0'.repeat(64) }),
+          abort: async () => {},
+        }),
+        resume: async () => { throw cause; },
+        open: async () => body('fresh'),
+        remove: async () => {},
+      },
+      masterKey: new Uint8Array(32),
+      heavy: null,
+      model: null,
+      log: event => events.push(event),
+      wake: async () => {},
+    };
+    await runtime.state.commit({
+      expected: [],
+      changes: [{
+        key: 'download:job:video',
+        value: { url: 'https://www.xuetangx.com/video.mp4?token=SECRET', validator: 'v1', bytes: 3, checkpoint: { id: 'media', bytes: 3, sha256: '0'.repeat(64) } },
+      }],
+    });
+    const getAsset = async (_url: string, _max: number, headers?: Record<string, string>) => headers === undefined
+      ? { status: 200, headers: new Headers({ etag: 'v2' }), mimeType: 'video/mp4', stream: body('fresh') }
+      : { status: 206, headers: new Headers({ etag: 'v1', 'content-range': 'bytes 3-5/6' }), mimeType: 'video/mp4', stream: body('') };
+
+    await downloadDirectMedia({ runtime, jobId: 'job', resourceKey: 'video', artifactId: 'media', url: 'https://www.xuetangx.com/video.mp4?token=SECRET', getAsset });
+
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: {
+        stage: 'media.resume',
+        job_id: 'job',
+        resource_key: 'video',
+        endpoint: 'https://www.xuetangx.com/video.mp4',
+        recovered: true,
+      },
+    }]);
+    expect(JSON.stringify(events[0]?.fields)).not.toContain('SECRET');
+  });
 });

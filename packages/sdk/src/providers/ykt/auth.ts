@@ -94,8 +94,7 @@ export function yktQrLaunch(deps: { http: SessionHttp; jar: SessionCookieJar; cl
       const info = parsed.success ? parsed.data : null;
       const identity = info === null ? null : userInfoIdentity(info);
       if (info === null || info.errcode !== 0 || identity?.userId === null || identity?.userId !== exchanged.userId) {
-        ctx.fail({ code: 'PROTOCOL', message: 'web_login did not produce a valid userinfo session', retryAfterMs: null, operationId: null });
-        return;
+        throw new LearningError({ code: 'PROTOCOL', message: 'web_login did not produce a valid userinfo session', retryAfterMs: null, operationId: null }, { cause: parsed.error });
       }
       const session: Omit<SessionRecord, 'scope' | 'generation'> = {
         schemaVersion: 1,
@@ -120,7 +119,7 @@ export function yktProbeProvider(deps: { http: SessionHttp; clock: Clock }) {
         url: `${YKT_BASE}/v2/api/web/userinfo`,
       });
       const parsed = UserinfoWire.safeParse(await response.json());
-      if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'Yuketang userinfo envelope is invalid', retryAfterMs: null, operationId: null });
+      if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'Yuketang userinfo envelope is invalid', retryAfterMs: null, operationId: null }, { cause: parsed.error });
       const info = parsed.data;
       if (info.errcode !== 0) return null;
       const identity = userInfoIdentity(info);

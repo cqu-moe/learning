@@ -26,7 +26,7 @@ export function registerHomeworkCommands(program: Command): void {
           const draft = await client.assessments.draft(refs[0]!);
           try { await writeFile(options.output, exportDraftYaml(draft), { flag: 'wx', mode: 0o600 }); }
           catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null });
+            if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LearningError({ code: 'CONFLICT', message: 'output file exists; choose a new path', retryAfterMs: null, operationId: null }, { cause: error });
             throw error;
           }
           trackWorkflowEvent(getOutput(program), { event: 'homework_draft_created', properties: { question_count: draft.entries.length } });

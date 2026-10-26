@@ -5,7 +5,9 @@ import { sha256Hex } from '../types/sha256.js';
 import { ActionInputSchema, PreviewSchema, ReceiptSchema } from '../types/models.js';
 import type { ActionInput, Preview, Receipt } from '../types/models.js';
 import type { Scope } from '../types/refs.js';
-import type { Clock, StateStore, StoredValue } from '../runtime/types.js';
+import type { Clock, Options, StateStore, StoredValue } from '../runtime/types.js';
+import { isCancellation, reportError } from '../runtime/diagnostics.js';
+import type { DiagnosticLog } from '../runtime/diagnostics.js';
 import { encryptJson } from '../session/crypto.js';
 
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
@@ -31,7 +33,11 @@ export function digestOf(input: ActionInput): string {
 export class ActionStore {
   private readonly executors = new Map<string, () => Promise<Receipt>>();
   private readonly preflights = new Map<string, () => Promise<void>>();
-  constructor(private readonly state: StateStore, private readonly clock: Clock, private readonly masterKey: Uint8Array) {}
+  private readonly log: DiagnosticLog | undefined;
+
+  constructor(private readonly state: StateStore, private readonly clock: Clock, private readonly masterKey: Uint8Array, log?: DiagnosticLog) {
+    this.log = log;
+  }
 
   private key(id: string): string { return `preview:${id}`; }
   private indexKey(id: string): string { return `operation:${id}`; }
@@ -99,7 +105,7 @@ export class ActionStore {
     return preview;
   }
 
-  async execute(previewId: string, current?: { generation?: number; digest?: string }): Promise<Receipt> {
+  async execute(previewId: string, current?: { generation?: number; digest?: string }, options?: Options): Promise<Receipt> {
     const { stored, record } = await this.load(previewId);
     if (record.preview.id !== previewId) throw failure('INVALID_INPUT', 'execute requires a preview id', record.operationId);
     if (record.phase === 'done' && record.receipt?.state !== 'uncertain' && record.receipt !== null) return record.receipt;
@@ -119,13 +125,27 @@ export class ActionStore {
       const sending = await this.load(previewId);
       await this.update(sending.stored, { ...sending.record, phase: 'done', receipt });
       return receipt;
-    } catch {
-      const latest = await this.load(previewId);
-      if (latest.record.phase === 'sending') {
-        const uncertain: Receipt = { operationId: record.operationId, state: 'uncertain', message: 'outcome unknown after send', result: null };
-        try { await this.update(latest.stored, { ...latest.record, phase: 'done', receipt: uncertain }); } catch { /* sending record already remains durable */ }
+    } catch (error) {
+      if (!isCancellation(error, options?.signal)) {
+        reportError(this.log, 'action.execute', error);
       }
-      throw failure('UNCERTAIN', 'operation outcome unknown; use reconcile', record.operationId);
+      try {
+        const latest = await this.load(previewId);
+        if (latest.record.phase === 'sending') {
+          const uncertain: Receipt = { operationId: record.operationId, state: 'uncertain', message: 'outcome unknown after send', result: null };
+          try { await this.update(latest.stored, { ...latest.record, phase: 'done', receipt: uncertain }); }
+          catch (persistError) { reportError(this.log, 'action.uncertain_persist', persistError, { recovered: true }); }
+        }
+      } catch (recoveryError) {
+        reportError(this.log, 'action.recovery', recoveryError);
+        throw recoveryError;
+      }
+      throw new LearningError({
+        code: 'UNCERTAIN',
+        message: 'operation outcome unknown; use reconcile',
+        retryAfterMs: null,
+        operationId: record.operationId,
+      }, { cause: error });
     }
   }
 

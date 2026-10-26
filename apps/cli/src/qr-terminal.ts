@@ -65,8 +65,8 @@ function encodeQrModules(content: Uint8Array): QrModules {
   try {
     const segment = { data: content, mode: 'byte' as const };
     return qrcode.create([segment], { errorCorrectionLevel: 'M' }).modules;
-  } catch {
-    throw new Error('decoded QR content cannot be rendered in the terminal');
+  } catch (error) {
+    throw new Error('decoded QR content cannot be rendered in the terminal', { cause: error });
   }
 }
 

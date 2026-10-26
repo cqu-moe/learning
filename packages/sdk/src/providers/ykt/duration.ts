@@ -3,11 +3,13 @@ import type { SessionHttp } from '../../http/client.js';
 import { hostAllowed } from '../../http/client.js';
 import { LearningError } from '../../types/errors.js';
 import { fetchYktPlaySources } from './resources.js';
+import { reportError } from '../../runtime/diagnostics.js';
+import type { DiagnosticLog } from '../../runtime/diagnostics.js';
 
 export type YktDurationResolver = (http: SessionHttp, ccid: string, options?: Options) => Promise<number | null>;
 
 // Cache only real durations, within one client; signed URLs are never persisted.
-export function createYktDurationResolver(probe: Runtime['probeMediaDuration']): YktDurationResolver {
+export function createYktDurationResolver(probe: Runtime['probeMediaDuration'], log?: DiagnosticLog): YktDurationResolver {
   const durations = new Map<string, number>();
   return async (http, ccid, options) => {
     if (probe === undefined) return null;
@@ -16,7 +18,14 @@ export function createYktDurationResolver(probe: Runtime['probeMediaDuration']):
     let sources: Record<string, string[]>;
     try { sources = await fetchYktPlaySources(http, ccid, options); }
     catch (error) {
-      if (error instanceof SyntaxError || error instanceof LearningError && ['NETWORK', 'TIMEOUT', 'PROTOCOL'].includes(error.data.code)) return null;
+      if (error instanceof SyntaxError || error instanceof LearningError && ['NETWORK', 'TIMEOUT', 'PROTOCOL'].includes(error.data.code)) {
+        reportError(log, 'media.duration.sources', error, {
+          platform: 'ykt',
+          code: error instanceof LearningError ? error.data.code : 'PROTOCOL',
+          recovered: true,
+        });
+        return null;
+      }
       throw error;
     }
     const url = sources.quality20?.[0] || sources.quality10?.[0];

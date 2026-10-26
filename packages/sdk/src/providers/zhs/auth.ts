@@ -151,9 +151,9 @@ async function readWechatEnvelope<S extends z.ZodType>(result: HttpResult, schem
   const bytes = await result.bytes(256 * 1024);
   let payload: unknown;
   try { payload = JSON.parse(new TextDecoder().decode(bytes)); }
-  catch { throw protocolError('invalid WeChat transit response'); }
+  catch (error) { throw protocolError('invalid WeChat transit response', { cause: error }); }
   const parsed = schema.safeParse(payload);
-  if (result.status !== 200 || !parsed.success) throw protocolError('invalid WeChat transit response');
+  if (result.status !== 200 || !parsed.success) throw protocolError('invalid WeChat transit response', { cause: parsed.error });
   return parsed.data;
 }
 

@@ -40,13 +40,15 @@ export function buildXtxStudyRow(identity: XtxStudyIdentity, input: { event: 'lo
 }
 
 interface XtxCursor { resourceKey: string; phase: 'start' | 'rate' | 'heart'; cp: number; sq: number; baseline: number; awaiting: boolean; stalls: number; awaitingSinceMs?: number }
-function parseStudyCursor(raw: string | null): XtxCursor | null {
-  if (raw === null) return null;
+function parseStudyCursor(raw: string | null): { cursor: XtxCursor | null; error?: unknown } {
+  if (raw === null) return { cursor: null };
   try {
     const row = JSON.parse(raw) as Partial<XtxCursor>;
-    if (typeof row.resourceKey !== 'string' || !['start', 'rate', 'heart'].includes(row.phase ?? '') || typeof row.cp !== 'number' || typeof row.sq !== 'number' || typeof row.baseline !== 'number' || typeof row.awaiting !== 'boolean' || typeof row.stalls !== 'number' || row.awaitingSinceMs !== undefined && !Number.isSafeInteger(row.awaitingSinceMs)) return null;
-    return row as XtxCursor;
-  } catch { return null; }
+    if (typeof row.resourceKey !== 'string' || !['start', 'rate', 'heart'].includes(row.phase ?? '') || typeof row.cp !== 'number' || typeof row.sq !== 'number' || typeof row.baseline !== 'number' || typeof row.awaiting !== 'boolean' || typeof row.stalls !== 'number' || row.awaitingSinceMs !== undefined && !Number.isSafeInteger(row.awaitingSinceMs)) {
+      return { cursor: null, error: new LearningError({ code: 'INTEGRITY', message: 'Xuetang study cursor is invalid', retryAfterMs: null, operationId: null }) };
+    }
+    return { cursor: row as XtxCursor };
+  } catch (error) { return { cursor: null, error }; }
 }
 
 export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; jar: SessionCookieJar; clock: Clock }): Promise<Job> {
@@ -62,7 +64,11 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
     if (now - job.createdAtMs > action.settings.maxDurationSeconds * 1000) return finish('needs-input', 'study duration budget expired');
     const before = await xtxReadProgress(http, clock, next);
     if (before.serverFraction !== null && before.serverFraction >= action.settings.targetFraction) return finish('succeeded', before.serverCompleted ? 'server completed' : 'target fraction reached; server completion is not claimed');
-    const previous = parseStudyCursor((await runner.metadata(job.id)).cursor);
+    const parsedCursor = parseStudyCursor((await runner.metadata(job.id)).cursor);
+    if (parsedCursor.error !== undefined) {
+      runner.reportRecovery('job.cursor.xuetang', parsedCursor.error, { job_id: job.id, resource_key: next.key, platform: 'xuetang', recovered: true });
+    }
+    const previous = parsedCursor.cursor;
     const cursor = previous?.resourceKey === next.key ? previous : null;
     if (cursor?.awaiting && (before.serverFraction ?? 0) <= cursor.baseline) {
       const since = cursor.awaitingSinceMs ?? now;
@@ -73,7 +79,16 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
     let identity: XtxStudyIdentity & { title: string | null };
     try { identity = await xtxReadStudyIdentity(http, next); }
     catch (cause) {
-      if (cause instanceof LearningError && cause.data.code === 'INTERACTION_REQUIRED') return finish('needs-input', cause.message);
+      if (cause instanceof LearningError && cause.data.code === 'INTERACTION_REQUIRED') {
+        runner.reportRecovery('study.identity.xuetang', cause, {
+          job_id: job.id,
+          resource_key: next.key,
+          platform: 'xuetang',
+          code: cause.data.code,
+          recovered: true,
+        });
+        return finish('needs-input', cause.message);
+      }
       throw cause;
     }
     await runner.emitProgress(job.id, next.key, before.serverFraction, { title: identity.title, durationSeconds: identity.duration, serverSeconds: before.serverSeconds });
@@ -109,7 +124,9 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
     if (body !== '') {
       let parsed: { success?: boolean };
       try { parsed = JSON.parse(body) as { success?: boolean }; }
-      catch { throw new LearningError({ code: 'UNCERTAIN', message: 'Xuetang heartbeat acknowledgement is invalid', retryAfterMs: null, operationId: pendingId }); }
+      catch (error) {
+        throw new LearningError({ code: 'UNCERTAIN', message: 'Xuetang heartbeat acknowledgement is invalid', retryAfterMs: null, operationId: pendingId }, { cause: error });
+      }
       if (parsed.success === false) throw new LearningError({ code: 'UNCERTAIN', message: 'Xuetang heartbeat was rejected', retryAfterMs: null, operationId: pendingId });
     }
     if (phase === 'heart') {
@@ -124,8 +141,9 @@ export async function advanceXtxStudy(input: { job: Job; action: Extract<ActionI
 
 export async function reconcileXtxHeartbeat(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; clock: Clock; operationId: string }): Promise<Receipt> {
   const meta = await input.runner.metadata(input.job.id);
-  const cursor = parseStudyCursor(meta.cursor);
-  if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain Xuetang heartbeat', retryAfterMs: null, operationId: input.operationId });
+  const parsedCursor = parseStudyCursor(meta.cursor);
+  const cursor = parsedCursor.cursor;
+  if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain Xuetang heartbeat', retryAfterMs: null, operationId: input.operationId }, parsedCursor.error === undefined ? undefined : { cause: parsedCursor.error });
   const resource = input.action.resources.find((item) => item.key === cursor.resourceKey);
   if (resource === undefined) throw new LearningError({ code: 'INTEGRITY', message: 'study cursor resource is missing', retryAfterMs: null, operationId: input.operationId });
   const fraction = (await xtxReadProgress(input.http, input.clock, resource)).serverFraction ?? 0;

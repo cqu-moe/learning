@@ -18,6 +18,7 @@ try {
   if (process.platform !== 'win32') { chmodSync(binary, 0o644); chmodSync(binary, 0o755); }
   assert.deepEqual(readdirSync(directory), [executable], 'the program runs without companion files');
   execFileSync(process.execPath, [resolve(root, 'scripts/test-binary.mjs'), binary, ...telemetryArgs], { stdio: 'inherit' });
+  execFileSync(process.execPath, [resolve(root, 'scripts/test-error-diagnostics.mjs'), binary], { stdio: 'inherit' });
   const script = process.platform === 'win32' ? 'test-windows-permissions.mjs' : 'test-binary-terminal.mjs';
   execFileSync(process.execPath, [resolve(root, 'scripts', script), binary], { stdio: 'inherit' });
 } catch (error) { failures.push(error); } finally {

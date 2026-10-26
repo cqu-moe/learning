@@ -3,7 +3,9 @@ import type { Json } from '../types/errors.js';
 import { JobEventSchema, JobSchema } from '../types/models.js';
 import type { ItemResult, Job, JobEvent, JobStatus, Question } from '../types/models.js';
 import type { Scope } from '../types/refs.js';
-import type { Clock, StateStore, StoredValue } from '../runtime/types.js';
+import type { Clock, Options, StateStore, StoredValue } from '../runtime/types.js';
+import { isCancellation, reportError } from '../runtime/diagnostics.js';
+import type { DiagnosticLog } from '../runtime/diagnostics.js';
 import { sha256Hex } from '../types/sha256.js';
 import { PageInputSchema } from '../types/errors.js';
 import type { PageInput } from '../types/errors.js';
@@ -27,7 +29,15 @@ function parseMeta(value: Json | undefined): Meta {
 
 /** State-backed fixed-kind jobs; transitions and events survive CLI process exit. */
 export class JobRunner {
-  constructor(private readonly state: StateStore, private readonly clock: Clock) {}
+  private readonly log: DiagnosticLog | undefined;
+
+  constructor(private readonly state: StateStore, private readonly clock: Clock, log?: DiagnosticLog) {
+    this.log = log;
+  }
+
+  reportRecovery(stage: string, error: unknown, fields: Record<string, string | number | boolean | null> = {}): void {
+    reportError(this.log, stage, error, fields);
+  }
   private key(id: string) { return `job:${id}`; }
   private metaKey(id: string) { return `job-meta:${id}`; }
   private eventsKey(id: string) { return `job-events:${id}`; }
@@ -135,7 +145,11 @@ export class JobRunner {
     }
   }
 
-  async advance(id: string, handler: () => Promise<{ completed: boolean; items?: ItemResult[]; status?: 'waiting' | 'needs-input'; nextRunAtMs?: number | null }>): Promise<Job> {
+  async advance(
+    id: string,
+    handler: () => Promise<{ completed: boolean; items?: ItemResult[]; status?: 'waiting' | 'needs-input'; nextRunAtMs?: number | null }>,
+    options?: Options,
+  ): Promise<Job> {
     let entered = false;
     const current = await this.update(id, (job, meta) => {
       if (meta.running) throw error('CONFLICT', 'job advance is already running', id);
@@ -167,10 +181,22 @@ export class JobRunner {
       await this.emitState(id);
       return job;
     } catch (cause) {
-      await this.update(id, (job, meta) => ({
-        job: job.status === 'running' ? { ...job, status: job.kind === 'export' ? 'paused' : 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() } : job,
-        meta: { ...meta, running: false },
-      }));
+      if (!isCancellation(cause, options?.signal)) {
+        this.reportRecovery(`job.advance.${current.kind}`, cause, {
+          job_id: id,
+          platform: current.scope.platform,
+          recovered: current.kind === 'export',
+        });
+      }
+      try {
+        await this.update(id, (job, meta) => ({
+          job: job.status === 'running' ? { ...job, status: job.kind === 'export' ? 'paused' : 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() } : job,
+          meta: { ...meta, running: false },
+        }));
+      } catch (stateError) {
+        this.reportRecovery(`job.recovery.${current.kind}`, stateError, { job_id: id, platform: current.scope.platform });
+        throw stateError;
+      }
       throw cause;
     } finally {
       const latest = await this.read(id);

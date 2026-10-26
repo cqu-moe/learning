@@ -21,8 +21,8 @@ function parseYamlOrJson(text: string): unknown {
     const trimmed = text.trim();
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) return JSON.parse(trimmed);
     return YAML.parse(text, { strict: false });
-  } catch {
-    throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is neither valid JSON nor YAML', retryAfterMs: null, operationId: null });
+  } catch (error) {
+    throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is neither valid JSON nor YAML', retryAfterMs: null, operationId: null }, { cause: error });
   }
 }
 

@@ -73,12 +73,15 @@ export async function zhsHikeReadProgress(http: SessionHttp, clock: Clock, resou
 }
 
 interface HikeCursor { resourceKey: string; startedAtMs: number; serverSeconds: number; stalls: number }
-function hikeCursor(raw: string | null): HikeCursor | null {
-  if (raw === null) return null;
+function hikeCursor(raw: string | null): { cursor: HikeCursor | null; error?: unknown } {
+  if (raw === null) return { cursor: null };
   try {
     const row = JSON.parse(raw) as Partial<HikeCursor>;
-    return typeof row.resourceKey === 'string' && typeof row.startedAtMs === 'number' && typeof row.serverSeconds === 'number' && typeof row.stalls === 'number' ? row as HikeCursor : null;
-  } catch { return null; }
+    if (typeof row.resourceKey !== 'string' || typeof row.startedAtMs !== 'number' || typeof row.serverSeconds !== 'number' || typeof row.stalls !== 'number') {
+      return { cursor: null, error: new LearningError({ code: 'INTEGRITY', message: 'ZHS hike cursor is invalid', retryAfterMs: null, operationId: null }) };
+    }
+    return { cursor: row as HikeCursor };
+  } catch (error) { return { cursor: null, error }; }
 }
 
 /** One signed save after real elapsed time; `rt` is the only credited position. */
@@ -99,7 +102,11 @@ export async function advanceHikeStudy(input: { job: Job; action: Extract<Action
     if (progress.durationSeconds === null || progress.serverSeconds === null) return finish('needs-input', 'hike file duration is unknown');
     const target = Math.min(progress.durationSeconds, progress.durationSeconds * action.settings.targetFraction);
     if (progress.serverSeconds >= target) return finish('succeeded', progress.serverCompleted ? 'server completed' : 'target reached; server completion is not claimed');
-    const prior = hikeCursor((await runner.metadata(job.id)).cursor);
+    const parsedCursor = hikeCursor((await runner.metadata(job.id)).cursor);
+    if (parsedCursor.error !== undefined) {
+      runner.reportRecovery('job.cursor.zhs-hike', parsedCursor.error, { job_id: job.id, resource_key: next.key, platform: 'zhs', recovered: true });
+    }
+    const prior = parsedCursor.cursor;
     const cursor: HikeCursor = prior?.resourceKey === next.key ? prior : { resourceKey: next.key, startedAtMs: now, serverSeconds: progress.serverSeconds, stalls: 0 };
     if (prior === null || prior.resourceKey !== next.key) {
       await runner.setCursor(job.id, JSON.stringify(cursor));
@@ -134,8 +141,9 @@ export async function advanceHikeStudy(input: { job: Job; action: Extract<Action
 
 export async function reconcileHikeSave(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; http: SessionHttp; clock: Clock; operationId: string }): Promise<Receipt> {
   const meta = await input.runner.metadata(input.job.id);
-  const cursor = hikeCursor(meta.cursor);
-  if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain hike save', retryAfterMs: null, operationId: input.operationId });
+  const parsedCursor = hikeCursor(meta.cursor);
+  const cursor = parsedCursor.cursor;
+  if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain hike save', retryAfterMs: null, operationId: input.operationId }, parsedCursor.error === undefined ? undefined : { cause: parsedCursor.error });
   const resource = input.action.resources.find((item) => item.key === cursor.resourceKey);
   if (resource === undefined) throw new LearningError({ code: 'INTEGRITY', message: 'hike cursor resource is missing', retryAfterMs: null, operationId: input.operationId });
   const seconds = (await zhsHikeReadProgress(input.http, input.clock, resource, true)).serverSeconds ?? 0;
@@ -213,12 +221,15 @@ export async function zhsSharePrelearningNote(http: SessionHttp, clock: Clock, r
 }
 
 interface ShareCursor { resourceKey: string; noteId: string; startedAtMs: number; baseline: number; awaiting: boolean; stalls: number }
-function shareCursor(raw: string | null): ShareCursor | null {
-  if (raw === null) return null;
+function shareCursor(raw: string | null): { cursor: ShareCursor | null; error?: unknown } {
+  if (raw === null) return { cursor: null };
   try {
     const row = JSON.parse(raw) as Partial<ShareCursor>;
-    return typeof row.resourceKey === 'string' && typeof row.noteId === 'string' && typeof row.startedAtMs === 'number' && typeof row.baseline === 'number' && typeof row.awaiting === 'boolean' && typeof row.stalls === 'number' ? row as ShareCursor : null;
-  } catch { return null; }
+    if (typeof row.resourceKey !== 'string' || typeof row.noteId !== 'string' || typeof row.startedAtMs !== 'number' || typeof row.baseline !== 'number' || typeof row.awaiting !== 'boolean' || typeof row.stalls !== 'number') {
+      return { cursor: null, error: new LearningError({ code: 'INTEGRITY', message: 'ZHS share cursor is invalid', retryAfterMs: null, operationId: null }) };
+    }
+    return { cursor: row as ShareCursor };
+  } catch (error) { return { cursor: null, error }; }
 }
 
 /** Default pause mode: no popup answer is fabricated and no offline time is replayed. */
@@ -247,7 +258,11 @@ export async function advanceShareStudy(input: {
     if (duration === null || seconds === null || identity.videoSec === null || identity.courseId === '' || identity.ccCourseId === '') return finish('needs-input', 'share video lacks duration or native course ids');
     const target = duration * action.settings.targetFraction;
     if (progress.serverCompleted || seconds >= target) return finish('succeeded', progress.serverCompleted ? 'server completed' : 'target reached; server completion is not claimed');
-    const prior = shareCursor((await runner.metadata(job.id)).cursor);
+    const parsedCursor = shareCursor((await runner.metadata(job.id)).cursor);
+    if (parsedCursor.error !== undefined) {
+      runner.reportRecovery('job.cursor.zhs-share', parsedCursor.error, { job_id: job.id, resource_key: next.key, platform: 'zhs', recovered: true });
+    }
+    const prior = parsedCursor.cursor;
     const cursor = prior?.resourceKey === next.key ? prior : null;
     if (cursor === null) {
       const ids = { ...identity, videoSec: identity.videoSec };
@@ -285,8 +300,9 @@ export async function advanceShareStudy(input: {
 
 export async function reconcileShareSave(input: { job: Job; action: Extract<ActionInput, { kind: 'study' }>; runner: JobRunner; operationId: string; readState: () => Promise<{ progress: Progress }> }): Promise<Receipt> {
   const meta = await input.runner.metadata(input.job.id);
-  const cursor = shareCursor(meta.cursor);
-  if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain share save', retryAfterMs: null, operationId: input.operationId });
+  const parsedCursor = shareCursor(meta.cursor);
+  const cursor = parsedCursor.cursor;
+  if (meta.pendingOperationId !== input.operationId || cursor === null || input.job.status !== 'uncertain') throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'job has no matching uncertain share save', retryAfterMs: null, operationId: input.operationId }, parsedCursor.error === undefined ? undefined : { cause: parsedCursor.error });
   if (!input.action.resources.some((resource) => resource.key === cursor.resourceKey)) throw new LearningError({ code: 'INTEGRITY', message: 'share cursor resource is missing', retryAfterMs: null, operationId: input.operationId });
   const seconds = (await input.readState()).progress.serverSeconds ?? 0;
   if (seconds <= cursor.baseline) return { operationId: input.operationId, state: 'uncertain', message: 'share server time has not advanced; do not resend', result: { serverSeconds: seconds } };

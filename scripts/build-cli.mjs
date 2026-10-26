@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -18,13 +18,11 @@ const publicTokenPattern = /^phc_[A-Za-z0-9_-]{20,}$/;
 export function compile(entry, outfile, options = {}) {
   const bun = process.env.BUN_BINARY ?? 'bun';
   assert.equal(execFileSync(bun, ['--version'], { encoding: 'utf8' }).trim(), bunVersion, 'use the pinned Bun version');
-  const args = ['build', '--compile', '--minify', '--bytecode', '--format=esm',
-    '--env=disable', '--no-compile-autoload-dotenv', '--no-compile-autoload-bunfig'];
-  if (options.bundledTelemetryToken !== undefined) {
-    args.push('--define', `process.env.LEARNING_BUNDLED_TELEMETRY_TOKEN=${JSON.stringify(options.bundledTelemetryToken)}`);
-  }
-  args.push(entry, '--outfile', outfile);
-  execFileSync(bun, args, { cwd: root, stdio: 'inherit' });
+  execFileSync(bun, [resolve(root, 'scripts/bun-build-cli.mjs'), entry, outfile,
+    ...(options.bundledTelemetryToken === undefined ? [] : [JSON.stringify(options.bundledTelemetryToken)])],
+  { cwd: root, stdio: 'inherit' });
+  // Bun compile emits an external map for build tooling, while the executable embeds its own copy.
+  rmSync(`${outfile}.map`, { force: true });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -4,6 +4,7 @@ import { importLegacyCookies } from '../src/auth/legacy.js';
 import { SessionCookieJar } from '../src/http/cookies.js';
 import { NodeSocket } from '../src/runtime/node/transport.js';
 import { createLearningClient, aggregateCourses } from '../src/index.js';
+import { LearningError } from '../src/types/errors.js';
 import { MemoryStateStore } from './helpers/memory.js';
 import { FakeClock, FakeTransport } from './helpers/replay.js';
 import { FakeWebSocketLike, fakeWsPair } from './helpers/ws.js';
@@ -26,10 +27,10 @@ function record(generation: number, platformUserId = 'u' + generation): Omit<Ses
   };
 }
 
-function makeLifecycle() {
+function makeLifecycle(log?: Runtime['log']) {
   const state = new MemoryStateStore();
   const clock = new FakeClock();
-  const lifecycle = new AuthLifecycle({ scope, clock, state, masterKey });
+  const lifecycle = new AuthLifecycle({ scope, clock, state, masterKey, log });
   return { lifecycle, state, clock };
 }
 
@@ -129,6 +130,95 @@ describe('probe wrapper (A052)', () => {
       provider: { probe: async () => null },
     });
     expect(probe.state).toBe('expired');
+  });
+
+  it('reports launch failures before converting them to auth ErrorData', async () => {
+    const cause = new Error('websocket frame decoder failed');
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const { lifecycle } = makeLifecycle(event => events.push(event));
+    const flow = lifecycle.begin(async () => { throw cause; });
+
+    const error = await flow.result.catch((caught: unknown) => caught as Error);
+    expect(error).toMatchObject({ data: { code: 'PROTOCOL' } });
+    expect((error as Error).cause).toBe(cause);
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: { stage: 'auth.launch', platform: 'ykt' },
+    }]);
+  });
+
+  it('reports timeout-style AbortError from an active auth launch', async () => {
+    const cause = new DOMException('auth websocket timed out', 'AbortError');
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const { lifecycle } = makeLifecycle(event => events.push(event));
+    const flow = lifecycle.begin(async () => { throw cause; });
+
+    const error = await flow.result.catch((caught: unknown) => caught as Error);
+
+    expect(error).toMatchObject({ data: { code: 'PROTOCOL' } });
+    expect((error as Error).cause).toBe(cause);
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: { stage: 'auth.launch', platform: 'ykt' },
+    }]);
+  });
+
+  it('reports unknown probe failures before the indeterminate probe branch', async () => {
+    const state = new MemoryStateStore();
+    const { writeSession } = await import('../src/session/store.js');
+    await writeSession(state, masterKey, { scope, ...record(5) });
+    const cause = new Error('dns gone');
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const probe = await probeSession({
+      scope,
+      state,
+      masterKey,
+      log: event => events.push(event),
+      provider: {
+        async probe() { throw cause; },
+      },
+    });
+
+    expect(probe.state).toBe('indeterminate');
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: { stage: 'auth.probe', platform: 'ykt' },
+    }]);
+  });
+
+  it('reports probe AbortError only when its caller signal was not canceled', async () => {
+    const state = new MemoryStateStore();
+    const { writeSession } = await import('../src/session/store.js');
+    await writeSession(state, masterKey, { scope, ...record(6) });
+    const timeout = new DOMException('probe timed out', 'AbortError');
+    const canceled = new DOMException('probe canceled', 'AbortError');
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const makeProbe = (cause: unknown, signal?: AbortSignal) => probeSession({
+      scope,
+      state,
+      masterKey,
+      ...(signal === undefined ? {} : { signal }),
+      log: event => events.push(event),
+      provider: { async probe() { throw cause; } },
+    });
+
+    await expect(makeProbe(timeout)).resolves.toMatchObject({ state: 'indeterminate' });
+    const canceledSignal = new AbortController();
+    canceledSignal.abort();
+    await expect(makeProbe(canceled, canceledSignal.signal)).resolves.toMatchObject({ state: 'indeterminate' });
+
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: timeout,
+      fields: { stage: 'auth.probe', platform: 'ykt' },
+    }]);
   });
 });
 
@@ -285,9 +375,23 @@ describe('SDK factory (A052)', () => {
 
   it('aggregateCourses keeps per-profile errors separate and ordered', async () => {
     const zhsScope: Scope = { userId: 'local', profileId: 'p3', platform: 'zhs' };
-    const client = createLearningClient({ scope: zhsScope, runtime: makeRuntime(new FakeTransport()) });
-    const results = await aggregateCourses([client]);
+    const cause = new LearningError({
+      code: 'NETWORK',
+      message: 'course transport failed',
+      retryAfterMs: null,
+      operationId: null,
+    });
+    const failing = createLearningClient({ scope: zhsScope, runtime: makeRuntime(new FakeTransport()) });
+    failing.catalog.courses = async () => { throw cause; };
+    const events: Array<Parameters<Runtime['log']>[0]> = [];
+    const results = await aggregateCourses([failing], { log: event => events.push(event) });
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ scope: zhsScope, error: { code: 'NETWORK' } });
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: { stage: 'aggregate.courses', platform: 'zhs' },
+    }]);
   });
 });

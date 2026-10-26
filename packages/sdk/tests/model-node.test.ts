@@ -171,6 +171,72 @@ describe('Node compatible model adapter', () => {
     }
   });
 
+  it('reports the original model failure before safe classification', async () => {
+    const cause = new Error('TLS handshake failed');
+    const events: unknown[] = [];
+    const client = createCompatibleModelClient({
+      baseUrl: 'https://model.example.test/v1',
+      model: 'fixture-model',
+      apiKey: 'fixture-key',
+      fetchFn: async () => { throw cause; },
+      log: event => events.push(event),
+    });
+
+    const error = await client.propose({
+      purpose: 'discussion',
+      content: { topic: 'PRIVATE PROMPT' },
+      signal: new AbortController().signal,
+    }).catch((caught: unknown) => caught as Error);
+
+    expect(error).toMatchObject({ data: { code: 'NETWORK' } });
+    expect((error as Error).cause).toBe(cause);
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: {
+        stage: 'model.request.discussion',
+        method: 'POST',
+        endpoint: 'https://model.example.test/v1/chat/completions',
+        code: 'NETWORK',
+      },
+    }]);
+    expect(JSON.stringify(events)).not.toContain('PRIVATE PROMPT');
+    expect(JSON.stringify(events)).not.toContain('fixture-key');
+  });
+
+  it('reports timeout-style abort failures when the caller did not cancel', async () => {
+    const cause = new DOMException('fetch timed out', 'AbortError');
+    const events: unknown[] = [];
+    const client = createCompatibleModelClient({
+      baseUrl: 'https://model.example.test/v1',
+      model: 'fixture-model',
+      apiKey: 'fixture-key',
+      fetchFn: async () => { throw cause; },
+      log: event => events.push(event),
+    });
+
+    const error = await client.propose({
+      purpose: 'discussion',
+      content: { topic: 'PRIVATE PROMPT' },
+      signal: new AbortController().signal,
+    }).catch((caught: unknown) => caught as Error);
+
+    expect(error).toMatchObject({ data: { code: 'NETWORK', message: 'model request failed' } });
+    expect((error as Error).cause).toBe(cause);
+    expect(events).toEqual([{
+      level: 'error',
+      message: 'Learning SDK operation failed',
+      error: cause,
+      fields: {
+        stage: 'model.request.discussion',
+        method: 'POST',
+        endpoint: 'https://model.example.test/v1/chat/completions',
+        code: 'NETWORK',
+      },
+    }]);
+  });
+
   it('uses a fresh trace per proposal, reuses the session, and ignores capture callback failures', async () => {
     const events: Array<Record<string, unknown>> = [];
     const client = createCompatibleModelClient({
@@ -285,9 +351,10 @@ describe('Node compatible model adapter', () => {
     }
   });
 
-  it('classifies aborted requests as canceled while preserving the network error', async () => {
+  it('classifies actual caller cancellation as CANCELED without diagnostics', async () => {
     const controller = new AbortController();
     const events: Array<Record<string, unknown>> = [];
+    const diagnostics: unknown[] = [];
     const client = createCompatibleModelClient({
       baseUrl: 'https://model.example.test/v1',
       model: 'fixture-model',
@@ -297,17 +364,22 @@ describe('Node compatible model adapter', () => {
         throw new DOMException('SECRET cancellation reason', 'AbortError');
       },
       captureAiGeneration: properties => { events.push(properties); },
+      log: event => diagnostics.push(event),
     });
 
-    await expect(client.propose({
+    const error = await client.propose({
       purpose: 'discussion',
       content: { topic: 'PRIVATE PROMPT' },
       signal: controller.signal,
-    })).rejects.toMatchObject({ data: { code: 'NETWORK', message: 'model request failed' } });
+    }).catch((caught: unknown) => caught as Error);
 
+    expect(error).toMatchObject({ data: { code: 'CANCELED', message: 'model request canceled' } });
+    expect((error as Error).cause).toBeInstanceOf(DOMException);
+    expect((error as Error).cause).toMatchObject({ name: 'AbortError' });
     expect(events).toHaveLength(1);
     expect(events[0]!.$ai_error).toBe('canceled');
     expect(events[0]!.$ai_latency).toBeGreaterThanOrEqual(0);
     expect(JSON.stringify(events[0])).not.toContain('SECRET');
+    expect(diagnostics).toEqual([]);
   });
 });
