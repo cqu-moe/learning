@@ -87,7 +87,8 @@ function sanitizeText(value: string, secrets: readonly string[], limit = MAX_MES
     .replace(/(["'])(cookie|authorization|token|password|api[_-]?key|access[_-]?token|refresh[_-]?token|secret)\1\s*:\s*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\s,}\]]+)/gi, '$1$2$1:[redacted]')
     .replace(/\b((?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,;}\]]+)/gi, '$1[redacted]');
   text = redactUrls(text)
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+    // Consume non-email runs too, so a long mismatch is scanned only once.
+    .replace(/[A-Z0-9._%+-]+(@[A-Z0-9.-]+\.[A-Z]{2,})?/gi, (match, domain: string | undefined) => domain === undefined ? match : '[email]')
     .replace(/(?<![A-Za-z0-9:/])(?:file:\/\/)?(?:[A-Za-z]:)?[\\/]+[^\s"'<>]+/gi, match => normalizeLocation(match));
   return truncate(text, limit);
 }
