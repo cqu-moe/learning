@@ -1052,3 +1052,10 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 最终 macOS arm64 / Bun 1.4.3 的 `build-cli.mjs --without-telemetry`、`test-distribution.mjs --without-telemetry` 均 exit0，日志 `dist/error-diagnostics/native-final.log`。覆盖无 Node/Bun PATH 的实际程序、SQLite/权限/锁/失败清理、真实 PTY，以及真实程序本地采集到 1 条 LearningError / 4 个帧 / SDK TS 第 24 行；生成探针同时断言 embedded map、函数名、cause、公共 token define 字符串和 fatal monitor。产物仅为本机测试程序，CLI 版本仍 0.2.9，不是公开发行附件。
 - `check-source-lock` exit1：隔离目录缺少只读 `.reference/ykt-cli`（48a92c24498980d01aa045cf734ba3095d5f5bd1）、`.reference/xuetang-cli`（628a8fa8a4b90897f285a109aa591a8f6263846d）、`.reference/zhs-cli`（56d02171cf73c45694d69f886c902d2ecedadaaa）。未虚构源码检查通过，未更改 source lock 或私有参考仓。
 - 未运行真实平台、付费模型、真实 PostHog 事件发送/入库、其他四个原生目标或远程 CI；未推送、合并、发布或替换已安装 CLI。下一当前任务为本地变更审阅及另行授权后的远端五目标门禁，不推进其他 PLAN 或 Web。
+
+### 2026-10-27 · 错误诊断 PR #27（已创建，CI 待完成）
+
+- 用户明确授权「开 PR」。`git fetch origin main` exit0，main 仍为 `98a60dd255be274222606ab3222e863ec159e05d`；检查有效 Git 身份后沿用配置，未覆盖作者身份。审阅并暂存本次 67 个文件，`git diff --cached --check` 和 `node scripts/check-boundaries.mjs` exit0；实现、测试、文档以 `98170b1c23bcf6ac2b3cb3be0e00fe19237f8c0f` 提交并成功推送 `codex/learning-error-diagnostics`，未修改版本号。
+- GitHub connector 创建并读回 [PR #27](https://github.com/cqu-moe/learning/pull/27)，OPEN、非 draft、base=main、head=上述功能分支；PR 已附加到本聊天。说明包含真实堆栈与原因链、脱敏、限量补传、源码映射、完整本机证据和待验证边界。
+- 创建后读取 [CI 40355068354](https://github.com/cqu-moe/learning/actions/runs/40355068354)，headRevision 与上述实现提交一致：verify、macOS x64、Linux arm64/x64、Windows x64 正在运行，macOS arm64 排队；尚无最终结果，不记为 CI 通过。本条后续提交仅补充 PR 交接记录，不改产品或测试；合并门禁以最新 head 的检查为准。
+- 本轮未重复上一节已通过的 SDK/CLI/E2E 和本机程序测试；工作内容仅为审阅、提交、推送和创建 PR，沿用已记录的实际证据。未合并、发布、运行真实教学平台/模型或验证真实 PostHog 入库。下一当前任务为本 PR 的远端检查及审阅，不推进其他 PLAN 或 Web。
