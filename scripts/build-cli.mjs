@@ -21,8 +21,9 @@ export function compile(entry, outfile, options = {}) {
   execFileSync(bun, [resolve(root, 'scripts/bun-build-cli.mjs'), entry, outfile,
     ...(options.bundledTelemetryToken === undefined ? [] : [JSON.stringify(options.bundledTelemetryToken)])],
   { cwd: root, stdio: 'inherit' });
-  // Bun compile emits an external map for build tooling, while the executable embeds its own copy.
+  // Maps are embedded; Bun's external copy may omit the executable's .exe suffix.
   rmSync(`${outfile}.map`, { force: true });
+  rmSync(`${outfile.replace(/\.exe$/i, '')}.map`, { force: true });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
