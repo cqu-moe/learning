@@ -49,6 +49,15 @@ describe('buildException', () => {
     expect(JSON.stringify(properties)).not.toContain('SECRET_');
   });
 
+  it('redacts whole email addresses at text and punctuation boundaries', () => {
+    const properties = buildException(stackError('First.Last+tag@Example.CO.UK, <a_b@example.test>; 中文user@example.org /percent%name@example.net', 'Error: failed'));
+    expect(firstException(properties).value).toBe('[email], <[email]>; 中文[email] [email]');
+    for (const separator of ['.', '+', '-', '_', '%']) {
+      const adjacent = buildException(stackError(`a@example.com${separator}b@example.org`, 'Error: failed'));
+      expect(firstException(adjacent).value).toBe('[email][email]');
+    }
+  });
+
   it('emits PostHog raw exceptions from a real V8 stack', () => {
     const properties = buildException(realStackError('network request failed'), { handled: true });
     const exception = firstException(properties);
@@ -258,13 +267,16 @@ describe('buildException', () => {
     const frames = Array.from({ length: 100 }, (_, index) => `    at frame${index} (/repo/apps/cli/src/file-${index}.ts:${index + 1}:${index + 2})`).join('\n');
     let cause: Error | undefined;
     for (let index = 0; index < 20; index += 1) cause = new Error(`cause ${index} ${'x'.repeat(2048)}`, { cause });
-    const properties = buildException(stackError(`large ${'x'.repeat(64 * 1024)}`, `Error: large\n${frames}`), {
+    const error = stackError(`large ${'x'.repeat(256 * 1024)}`, `Error: large\n${frames}`);
+    error.cause = cause;
+    const properties = buildException(error, {
       context: { stage: 'large', response_bytes: Number.MAX_SAFE_INTEGER },
     });
     const diagnostics = properties.$exception_diagnostics as Record<string, Json>;
     expect(Buffer.byteLength(JSON.stringify(properties))).toBeLessThanOrEqual(24 * 1024);
     expect(firstException(properties).stacktrace?.frames.length).toBeLessThan(100);
     expect((properties.$exception_list as ExceptionList).length).toBeLessThan(21);
+    expect(diagnostics.cause_chain_truncated).toBe(true);
     expect(diagnostics.truncated).toBe(true);
   });
 
