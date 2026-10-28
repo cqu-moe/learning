@@ -1,5 +1,12 @@
 # learning — SDK + CLI 本期实施状态
 
+### 2026-10-28 · Agent CLI PR 交付（完成）
+
+- 用户明确要求开 PR，授权提交与推送本次实现。PR [#30](https://github.com/cqu-moe/learning/pull/30) 已创建，`codex/agent-cli` → `main`，非草稿；包含 Agent 专用 CLI、配套 Skill 和已确认保留的雨课堂作业功能。主实现提交为 `0f1835d`（`feat(cli)!: expose an agent-only interface and usage skill`），使用已有 Git 身份，未修改身份配置。
+- 提交前 `git fetch origin main` exit 0，基线仍为 `d2b39c5`；`git diff --cached --check`、暂存文件检查和 `node scripts/check-boundaries.mjs` 均 exit 0。Node v24.11.1 / pnpm 11.19.0 下再次运行 `pnpm --filter @learning/cli exec vitest run tests/agent-contract.test.ts` → **7/7，exit 0**。完整 SDK/CLI、E2E 和原生本机证据沿用下方同一实现记录，没有重复宣称本轮重跑全套。
+- `git commit` 与 `git push -u origin codex/agent-cli` exit 0；GitHub 创建 PR 成功。构建产物、字体、数据库、密钥和本机配置未纳入提交。原主目录用户改动、既有安装和真实平台数据未修改。
+- 未合并、未发布、未进行真实平台或付费模型操作；本轮不等待远端完整五系统门禁结束。下一事项：PR CI 与审阅，按失败证据处理；不自动开发 Web。
+
 ### 2026-10-28 · Agent 专用 CLI 与配套 Skill（实现及本机离线验收完成）
 
 - 用户明确要求删除人工操作代码、CLI 仅面向 Agent，由本任务决定设计并实施；后续确认保留尚未合入 main 的雨课堂作业下载、YAML 草稿和批量处理。按 ADR 0003 实施，没有扩展 Web 或其他 PLAN 任务。
