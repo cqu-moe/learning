@@ -1,5 +1,7 @@
 # learning — SDK + CLI 本期定稿规范
 
+> 阶段说明：本文保留 1.1 阶段的设计、计划或交接。任务选择以当前用户要求、[AGENTS](../AGENTS.md) 和[当前状态](PROGRESS.md) 为准；旧任务编号与停止条件不自动约束后续已授权任务。
+
 > 2026-10-28 补充：用户已授权本地 React Web 仪表盘。新增 `apps/web` 与必要的 React/Vite/CQU Design 依赖；当前 UI 范围以 [WEB-UI](WEB-UI.md) 为准。下文为 SDK/CLI 1.1 的历史基线，其他业务/安全契约继续生效，云端仍延期。
 
 版本：1.1 · 日期：2026-09-23 · 本期范围：共享 SDK 与本地 CLI；Web 延期。

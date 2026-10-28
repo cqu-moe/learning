@@ -1,4 +1,4 @@
-# learning — SDK + CLI
+# learning — SDK + Agent CLI + Web
 
 **公开仓库：cqu-moe/learning。规范版本 1.1；CLI 发行版本见 Releases。**
 
@@ -16,19 +16,20 @@ CLI 默认向 stdout 输出一个 `schemaVersion: 1` JSON envelope；`--output-f
 | [SDK](docs/SDK.md) / [contracts](docs/contracts.d.ts) | SDK行为与接口声明，不是实现 |
 | [PLATFORMS](docs/PLATFORMS.md) | 固定三平台协议与功能差异，范围没有随Web缩水 |
 | [APPS](docs/APPS.md) | 当前CLI命令、本地任务与渲染、安装交付 |
-| [PLAN](docs/PLAN.md) / [tasks.json](docs/tasks.json) | 当前任务 U01–U03 与已完成的 T00–T26/T31 |
+| [PLAN](docs/PLAN.md) / [tasks.json](docs/tasks.json) | U01–U03 与 1.1 阶段验收记录，不是自动领取的新待办 |
 | [ACCEPTANCE](docs/ACCEPTANCE.md) | 当前56组验收要求，不是已通过测试 |
-| [HANDOFF](docs/HANDOFF.md) | 首次、继续、迁移、纠偏和复核提示词 |
-| [PROGRESS](docs/PROGRESS.md) | 实际进度模板；已有记录时合并而非覆盖 |
+| [HANDOFF](docs/HANDOFF.md) | 1.1 阶段交接背景，按需读取 |
+| [PROGRESS](docs/PROGRESS.md) | 当前状态与逐任务证据索引 |
+| [开发与验证](docs/agents/development.md) | 检查入口、源码证据、CI 等待和交付约定 |
 | [SOURCES](docs/SOURCES.md) | 固定来源和本期E01–E08，未重查网页/平台 |
 | [Web延期说明](docs/deferred/WEB.md) | 仅保留未来同仓/Cloudflare原生方向，不是可执行待办 |
 | [DELIVERY-CHECK](docs/DELIVERY-CHECK.md) | 本轮文档检查，不冒充产品测试 |
-| [AGENTS](AGENTS.md) | 当前授权范围、SDK 边界与工程约束 |
+| [AGENTS](AGENTS.md) | 稳定约束、当前授权范围与按任务读取的导航 |
 | [learning-cli Skill](skills/learning-cli/SKILL.md) | 可携带到其他仓库的已安装 CLI 使用指南 |
 
 ## 开发交接
 
-继续开发时先读 AGENTS、SPEC 和 PROGRESS，按 HANDOFF 的继续/复核提示执行；合并已有进度，不能覆盖 PROGRESS 或删除已写文件。旧文档移出模型活动上下文。
+继续开发时先读 AGENTS、简短的 PROGRESS 索引和当前 Git 差异，再定位相关契约、源码与测试。详细记录按任务写入 `docs/progress/`，保留已有证据。
 
 原 SDK/CLI 1.1 阶段为 T00–T26 与 T31。当前用户授权的本地 Web 工作按 U01–U03 和 [Web UI 范围](docs/WEB-UI.md) 执行；云端部署与原生封装仍延期，不要求云账号或 Docker。
 

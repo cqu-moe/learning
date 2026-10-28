@@ -4,8 +4,8 @@
 
 | ID | 任务 | 必须断言 | 测试文件 |
 |---|---|---|---|
-| A001 | T00 | 缺少任一私有仓库时明确列出repo/ref及权限缺口；只暂停对应provider，不能下载公开fork替代。 | `scripts/check-source-lock.mjs` |
-| A002 | T00 | source-lock.json 的ref均40位十六进制；实际 git rev-parse HEAD 必须相等；输出不得含token。 | `scripts/check-source-lock.mjs` |
+| A001 | T00 | 缺少私有参考库时列出 repo/ref/path 及权限缺口；默认失败，CI 仅可用 `--allow-missing-references` 显式跳过缺失 checkout，相关协议证据仍未验证，不以公开 fork 替代。 | `scripts/check-source-lock.mjs`、`scripts/test-source-lock.mjs` |
+| A002 | T00 | source-lock.json 清单完整且 ref 为40位十六进制；已有 checkout 的 HEAD 必须匹配且 detached；允许缺库不豁免清单或 checkout 错误。输出不得含token。 | `scripts/check-source-lock.mjs`、`scripts/test-source-lock.mjs` |
 | A011 | T01 | pnpm install --frozen-lockfile 第二次成功；workspace恰好包含 @learning/sdk 和 @learning/cli。新项目不生成Web/executor空包；已有延期代码不加入当前workspace/构建且不擅自删除。 | `scripts/check-boundaries.mjs` |
 | A012 | T01 | public/root 错误导入 Node 实现的负例被边界检查拒绝；依赖中无 React/Vite/Hono/Wrangler/Cloudflare 插件，无云部署/测试占位脚本。 | `scripts/check-boundaries.mjs` |
 | A021 | T02 | 同videoId不同小节必须产生不同resource key；不同userId/profileId绝不相同。 | `packages/sdk/tests/types.test.ts` |
