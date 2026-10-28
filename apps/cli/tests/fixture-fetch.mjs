@@ -7,6 +7,8 @@ const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
 if (typeof fixture.now === 'number') Date.now = () => fixture.now;
 const interactions = fixture.interactions.slice();
 let consumed = 0;
+let fixtureFailure;
+class FixtureNetworkError extends Error {}
 let socketOpened = false;
 let socketHello = false;
 let socketClosed = false;
@@ -51,6 +53,7 @@ function matchesTemplate(actual, expected) {
 }
 
 globalThis.fetch = async (input) => {
+  try {
   const request = input instanceof Request ? input : new Request(input);
   const expected = interactions.shift();
   if (!expected) throw new Error(`undeclared request ${request.method} ${request.url}`);
@@ -73,6 +76,7 @@ globalThis.fetch = async (input) => {
     const actual = typeof match.body === 'string' ? body : JSON.parse(body);
     if (!matchesTemplate(actual, match.body)) throw new Error(`body mismatch #${consumed}`);
   } else if (body !== '') throw new Error(`unexpected body #${consumed}`);
+  if (expected.response.networkError) throw new FixtureNetworkError('declared fixture network failure');
   const headers = new Headers();
   for (const [key, value] of Object.entries(expected.response.headers ?? {})) {
     for (const item of Array.isArray(value) ? value : [value]) headers.append(key, item);
@@ -91,9 +95,17 @@ globalThis.fetch = async (input) => {
       ? expected.response.body
       : JSON.stringify(expected.response.body ?? {});
   return new Response(responseBody, { status: expected.response.status, headers });
+  } catch (error) {
+    if (!(error instanceof FixtureNetworkError)) fixtureFailure ??= error.message;
+    throw error;
+  }
 };
 
 process.on('exit', () => {
+  if (fixtureFailure) {
+    process.stderr.write(`fixture: ${fixtureFailure}\n`);
+    process.exitCode = 1;
+  }
   if (interactions.length !== 0) {
     process.stderr.write(`fixture: ${interactions.length} interactions unused\n`);
     process.exitCode = 1;

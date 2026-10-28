@@ -6,6 +6,10 @@ import type { SessionHttp } from '../../http/client.js';
 import { fetchLeafInfo } from './resources.js';
 import { moocEnvelopeChecked, YKT_BASE } from './schemas.js';
 import { fetchEmbeddedList } from './homework-write.js';
+import { z } from 'zod';
+import { homeworkQuestionFingerprint, normalizeContent } from '../../content/html.js';
+import { prepareHomeworkContent } from './homework-content.js';
+import type { Options, Runtime } from '../../runtime/types.js';
 
 function richTextFromRaw(html: string | null | undefined, fontLocked: boolean): RichText {
   const raw = html ?? '';
@@ -79,8 +83,22 @@ export async function yktEmbeddedRead(http: SessionHttp, ref: AssessmentRef): Pr
     fingerprint: sha256Hex(JSON.stringify(questions.map((question) => question.fingerprint))), questions };
 }
 
-export async function yktAssessmentGet(http: SessionHttp, ref: AssessmentRef): Promise<Assessment> {
-  if (ref.resource.native.kind !== 'ykt' || ref.resource.course.native.kind !== 'ykt') {
+const HomeworkWire = z.object({
+  name: z.string().optional(),
+  font: z.string().nullable().optional(),
+  problems: z.array(z.object({
+    problem_id: z.union([z.number().int().positive(), z.string().regex(/^[1-9]\d*$/)]),
+    content: z.object({
+      ProblemType: z.number().int().optional(),
+      Body: z.string().default(''),
+      Options: z.array(z.object({ key: z.string().min(1), value: z.string() })).nullable().optional(),
+    }),
+    user: z.object({ my_count: z.number().int().nonnegative().nullable().optional() }).nullable().optional(),
+  })).max(1000),
+});
+
+export async function yktAssessmentGet(http: SessionHttp, ref: AssessmentRef, runtime?: Runtime, options?: Options): Promise<Assessment> {
+  if (ref.kind !== 'homework' || ref.resource.native.kind !== 'ykt' || ref.resource.course.native.kind !== 'ykt') {
     throw new LearningError({ code: 'INVALID_INPUT', message: 'ykt assessment requires ykt refs', retryAfterMs: null, operationId: null });
   }
   const response = await http.request({
@@ -88,29 +106,30 @@ export async function yktAssessmentGet(http: SessionHttp, ref: AssessmentRef): P
     method: 'GET',
     url: `${YKT_BASE}/mooc-api/v1/lms/exercise/get_exercise_list/${ref.assessmentId}/?classroom_id=${ref.resource.course.native.classroomId}`,
     headers: { xtbz: 'ykt' },
+    ...options,
   });
   const payload = (await response.json()) as Record<string, unknown>;
   moocEnvelopeChecked(payload, `get_exercise_list/${ref.assessmentId}`);
-  const data = (payload.data ?? {}) as {
-    font?: string;
-    name?: string;
-    problems?: Array<{ problem_id: number; content?: { ProblemType?: number; Body?: string; Options?: Array<{ key?: string; value?: string }> } }>;
-  };
-  const fontLocked = typeof data.font === 'string' && data.font !== '';
-  const questions: Question[] = (data.problems ?? []).map((problem) => {
-    const content = problem.content ?? {};
+  const parsed = HomeworkWire.safeParse(payload.data);
+  if (!parsed.success) throw new LearningError({ code: 'PROTOCOL', message: 'invalid Yuketang homework response', retryAfterMs: null, operationId: null });
+  const data = parsed.data;
+  if (new Set(data.problems.map(problem => String(problem.problem_id))).size !== data.problems.length) throw new LearningError({ code: 'PROTOCOL', message: 'duplicate homework question IDs', retryAfterMs: null, operationId: null });
+  const fields = data.problems.flatMap(problem => [problem.content.Body, ...(problem.content.Options ?? []).map(option => option.value)]);
+  const material = await prepareHomeworkContent(http, runtime, ref.resource.course.scope, fields, data.font, options);
+  const questions: Question[] = data.problems.map((problem) => {
+    const content = problem.content;
     const kind = questionKindOf(content.ProblemType);
+    const body = normalizeContent(content.Body, material);
+    const options = (content.Options ?? []).map(option => ({ key: option.key, body: normalizeContent(option.value, material) }));
+    if (new Set(options.map(option => option.key)).size !== options.length) throw new LearningError({ code: 'PROTOCOL', message: 'duplicate homework option keys', retryAfterMs: null, operationId: null });
     return {
       id: String(problem.problem_id),
       kind,
       rawType: String(content.ProblemType ?? ''),
-      body: richTextFromRaw(content.Body, fontLocked),
-      options: (content.Options ?? []).map((option) => ({
-        key: option.key ?? '',
-        body: richTextFromRaw(option.value, fontLocked),
-      })),
-      fingerprint: sha256Hex(JSON.stringify([problem.problem_id, content.ProblemType ?? null, content.Body ?? ''])),
-      attemptsUsed: null,
+      body,
+      options,
+      fingerprint: homeworkQuestionFingerprint({ id: String(problem.problem_id), kind, body, options }),
+      attemptsUsed: problem.user?.my_count ?? null,
       maxAttempts: null,
       myAnswer: null,
       feedback: null,
@@ -123,5 +142,6 @@ export async function yktAssessmentGet(http: SessionHttp, ref: AssessmentRef): P
     timed: null,
     fingerprint: sha256Hex(JSON.stringify(questions.map((q) => q.fingerprint))),
     questions,
+    assets: material.assets,
   };
 }

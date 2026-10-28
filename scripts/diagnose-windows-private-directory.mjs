@@ -80,7 +80,7 @@ try {
   for (const [name, env] of [['minimal', minimal], ['windows-system-and-isolated-profile', windows]]) {
     await probe(`${name}:powershell-start`, powershell, ['-NoProfile', '-NonInteractive', '-Command', "Write-Output 'DIAG:ready'"], env, 35_000);
     await probe(`${name}:production-acl-script`, powershell, ['-NoProfile', '-NonInteractive', '-Command', script], { ...env, LEARNING_PRIVATE_DIRECTORY_PATH: join(directory, `${name} 权限`) }, 35_000);
-    await probe(`${name}:compiled-cli-init`, program, ['--home', join(directory, `${name} 账号`), 'init', '--json', '--no-interactive'], env, 75_000);
+    await probe(`${name}:compiled-cli-init`, program, ['--home', join(directory, `${name} 账号`), 'init', '--json'], env, 75_000);
   }
   // Pure startup controls: no ACL/data path or trust-policy change. Bracket
   // these with the same baseline so a warm-up or runner-load shift is visible.

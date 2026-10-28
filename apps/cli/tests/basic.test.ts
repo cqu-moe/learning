@@ -34,7 +34,7 @@ describe('cli basics (T25, A251/A252)', () => {
   it('--version prints the package version', () => {
     const run = runCli(['--version']);
     expect(run.exitCode).toBe(0);
-    expect(run.stdout).toMatch(/^\d+\.\d+\.\d+/);
+    expect(JSON.parse(run.stdout).data.text).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it('init creates the master key once and prints no secrets', () => {
@@ -62,7 +62,7 @@ describe('cli basics (T25, A251/A252)', () => {
       tempRoots.push(envHome);
       const run = runCli(['init'], { env: { LEARNING_HOME: envHome }, homeBeforeCommand: before });
       expect(run.exitCode).toBe(0);
-      expect(run.stdout).toContain(`已初始化：${run.home}`);
+      expect(JSON.parse(run.stdout).data.home).toBe(run.home);
       expect(existsSync(resolve(run.home, 'master.key'))).toBe(true);
       expect(existsSync(resolve(envHome, 'master.key'))).toBe(false);
     }
@@ -74,14 +74,14 @@ describe('cli basics (T25, A251/A252)', () => {
     const stdout = execFileSync(process.execPath, [cliEntry, 'init'], {
       env: { ...process.env, LEARNING_HOME: home }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
-    expect(stdout).toContain(`已初始化：${home}`);
+    expect(JSON.parse(stdout).data.home).toBe(home);
     expect(existsSync(resolve(home, 'master.key'))).toBe(true);
   });
 
   it('doctor reports missing browser without installing anything', () => {
     const run = runCli(['doctor']);
     expect(run.exitCode).toBe(0);
-    expect(run.stdout).toContain('浏览器：未配置');
+    expect(JSON.parse(run.stdout).data.browser).toContain('not configured');
   });
 
   it('doctor uses the OS home instead of the working directory when HOME is unset', () => {
@@ -124,7 +124,7 @@ describe('cli basics (T25, A251/A252)', () => {
     const status = JSON.parse(doctor.stdout).data as { initialized: boolean; pdf: string; font: string; browser: string };
     expect(status.initialized).toBe(true);
     expect(status.pdf).toBe('available');
-    expect(status.font).toContain('unavailable');
+    expect(status.font).toBe('available (reference font is verified and cached automatically on first use)');
     expect(status.browser).toContain('not configured');
     expect(doctor.stdout.trim().split('\n')).toHaveLength(1);
   });
@@ -135,7 +135,7 @@ describe('cli basics (T25, A251/A252)', () => {
     writeFileSync(resolve(run.home, 'learning.lock'), String(process.pid));
     const second = runCli(['init'], { home: run.home });
     expect(second.exitCode).toBe(3);
-    expect(second.stderr).toContain(`pid ${process.pid}`);
+    expect(JSON.parse(second.stdout).error.message).toContain(`pid ${process.pid}`);
     expect(readFileSync(resolve(run.home, 'learning.lock'), 'utf8')).toBe(String(process.pid));
   });
 
@@ -154,7 +154,7 @@ describe('cli basics (T25, A251/A252)', () => {
     writeFileSync(resolve(run.home, 'learning.lock'), 'not-a-pid');
     const second = runCli(['init'], { home: run.home });
     expect(second.exitCode).toBe(3);
-    expect(second.stderr).toContain('unreadable');
+    expect(JSON.parse(second.stdout).error.message).toContain('unreadable');
     expect(readFileSync(resolve(run.home, 'learning.lock'), 'utf8')).toBe('not-a-pid');
   });
 

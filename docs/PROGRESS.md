@@ -1,5 +1,42 @@
 # learning — SDK + CLI 本期实施状态
 
+### 2026-10-28 · Agent 专用 CLI 与配套 Skill（实现及本机离线验收完成）
+
+- 用户明确要求删除人工操作代码、CLI 仅面向 Agent，由本任务决定设计并实施；后续确认保留尚未合入 main 的雨课堂作业下载、YAML 草稿和批量处理。按 ADR 0003 实施，没有扩展 Web 或其他 PLAN 任务。
+- 工作树：`/Users/uu/.codex/worktrees/learning-agent-cli/learning`，分支 `codex/agent-cli`，基于本地 `origin/main` `d2b39c5`。从 `homework-content` 工作树接入其现有作业实现和文档；下方 2026-10-27 的记录仍是该原实现的历史证据。本轮没有修改原主目录的用户改动、原作业工作树、已安装 CLI 或实际账号数据。独立子任务使用获授权的 `zhipu/glm-5.3` / `max`，结果由主线程复核集成。
+- CLI：移除 prompts、wizard、人工进度条、终端 QR 渲染与直接展示表格，删除相应专用依赖。默认单 JSON envelope，JSONL 有序事件以 result 结束；`--json` 保留别名；拒绝 pretty/plain、quiet、no-color、no-interactive。裸跑和命令组返回机器命令目录；新增 `schema [path...]` 从实际 Commander 树生成参数/默认值/必填信息。所有层级 help/version/参数错误统一进入 JSON；缺参不读 stdin、不自动初始化或登录。
+- 执行：显式 key/路径与 `--yes`、`--dry-run`，交卷仍要求 `--yes --final` 并保留 exit 2 与 SDK 能力闸门。run 默认 speed 1 / target 1；courses 保留 completeness 和多账号聚合，末轮复核 SDK 未实现课程分页后删除无效 cursor 选项。QR 使用新建的 0600 图片文件并清理；事件不含 QR 原文或 Cookie。保留账号 scope、generation、写锁、信号暂停、唯一导出路径、批量逐题隔离、partial/uncertain 和不自动重交。live 移除人工答题 UI，保留显式签到及 question/gap 事件，CLI 未增加直播答题提交入口。
+- Skill 与文档：新增 `skills/learning-cli/SKILL.md`、`docs/adr/0003-agent-cli.md`；同步 README、AGENTS、SPEC、APPS、USAGE、INSTALL、CLI-MIGRATION、CLI-DISTRIBUTION、ACCEPTANCE、FEATURE-STATUS、GLOSSARY 和 toolchain。Skill 面向已经安装的 CLI，先检测 Agent 接口，再按需查 schema；既有授权不重复确认。
+- 先失败证据：新增无参发现/缺参 JSON 测试在旧实现上 2 项预期失败。首轮全套 SDK 345/345，CLI 194/203；发现并修复子命令 Commander stderr 泄漏、机器初始化恢复 hint、旧人工输出断言和两项严格学习 fixture。测试中发现的构建清理并发只影响临时 dist，冻结各子任务后统一重构建验证。独立程序写链又复现缺失交卷标志的退出码回归，恢复原契约后重新通过，未放宽未登记网络请求或提交保护断言。
+- 实际环境：macOS arm64，Node v24.11.1、pnpm 11.19.0、Bun 1.4.3。冻结离线安装通过；本地参考字体仅通过环境变量只读提供。`pnpm test` 的 SDK **345/345**；最终 `pnpm --filter @learning/cli exec vitest run` **204/204**；最后交卷标志修复后的 catalog/commands/review-regressions 三文件 **43/43**；`pnpm test:e2e` **7/7**。以上最终对应测试均 exit 0。最后根 `pnpm build`、`pnpm typecheck`、`pnpm lint`，以及 `node scripts/check-boundaries.mjs` 均 exit 0。source-lock 初次因隔离工作树无 `.reference` 失败；只读复用主目录固定 ref 后 `node scripts/check-source-lock.mjs` exit 0。`quick_validate.py skills/learning-cli` 输出 `Skill is valid!`。
+- 便携程序：`BUN_BINARY=<固定 1.4.3> node scripts/build-cli.mjs --without-telemetry` exit 0，最终 `dist/releases/learning-0.2.10-macos-arm64` SHA-256 `2dc2006d9562805431622e1a139a649ee1acf4cede78f0add41baaeb68fbaa98`。`test-bun-runtime.mjs` 通过真实 PNG QR 文件、3976-byte PDF、SQLite/AES-GCM 和 loopback HTTP/WS；`test-distribution.mjs --without-telemetry` 通过无 Node/Bun PATH、权限/锁/清理、真实 PTY 机器输出和编译后错误栈。首次 distribution 子探针因未传 BUN_BINARY 失败，指定固定路径后通过。冻结生产依赖的 `pnpm licenses list --prod --json` 与 `package-licenses.mjs` 均 exit 0，独立许可证在 `dist/releases/LICENSES.txt`。
+- 最后课程能力复核：SDK 的 courses 实现忽略 PageInput，因此删除本轮曾拟加入的无效 cursor 参数并同步 Skill/文档；没有猜测分页协议。重新构建后 agent-contract/catalog **37/37，exit 0**。未修改已通过的作业、写入或恢复实现；下列 loopback 报告记录对应运行时的程序哈希，最后构建不冒充同一二进制。
+- 最终二进制复检：`test-binary.mjs <最终程序> --without-telemetry`、`test-binary-terminal.mjs <最终程序>` 均 exit 0；独立校验 SHA-256、许可证存在、dist 不再包含 prompts/wizard/progress/qr-terminal 模块。末轮 Skill 校验和 `git diff --check` 均 exit 0。
+- 原生 loopback：`test-binary-catalog.mjs`、`test-binary-exports.mjs --case assessments`、`test-binary-writes.mjs --binary dist/releases/learning-0.2.10-macos-arm64` 均两轮、exit 0、清理成功。写链覆盖 matching/homework/embedded/exam/discussion/uncertain，核验实际请求、独立结果读回及 uncertain 不重交。证据分别为 `dist/e2e/catalog-journey-1793158883566-52120.json`、`dist/e2e/exports-journey-1793158587053-43201.json`、`dist/e2e/writes-journey-1793158839890-50214.json`；失败报告保留供追溯。
+- 未运行与边界：未操作真实平台账号、真实答题/发帖/交卷、付费模型或真实遥测；未重跑其他四种原生系统目标、完整原生 jobs/视频下载故障矩阵；原有 Node/CLI 对应回归已运行。没有推送、合并、改版本号、创建 Release、安装到 PATH 或全局安装 Skill。编译产物为无公共遥测 token 的本地测试版。下一事项：本次指定实现已完成，供审阅或另行授权本机安装/发布；不自动推进 Web。
+
+### 2026-10-27 · 普通作业修复版本机安装（完成）
+
+- 用户明确要求“本地部署下，我试试”。沿用现有安装布局，将已验收的 macOS arm64 程序复制到 `/Users/uu/.local/lib/learning/learning-0.2.10-homework-84dc9670`，校验后原子切换 `/Users/uu/.local/bin/learning` 符号链接。旧目标 `/Users/uu/.local/lib/learning/learning-0.2.8-ad40ae7` 完整保留，切回链接即可回退。
+- 新程序版本显示 0.2.10，SHA-256 `84dc96700481d4c3f2b08b822d0ed514d9ab544bfab139a9750b1aa73ef855c8`，与本任务最终 loopback 验收程序一致。使用既有 `--without-telemetry` 本地测试构建，未嵌入公共遥测 token；未改版本号、未创建发布。
+- 实际命令：Node v24.11.1 执行 `node scripts/test-binary.mjs --without-telemetry dist/releases/learning-0.2.10-macos-arm64` → exit 0，覆盖无 Node/Bun PATH 启动、SQLite、账号、权限、锁与失败清理。安装后通过真实 `~/.local/bin/learning` 运行 `--version`、`homework download --help`、`homework apply --help`、`doctor --json` 全部 exit 0；两个作业命令均有 `--all`，doctor 返回 Bun 1.4.3，未创建测试数据目录。安装文件和链接哈希一致。
+- 只使用临时数据目录检查，没有打开或修改用户实际账号库、密钥和草稿，没有平台登录/请求/提交或推送发布。初次进程列表探测被系统沙箱拒绝，未终止任何进程；通过保留旧文件并原子换链接避免修改运行中程序。最后 `git diff --check` exit 0。
+- 下一事项：用户运行 `learning homework download` 试用，按实际反馈继续；本次本机安装已完成。
+
+### 2026-10-27 · 雨课堂普通作业题面、字体与批量流程（实现及本地验收完成）
+
+- 用户通过 grill-with-docs 访谈明确授权“按方案开始实现”。仅修复雨课堂普通作业：Markdown＋本地图片＋简洁 YAML；课程/作业选择、批量与明确全选、填写后预览/提交；重复下载保留草稿，题目变化分版本；缺字/缺图按题隔离；首次自动下载并缓存校验过的参考字体。按用户更正保留批量需求。
+- 工作树：`/Users/uu/.codex/worktrees/homework-content/learning`，分支 `codex/ykt-homework-content`，基于本地 `origin/main` `d2b39c5`。原主目录的 `3d559ed` 与未提交遥测等改动未修改；旧仓库只读。子任务使用获授权的 zhipu/glm-5.3 / max，运行时接受；主线程复核后集成。
+- SDK：`providers/ykt/assessments.ts`、`homework-content.ts` 共用读取、图片与字体准备；`content/html.ts` 保留 TeX/基础 MathML、题干与选项，未知公式/字形/缺图显式 partial；指纹涵盖规范化题干与选项；`services/homework-draft.ts` 提供顶部简洁答案和底部受校验 metadata；`homework-validation.ts` 在准备与发送前复核内容/已答状态。`export-runner.ts` 产出题面、草稿、manifest、图片，部分内容和整份读取失败可与其他完成项共存。旧 learning 草稿、学堂、内嵌题及考试入口保留。
+- Node：`runtime/node/font.ts` 新增精确依赖 `opentype.js@2.0.0` 做纯 JS 轮廓匹配，保留低置信/歧义拒绝；`reference-font*.ts` 固定 Noto Sans CJK SC 2.004 的长度/SHA-256，支持首次下载、缓存校验、损坏拒绝/重取、限量和取消。不依赖 Python/Canvas，不提交字体；其余依赖版本未升级，冻结安装通过。
+- CLI：新增 `homework download`，课程内勾选/全选及 `--all`；`homework apply` 接受单份或目录，逐题可读预览、隔离、fresh GET 与提交，uncertain 停止后续发送；`homework-files.ts` 校验产物，按账号/课程/章节/作业落盘，保留答案，内容变化新建 `.vN`。通用 download 的普通雨课堂作业接同一路径。已同步 contracts、APPS、SDK、PLATFORMS、PLAN、USAGE、FEATURE-STATUS、GLOSSARY、YKT-HOMEWORK、ADR 0002。
+- 红灯证据：作业题面/字体/图片原路径 5 项失败；新草稿/字体/发布模块及 `--all` 入口先失败；不完整选项匹配、反馈指纹、跨 scope 读取先复现；末轮正文 TeX 被双重转义与未知 MathML 变空的 2 项失败后修复。CLI 全套初轮 227/230，修正帮助计数、缺参草稿路径交互与显式网络失败 fixture 后通过；最终 fixture 类型与 lint 正则提示也已修正。严格 fetch fixture 在进程退出时拒绝被恢复逻辑掩盖的未登记请求，未放宽验收。
+- 实际环境：macOS arm64、Node v24.11.1、pnpm 11.19.0、Bun 1.4.3。`pnpm --filter @learning/sdk test`（设置只读本地字体路径）→ **345/345，exit 0**；`pnpm --filter @learning/cli test` → **233/233，exit 0**；最后公式修复后相关 CLI 四文件 → **40/40，exit 0**；`pnpm test:e2e` → **7/7，exit 0**；根 `pnpm typecheck`、`pnpm lint`、`pnpm build`、`node scripts/check-boundaries.mjs`、`git diff --check` 均 exit 0。
+- 字体实测：三份历史本地字体在 Node 解出同句“下列哪项是自然语言处理工具”；Bun 1.4.3 对一份样本同样解出、unresolved=0。公开参考字库首次下载与再次缓存读取一致：16,437,364 字节、SHA-256 `2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b`，也与旧仓库本地参考文件一致。这不是全字库人工准确率验证。
+- 便携程序：`BUN_BINARY=<固定 1.4.3> node scripts/build-cli.mjs --without-telemetry` → exit 0。最终 `dist/releases/learning-0.2.10-macos-arm64` SHA-256 为 `84dc96700481d4c3f2b08b822d0ed514d9ab544bfab139a9750b1aa73ef855c8`。`node scripts/test-binary-exports.mjs --case assessments` 与 `node scripts/test-binary-writes.mjs --binary dist/releases/learning-0.2.10-macos-arm64 --case matching,homework,embedded,uncertain` 各两轮 → exit 0，全部清理成功；验证文件字节/哈希、旧入口、按题隔离、GET/POST 顺序与 uncertain 不自动重交。证据：`dist/e2e/exports-journey-1793071263649-97967.json`、`dist/e2e/writes-journey-1793071268213-98430.json`；网络严格限定 loopback。
+- 未运行/边界：未做真实教学平台登录、读取或提交，未调用付费模型或投递真实遥测；未重跑其余四种便携程序目标、未安装到用户 PATH、未推送/发布。SVG/data URI、未知 MathML、未知字形或未知提交题型保持不完整/未答，不猜协议。旧 Python 未用作生产后端。三个已结束子任务的辅助工作树归档被应用以“Another active task still uses this worktree”拒绝，保留原状；文件发布辅助工作树已接受归档，本任务工作树保留供审阅。
+- 下一事项：本次指定修复的实现与本地验收已完成，等待用户审阅或另行授权真实平台验证/发布；不自动推进其他 PLAN 项或 Web。
+
 版本1.1。记录已实施代码与实际验证；2026-09-23 继续复核后，早期多项“done”仅覆盖纯函数或合成 fixture，未形成完整 CLI 执行链。下表采用当前状态，历史记录保留为当时证据。当前分母为28项，T27–T30延期。
 
 | 任务 | 内容 | 状态 | 实际测试命令/退出码 | 阻塞 |
@@ -28,7 +65,7 @@
 | T21 | 智慧树share/hike学习任务 | partial | share/hike fixture；真机共享课 1×/1% 写入读回 6/581 秒；多资源题闸与失败读回保留 pending | hike 唯一课程为考试，按用户要求未操作 |
 | T22 | 雨课堂实时会话与事件缺口 | partial | checkin、WS、当前题人工确认、重连 gap 和 CLI 进程 fixture | 题面/选项来源不足；真实直播未授权 |
 | T23 | 流式下载、持久产物与断点恢复 | partial | MP4 Range/HLS 分段双进程恢复；4 GiB 合成流以 8 MiB 块拒绝超额且未发布 | 真实多 GiB 文件的峰值内存/磁盘压力未测 |
-| T24 | 本地PDF与字体重型实现 | partial | `render.test.ts` 5/5；历史课件 PDF CLI 进程 fixture；字形维度/非有限值/近似歧义保守拒绝 | 字体 Canvas/旧课件浏览器未实现；E07 人工黄金样本缺失 |
+| T24 | 本地PDF与字体重型实现 | partial | 历史课件 PDF CLI fixture；普通作业纯 JS 字体、三份本地样本与固定 Bun 样本验证通过，见 2026-10-27 记录 | 受控旧页面浏览器未实现；全字库人工黄金样本仍缺 |
 | T25 | CLI基础命令与本地运行装配 | done | fixture + 已授权三平台旧会话导入/在线 whoami、课程列表与大纲真机只读 | 全新 QR 扫码未做真机 |
 | T26 | CLI完整功能入口与恢复操作 | partial | 28 个路径、23 组失败输入；真机学堂与智慧树单视频局部目标、雨课堂/学堂作业草稿 | 试卷禁止；直播/发帖/无答案作业未做真机 |
 | T31 | SDK与CLI集成验收、安装说明与本机证据 | partial | SDK 233/233、CLI 49/49、E2E 7/7；packed tgz 消费者；main 正式五门禁 exit 0；两平台局部学习权威读回 | E07 字体样本缺失；离线独立安装缺 pdf-lib tarball；其余能力仍分项验收 |

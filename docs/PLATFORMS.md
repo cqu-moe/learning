@@ -103,6 +103,8 @@ progress.read 查询 cid=courseId，snapshot=1（数字）、no_loading="true"�
 
 作业 `data.font` 与加密 span marker 已有实现；内嵌题 font 位于 payload 顶层在源码注释中仍是**未证实假设**。新解析器必须给 decodeState，不把找不到字体地址当明文。[Y05、Y08]
 
+2026-10-27 普通作业读取已接入 `textfonts` / `xuetangx-com-encrypted-font` 解码、本地图片映射和题面规范化。三份历史字体样本在 Node 通过，一份在固定 Bun 通过；参考字库按固定 SHA-256 自动下载并缓存。低置信或歧义匹配保持 unresolved/partial，不去掉标记后冒充明文；该证据不扩展到内嵌题或其他平台，详见 YKT-HOMEWORK。
+
 历史课件 API 路可以脱离旧 CLI 浏览器登录包装；特殊页面 fallback 保持独立。实时 slides 获取会 checkin，因此 live.join 必须先获批准，resources.slides 不自动开始签到。[Y06、Y07]
 
 ## P03. 学堂在线 provider

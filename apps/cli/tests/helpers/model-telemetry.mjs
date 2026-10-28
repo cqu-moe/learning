@@ -25,7 +25,7 @@ globalThis.fetch = async (input, options) => {
   return nativeFetch(request);
 };
 
-const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false });
+const output = createOutput({ format: 'json', debug: false });
 const program = createProgram();
 program.setOptionValue('home', process.env.LEARNING_HOME);
 program.setOptionValue('profile', 'SECRET_ALPHA');

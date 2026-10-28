@@ -45,6 +45,14 @@ describe('local profiles', () => {
     expect(existsSync(resolve(dir, 'master.key'))).toBe(false);
   });
 
+  it('requires explicit profile creation inputs without creating storage', () => {
+    const dir = home();
+    expect(run(dir, 'init').code).toBe(0);
+    expect(run(dir, 'profile', 'add', '--json').code).toBe(2);
+    expect(run(dir, 'profile', 'add', 'alpha', '--json').code).toBe(2);
+    expect(run(dir, 'profile', 'add', 'alpha', '--platform', 'ykt', '--json').code).toBe(0);
+  });
+
   it('adds, lists and removes a stable profile without leaking sessions', () => {
     const dir = home();
     expect(run(dir, 'init').code).toBe(0);

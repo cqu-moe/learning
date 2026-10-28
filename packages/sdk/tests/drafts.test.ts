@@ -77,6 +77,7 @@ describe('draft import (T13)', () => {
     });
     const set = await importFeedbackSet(raw, ref);
     expect(set.questions[0]?.feedback?.answer).toMatchObject({ kind: 'choice', keys: ['C'] });
+    expect(set.questions[0]?.fingerprint).toBe(sha256Hex(JSON.stringify(['11', 'single-choice', '题干', [['A', '甲'], ['C', '丙']]])));
   });
 });
 
@@ -98,6 +99,15 @@ function makeDraft(questions: Question[], answers: Array<[string, 'A' | 'C']>): 
 describe('matching (T13, A131/A132)', () => {
   const q1 = question('11', '选对的', [['A', '甲'], ['C', '丙']], 'q1-seed');
   const q2 = question('12', '多选', [['A', 'x'], ['B', 'y'], ['C', 'z']], 'q2-seed');
+
+  it('does not match incomplete options or feedback, even when fingerprints match', () => {
+    const draft = makeDraft([q1], [['A', 'A']]);
+    const incomplete = { ...q1, options: q1.options.map(option => ({ ...option, body: { ...option.body, decodeState: 'partial' as const } })) };
+    const feedback: FeedbackSet = { schemaVersion: 1, id: 'feedback', ref, questions: [{ ...q1, feedback: { origin: 'platform-feedback', answer: { kind: 'choice', keys: ['A'] }, sourceId: 'official', alternatives: [] } }] };
+    expect(matchDraft(draft, [feedback], [incomplete])[0]?.state).toBe('blocked');
+    feedback.questions[0] = { ...incomplete, feedback: feedback.questions[0]!.feedback };
+    expect(matchDraft(draft, [feedback], [q1])[0]?.answer).toBeNull();
+  });
 
   it('matches exactly and remaps reordered options', () => {
     const draft = makeDraft([q1, q2], [['A', 'A'], ['C', 'C']]);

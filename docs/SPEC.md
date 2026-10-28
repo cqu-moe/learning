@@ -10,7 +10,7 @@
 
 **本期只推迟 Web，不把已定的 SDK/CLI 功能偷偷缩成“登录和课程列表”的原型。** 先只读、再写操作/任务/完整 CLI 是本期内部实施顺序；已承诺的功能仍按 PLATFORMS 逐项实现、测试并记录证据缺口。SDK 的“基础”指共用底层，不是另减一次功能范围。
 
-CLI 面向一个本机使用者和其多个平台 profiles；本机 `userId` 固定为 `local`，数据目录由 `LEARNING_HOME` 隔离。保留 Scope 与可注入运行时，便于以后接入 Web；本期不建设站点用户系统。
+CLI 面向调用它的软件 Agent 和同一个本机数据目录中的多个平台 profiles；本机 `userId` 固定为 `local`，数据目录由 `LEARNING_HOME` 隔离。CLI 不判断 TTY、不提供人工向导或交互补参；缺少必填参数返回结构化错误。保留 Scope 与可注入运行时，便于以后接入 Web；本期不建设站点用户系统。
 
 ## 2. 本期做与不做
 
@@ -18,7 +18,7 @@ CLI 面向一个本机使用者和其多个平台 profiles；本机 `userId` 固
 |---|---|
 | SDK | 数据/schema、平台协议、会话、课程树、内容、导出、草稿、写入、固定任务、错误与恢复 |
 | Node 适配 | HTTP/WS、SQLite、加密会话、本机文件、前台任务驱动、本地渲染 |
-| CLI | APPS 中全部既定命令、TTY/JSON、进程退出码、取消/恢复、安装与使用说明 |
+| CLI | APPS 中全部既定命令、默认单 JSON/可选 JSONL、命令目录与 schema、进程退出码、取消/恢复、安装与使用说明 |
 | 本地高级能力 | PDF、字体解码、确有证据的特殊课件页面由同 SDK `/render-node` 实现；不依赖容器 |
 | Web | 页面、HTTP API、站点登录、用户配置、Web E2E 全部延期 |
 | Cloudflare | Workers/DO/R2/Containers、云端运行时适配、Wrangler、部署脚本和云端测试全部延期 |
@@ -70,7 +70,7 @@ SDK 不导入 CLI。CLI 不直接实现平台 URL、认证协议或数据归一�
 | 语言/工作区 | TypeScript strict、ESM、pnpm，两包工作区 |
 | SDK | Zod 4、Web Fetch/Streams、tough-cookie、@noble/hashes；普通函数与模块 |
 | 本机运行时 | Node 24 系列；node:sqlite 只在 `/node` 内加载 |
-| CLI | Commander、简单 prompts、qrcode；stdout/stderr 分开 |
+| CLI | Commander、qrcode；stdout 仅机器协议，stderr 只放诊断，不做 TTY 判断 |
 | 内容 | parse5、yaml、pdf-lib；Playwright 仅为本地受控渲染 |
 | 测试 | Vitest + Node 脚本；CLI E2E 是命令行进程测试，不是 Web 测试 |
 
@@ -85,8 +85,8 @@ T01 只安装当前基础任务用到的依赖；Commander 在 CLI 任务、Play
 ## 5. SDK 与本地 CLI 的最小运行方式
 
 ```text
-终端参数/菜单
-    → apps/cli：配置、profile、确认、输出
+终端参数
+    → apps/cli：配置、profile、显式确认、机器输出
     → @learning/sdk：统一服务 + 三平台 provider
     → Node Runtime：HTTP/WS、SQLite、本机 ArtifactStore
     → 学习平台与本地文件
@@ -125,7 +125,7 @@ SQLite 与文件位于 `~/.learning/` 或 LEARNING_HOME；事务里不等网络�
 
 ## 9. 写操作和可恢复任务
 
-继续使用 prepare → execute → 必要时 reconcile；没有独立权限/审批服务。prepare 保存精确输入、内容摘要和 generation；确认后 execute 只接收 previewId；过期/换内容/换会话要重做预览。TTY 确认或明确命令参数属于本地用户授权，不借 Web 登录作为本期权限来源。
+继续使用 prepare → execute → 必要时 reconcile；没有独立权限/审批服务。prepare 保存精确输入、内容摘要和 generation；确认后 execute 只接收 previewId；过期/换内容/换会话要重做预览。明确命令参数是执行确认，不是真实平台操作授权；平台操作授权仍来自用户在会话中的明确指令或既有授权。
 
 普通 SSO 可在已认证的读取中完成；读取/预览不能顺便签到、标记完成、开始计时或提交。GET 也可能有副作用。开卷、保存答案和交卷分动作；交卷单独确认。
 
@@ -153,6 +153,6 @@ AI 默认生成建议；没有模型 Key 仍可查询、下载、手工草稿和
 
 本期 PLAN 只包含 **T00–T26 与 T31，共 28 项**。T31 改为 SDK + CLI 集成、安装/升级说明和本地证据，不依赖延期 Web。T27–T30 保留旧编号但移到延期说明，不在 tasks.json 或当前待办表内；不是漏项或本期 blocker。
 
-本期完成标准：两包可安装/构建；SDK 和 CLI 指定离线测试、Node 运行时、CLI 进程 E2E 与本地渲染验收通过；平台尚未实测的能力逐项列明。没有用户授权的真实登录/写入如实记 not-run；Web/Cloudflare 记 deferred，不计当前完成分母。
+本期完成标准：两包可安装/构建；SDK 和 CLI 指定离线测试、Node 运行时、CLI 进程 E2E 与本地渲染验收通过；平台尚未实测的能力逐项列明。没有用户授权的真实登录/写入如实记 not-run；Web/Cloudflare 记 deferred，不计当前完成分母。Agent CLI 的输出、参数发现和人工 UI 移除决策以 [ADR 0003](adr/0003-agent-cli.md) 为准。
 
 T31 之后停止，不自动进入 Web。未来进入 Web 时另行确认范围与实际 Cloudflare 能力，不以当前库的可复用设计代替 workerd/云部署验收。

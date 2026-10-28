@@ -92,7 +92,7 @@ try {
   assert.equal(createHash('sha256').update(pdf).digest('hex'), result.artifact.sha256);
   const document = await PDFDocument.load(pdf); assert.equal(document.getPageCount(), 1); assert.equal(document.getTitle(), 'Bun runtime PDF');
   await assert.rejects(artifactBytes(artifacts, result.canceledArtifactId));
-  console.log(`Bun runtime interop passed (${pdf.length}-byte PDF, PNG/JPEG QR, SQLite, AES-GCM, loopback fetch/WebSocket)`);
+  console.log(`Bun runtime interop passed (${pdf.length}-byte PDF, PNG QR file, SQLite, AES-GCM, loopback fetch/WebSocket)`);
 } catch (error) {
   console.error(error);
   process.exitCode = 1;

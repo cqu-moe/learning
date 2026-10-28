@@ -28,9 +28,13 @@ function answerText(answer: Answer | null): string {
 export function renderAssessmentMarkdown(assessment: Assessment): string {
   const lines: string[] = [`# ${assessment.title}`, '', `状态: ${assessment.state}`, ''];
   assessment.questions.forEach((question, index) => {
-    lines.push(`${index + 1}. ${question.body.plainText || question.body.markdown}`);
+    const incomplete =
+      question.body.decodeState === 'partial' ||
+      question.body.decodeState === 'unavailable' ||
+      question.options.some((option) => option.body.decodeState === 'partial' || option.body.decodeState === 'unavailable');
+    lines.push(`${index + 1}. ${incomplete ? '[不完整] ' : ''}${richText(question.body)}`);
     for (const option of question.options) {
-      lines.push(`   - ${option.key}. ${option.body.plainText || option.body.markdown}`);
+      lines.push(`   - ${option.key}. ${richText(option.body)}`);
     }
     lines.push(`   我的作答: ${answerText(question.myAnswer)}`);
     if (question.feedback !== null) {
@@ -39,4 +43,8 @@ export function renderAssessmentMarkdown(assessment: Assessment): string {
     lines.push('');
   });
   return lines.join('\n');
+}
+
+function richText(body: Assessment['questions'][number]['body']): string {
+  return body.markdown.trim() || body.plainText.trim() || '[空]';
 }

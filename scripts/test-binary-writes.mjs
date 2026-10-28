@@ -18,6 +18,7 @@ const selected = values.case === undefined ? cases : values.case.split(',').filt
 const binary = resolve(values.binary ?? resolve(releaseDirectory, executable));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const yaml = createRequire(new URL('../packages/sdk/package.json', import.meta.url))('yaml');
+const { exportDraftYaml, parseLearningDraft } = await import('../packages/sdk/dist/index.js');
 mkdirSync(resolve(root, 'dist/e2e'), { recursive: true });
 const report = { schemaVersion: 1, sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', cwd: root }).trim(), sourceDirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8', cwd: root }).trim() !== '', artifact: { name: executable, sha256: existsSync(binary) ? sha(readFileSync(binary)) : null }, platform: process.platform + '-' + process.arch, egressBoundary, control: values.control ?? null, runs: [] };
 const failures = [];
@@ -51,7 +52,7 @@ try {
         return { ...result, stdout, stderr };
       }
       async function run(profile, args, expected = 0) {
-        const result = await processRun(...loopbackCommand(program, ['--home', home, ...(profile ? ['--profile', profile] : []), ...args, '--json', '--no-interactive'], proxy.url));
+        const result = await processRun(...loopbackCommand(program, ['--home', home, ...(profile ? ['--profile', profile] : []), ...args, '--json'], proxy.url));
         record.commands.push({ command: args.map(a => a.split(directory).join('<isolated-directory>')), profile, code: result.code, stdoutBytes: Buffer.byteLength(result.stdout), stderrBytes: Buffer.byteLength(result.stderr) });
         let diagnostic; try { diagnostic = JSON.parse(result.stdout).error?.code; } catch { /* checked below */ }
         record.commands.at(-1).errorCode = diagnostic;
@@ -65,19 +66,19 @@ try {
       }
       async function call(profile, args, interactions = [], expected = 0) { proxy.use(interactions); const value = await run(profile, args, expected); proxy.done(); return value; }
       const file = (name, value, json = false) => { const path = resolve(directory, name); writeFileSync(path, json ? JSON.stringify(value) : yaml.stringify(value), { mode: 0o600 }); return path; };
-      const readDraft = path => yaml.parse(readFileSync(path, 'utf8'));
+      const draftFile = (name, draft) => { const path = resolve(directory, name); writeFileSync(path, exportDraftYaml(draft), { mode: 0o600 }); return path; };
+      const readDraft = path => parseLearningDraft(readFileSync(path, 'utf8'));
+      const answerSimplifiedDraft = (source, answers, name = '手工作业.yaml') => {
+        const value = yaml.parse(readFileSync(source, 'utf8'));
+        assert.equal(value.format, 'learning-homework/v1');
+        assert.ok(value.answers !== null && typeof value.answers === 'object' && !Array.isArray(value.answers));
+        return file(name, { ...value, answers: { ...value.answers, ...answers } });
+      };
+      const legacyAnswerDraft = (source, answers) => {
+        const simplified = answerSimplifiedDraft(source, answers, '旧版手工作业.simple.yaml');
+        return draftFile('旧版手工作业.yaml', readDraft(simplified));
+      };
       const remember = path => record.artifacts.push({ name: relative(directory, path), sha256: sha(readFileSync(path)), bytes: readFileSync(path).length });
-      async function canceled(profile, args, interactions) {
-        if (process.platform === 'win32') { record.commands.push({ command: args.slice(0, 2), status: 'not-run', reason: 'POSIX PTY only' }); return; }
-        proxy.use(interactions);
-        const argv = loopbackCommand(program, ['--home', home, '--profile', profile, ...args, '--output-format', 'plain'], proxy.url);
-        const spec = { argv: [argv[0], ...argv[1]], steps: [{ wait: '确认执行以上操作', send: 'n\n' }], env: { ...env, CI: '', NODE_EXTRA_CA_CERTS: proxy.ca } };
-        const result = await processRun('/usr/bin/python3', [resolve(root, 'apps/cli/tests/helpers/terminal-driver.py'), JSON.stringify(spec)]);
-        assert.equal(result.code, 0, 'PTY driver'); const terminal = JSON.parse(result.stdout);
-        assert.equal(terminal.code, 3, 'canceled write exit'); assert.equal(terminal.steps, 1); assert.match(terminal.screen, /CANCELED/);
-        proxy.done(); assert.equal(existsSync(resolve(home, 'learning.lock')), false);
-        record.commands.push({ command: args.slice(0, 2), code: terminal.code, pty: true, reply: 'n' });
-      }
       // Independent public platform HTTP consumer, not an SDK store or result seed.
       async function readback(interaction) {
         proxy.use([interaction]);
@@ -112,6 +113,7 @@ try {
       // All draft files originate from public compiled CLI commands.
       hw = resolve(directory, '作业.yaml');
       await call('ykt', ['homework', 'draft', resources.ykt['505'], '-o', hw], [f.leaf('ykt', 505, 6, 888001), f.hwRead('ykt')]);
+      assert.equal(yaml.parse(readFileSync(hw, 'utf8')).format, 'learning-homework/v1');
       assert.equal(readDraft(hw).entries.length, 4); assert.ok(readDraft(hw).entries.every(e => e.answer.kind === 'unset' && e.evidence === null)); remember(hw);
       for (const name of selected) {
         stage = name; const before = proxy.evidence().mutations.length;
@@ -130,16 +132,13 @@ try {
           const reordered = answer => ({ problems: [{ ...f.problems[2], content: { ...f.problems[2].content, Options: [{ key: 'A', value: '乙' }, { key: 'B', value: '甲' }], Answers: [answer] } }] });
           const semanticConflict = file('相同字母不同含义.json', reordered('A'), true);
           const semanticAgreement = file('不同字母相同含义.json', reordered('B'), true);
-          for (const [label, sources, state] of [
-            ['冲突正序', [one, semanticConflict], 'ambiguous'], ['冲突反序', [semanticConflict, one], 'ambiguous'],
-            ['一致正序', [one, semanticAgreement], 'exact'], ['一致反序', [semanticAgreement, one], 'exact'],
-          ]) {
+          for (const [label, source] of [['选项含义冲突', semanticConflict], ['选项含义一致', semanticAgreement]]) {
             const path = resolve(directory, label + '.yaml');
-            const result = await call('ykt', ['answers', 'match', hw, '--source', ...sources, '-o', path], [f.hwRead('ykt')]);
-            assert.equal(result.data.matches[2].state, state, label + ': compare answer meaning independently of source order');
-            assert.equal(result.data.applied, state === 'exact' ? 1 : 0);
-            assert.deepEqual(result.data.matches[2].answer, state === 'exact' ? { kind: 'choice', keys: ['A'] } : null);
-            assert.deepEqual(readDraft(path).entries[2].answer, state === 'exact' ? { kind: 'choice', keys: ['A'] } : { kind: 'unset' }); remember(path);
+            const result = await call('ykt', ['answers', 'match', hw, '--source', source, '-o', path], [f.hwRead('ykt')]);
+            assert.equal(result.data.matches[2].state, 'missing', label + ': option edits change question identity');
+            assert.equal(result.data.applied, 0);
+            assert.equal(result.data.matches[2].answer, null);
+            assert.equal(readDraft(path).entries[2].answer.kind, 'unset'); remember(path);
           }
           const nonexistent = file('不存在选项.json', { problems: [{ ...f.problems[0], content: { ...f.problems[0].content, Answers: ['Z'] } }] }, true);
           assert.equal((await call('ykt', ['answers', 'match', hw, '--source', nonexistent], [f.hwRead('ykt')])).data.matches[0].state, 'missing');
@@ -151,18 +150,29 @@ try {
           assert.equal((await call('ykt', ['answers', 'match', hw, '--source', malformed], [], 2)).error.code, 'INVALID_INPUT');
           const oldHash = sha(readFileSync(matched)); assert.equal((await call('ykt', ['answers', 'match', hw, '--source', source, '-o', matched], [f.hwRead('ykt')], 3)).error.code, 'CONFLICT'); assert.equal(sha(readFileSync(matched)), oldHash);
         } else if (name === 'homework') {
-          const answered = file('手工作业.yaml', { ...readDraft(hw), entries: readDraft(hw).entries.map((e, i) => i ? e : { ...e, answer: { kind: 'choice', keys: ['B'] } }) });
+          const answered = answerSimplifiedDraft(hw, { 11: 'B', 12: 'B' });
           assert.equal((await call('ykt', ['homework', 'apply', hw, '--yes'], [], 2)).error.code, 'INVALID_INPUT');
           assert.equal((await call('ykt', ['homework', 'apply', answered], [], 3)).error.code, 'CONFIRMATION_REQUIRED');
           assert.equal((await call('other', ['homework', 'apply', answered, '--yes'], [], 3)).error.code, 'FORBIDDEN');
-          const invalid = readDraft(answered); invalid.entries[0].answer = { kind: 'judgement', value: true };
-          assert.equal((await call('ykt', ['homework', 'apply', file('错误答案类型.yaml', invalid), '--yes'], [f.hwRead('ykt')], 2)).error.code, 'INVALID_INPUT');
-          await call('ykt', ['homework', 'apply', answered, '--dry-run'], [f.hwRead('ykt')]);
-          await canceled('ykt', ['homework', 'apply', answered], [f.hwRead('ykt')]);
-          const changed = readDraft(answered); changed.fingerprint = 'changed';
-          assert.equal((await call('ykt', ['homework', 'apply', file('过期.yaml', changed), '--yes'], [f.hwRead('ykt')], 2)).error.code, 'PRECONDITION_CHANGED');
-          assert.equal((await call('ykt', ['homework', 'apply', answered, '--yes'], [f.hwRead('ykt'), f.homeworkWrite('ykt')])).data.receipts[0].receipt.state, 'confirmed');
-          assert.deepEqual((await readback(f.hwRead('ykt'))).data.problems[0].user.answer, ['B']);
+          const invalid = yaml.parse(readFileSync(answered, 'utf8')); invalid.answers[11] = { kind: 'judgement', value: true };
+          assert.equal((await call('ykt', ['homework', 'apply', file('错误答案类型.yaml', invalid), '--yes'], [], 2)).error.code, 'INVALID_INPUT');
+          const unchanged = f.hwRead('ykt');
+          await call('ykt', ['homework', 'apply', answered, '--dry-run'], [unchanged, unchanged, unchanged]);
+          const isolated = answerSimplifiedDraft(hw, { 11: 'B' }, '全隔离作业.yaml');
+          const staleQuestion = f.hwRead('ykt', [11]);
+          assert.equal((await call('ykt', ['homework', 'apply', isolated, '--yes'], [staleQuestion, staleQuestion], 2)).error.code, 'INVALID_INPUT');
+          const legacy = legacyAnswerDraft(hw, { 11: 'B' });
+          assert.equal((await call('ykt', ['homework', 'apply', legacy, '--yes'], [staleQuestion, staleQuestion], 2)).error.code, 'PRECONDITION_CHANGED');
+          const changedSelected = f.hwRead('ykt', [12]);
+          const partial = await call('ykt', ['homework', 'apply', answered, '--yes'], [unchanged, unchanged, unchanged, unchanged, f.homeworkWrite('ykt'), changedSelected], 4);
+          assert.equal(partial.data.receipts.length, 1);
+          assert.equal(partial.data.receipts[0].receipt.state, 'confirmed');
+          assert.equal(partial.data.skipped.length, 1);
+          assert.equal(partial.data.skipped[0].questionId, '12');
+          assert.equal(partial.data.skipped[0].code, 'PRECONDITION_CHANGED');
+          const homeworkReadback = await readback(f.hwRead('ykt'));
+          assert.deepEqual(homeworkReadback.data.problems[0].user, { my_count: 1, answer: ['B'] });
+          assert.deepEqual(homeworkReadback.data.problems[1].user, { my_count: 0, answer: null });
           xtDraft = resolve(directory, '学堂作业.yaml');
           await call('xt', ['homework', 'draft', resources.xt['31'], '-o', xtDraft], [f.leaf('xt', 31, 6, 888), f.hwRead('xt')]);
           const x = readDraft(xtDraft); x.entries[0].answer = { kind: 'choice', keys: ['B'] }; const xp = file('学堂答案.yaml', x);
@@ -182,13 +192,12 @@ try {
           const d = readDraft(examDraft); assert.ok(d.entries.every(e => e.answer.kind === 'unset')); d.entries[0].answer = { kind: 'choice', keys: ['B'] }; const path = file('考试答案.yaml', d);
           assert.equal((await call('xt', ['exam', 'start', resources.xt['30']], [], 3)).error.code, 'CONFIRMATION_REQUIRED');
           await call('xt', ['exam', 'start', resources.xt['30'], '--dry-run'], [f.leaf('xt', 30, 5, 3908258), f.cover()]);
-          await canceled('xt', ['exam', 'start', resources.xt['30']], [f.leaf('xt', 30, 5, 3908258), f.cover()]);
           assert.equal((await call('xt', ['exam', 'save', path, '--yes'], f.examRead(), 2)).error.code, 'PRECONDITION_CHANGED');
           assert.equal((await call('xt', ['exam', 'start', resources.xt['30'], '--yes'], [f.leaf('xt', 30, 5, 3908258), f.cover(), f.cover(), ...f.sso(), f.startWrite()])).data.receipt.state, 'confirmed');
           assert.equal((await readback(f.cover())).data.data.result.status, 1);
           assert.equal((await call('xt', ['exam', 'save', path], [], 3)).error.code, 'CONFIRMATION_REQUIRED');
           assert.equal((await call('other', ['exam', 'save', path, '--yes'], [], 3)).error.code, 'FORBIDDEN');
-          await call('xt', ['exam', 'save', path, '--dry-run'], f.examRead()); await canceled('xt', ['exam', 'save', path], f.examRead());
+          await call('xt', ['exam', 'save', path, '--dry-run'], f.examRead());
           const unverified = JSON.parse(JSON.stringify(d)); unverified.entries[1].answer = { kind: 'fill-blank', blanks: [{ id: '1', text: 'synthetic' }] };
           assert.equal((await call('xt', ['exam', 'save', file('未验证题型.yaml', unverified), '--yes'], f.examRead(), 3)).error.code, 'UNSUPPORTED');
           assert.equal((await call('xt', ['exam', 'save', path, '--yes'], [...f.examRead(), f.cover(), ...f.sso(), f.saveWrite()])).data.receipt.state, 'confirmed');
@@ -206,7 +215,7 @@ try {
           d.text = '仅合成平台讨论回复'; const path = file('讨论答案.json', d, true);
           assert.equal((await call('xt', ['discuss', 'post', path], [], 3)).error.code, 'CONFIRMATION_REQUIRED');
           assert.equal((await call('other', ['discuss', 'post', path, '--yes'], [], 3)).error.code, 'FORBIDDEN');
-          await call('xt', ['discuss', 'post', path, '--dry-run'], [f.topic()]); await canceled('xt', ['discuss', 'post', path], [f.topic()]);
+          await call('xt', ['discuss', 'post', path, '--dry-run'], [f.topic()]);
           const changed = { ...d, sourceHash: 'changed' }; assert.equal((await call('xt', ['discuss', 'post', file('讨论过期.json', changed, true), '--yes'], [f.topic()], 2)).error.code, 'PRECONDITION_CHANGED');
           assert.equal((await call('xt', ['discuss', 'post', path, '--yes'], [f.topic(), f.discussionWrite()])).data.receipt.state, 'confirmed');
           const replies = (await readback(f.comments())).data.results; assert.equal(replies.length, 1); assert.equal(replies[0].content.text, d.text);

@@ -37,31 +37,31 @@ describe('cli commands (T26, A261/A262)', () => {
   });
 
   it('rejects a nonexistent exam draft before confirmation', () => {
-    const run = runCli(['exam', 'submit', 'draft.yaml']);
+    const run = runCli(['exam', 'submit', 'draft.yaml', '--dry-run']);
     expect(run.exitCode).toBe(2);
-    expect(run.stderr).toContain('草稿文件不存在');
+    expect(JSON.parse(run.stdout).error.message).toContain('草稿文件不存在');
   });
 
   it('run and download do not report success without an initialized course', () => {
     for (const args of [['run', '--dry-run'], ['download', '--dry-run']]) {
       const run = runCli(args);
       expect(run.exitCode).toBe(2);
-      expect(run.stdout).toBe('');
+      expect(JSON.parse(run.stdout).ok).toBe(false);
     }
     const pendingStudy = runCli(['run', 'course-key', '--dry-run']);
     expect(pendingStudy.exitCode).toBe(3);
-    expect(pendingStudy.stdout).toBe('');
-    expect(pendingStudy.stderr).toContain('尚未初始化');
+    expect(JSON.parse(pendingStudy.stdout).ok).toBe(false);
+    expect(JSON.parse(pendingStudy.stdout).error.message).toContain('尚未初始化');
     const uninitializedDownload = runCli(['download', 'course-key', '--dry-run']);
     expect(uninitializedDownload.exitCode).toBe(3);
-    expect(uninitializedDownload.stdout).toBe('');
-    expect(uninitializedDownload.stderr).toContain('尚未初始化');
+    expect(JSON.parse(uninitializedDownload.stdout).ok).toBe(false);
+    expect(JSON.parse(uninitializedDownload.stdout).error.message).toContain('尚未初始化');
     const init = runCli(['init']);
     expect(init.exitCode).toBe(0);
     expect(runCli(['profile', 'add', 'alpha', '--platform', 'ykt'], init.home).exitCode).toBe(0);
     const unknown = runCli(['download', 'course-key', '--dry-run'], init.home);
     expect(unknown.exitCode).toBe(2);
-    expect(unknown.stdout).toBe('');
+    expect(JSON.parse(unknown.stdout).ok).toBe(false);
   });
 
   it('jobs list reads initialized local state and unknown reconcile fails', () => {
@@ -72,7 +72,7 @@ describe('cli commands (T26, A261/A262)', () => {
     expect(JSON.parse(list.stdout).data.jobs).toEqual([]);
     const rec = runCli(['jobs', 'reconcile', 'missing-job'], init.home);
     expect(rec.exitCode).not.toBe(0);
-    expect(rec.stdout).toBe('');
+    expect(JSON.parse(rec.stdout).ok).toBe(false);
   });
 
   it('jobs list returns persisted SDK job records instead of a fixed empty array', async () => {
@@ -149,7 +149,7 @@ describe('cli commands (T26, A261/A262)', () => {
     for (const args of [['run'], ['download'], ['not-a-command']]) {
       const run = runCli(args);
       expect(run.exitCode).toBe(2);
-      expect(run.stdout).toBe('');
+      expect(JSON.parse(run.stdout).ok).toBe(false);
     }
   });
 });

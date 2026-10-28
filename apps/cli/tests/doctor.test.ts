@@ -43,7 +43,7 @@ describe('doctor optional dependencies', () => {
   it('keeps doctor healthy when ffprobe is missing and explains the limited impact', () => {
     const result = runDoctor();
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('ffprobe：未安装（仅影响缺失视频时长兜底）');
+    expect(JSON.parse(result.stdout).data.ffprobe).toEqual({ available: false, version: null });
   });
 
   it('treats invalid ffprobe output as unavailable', () => {

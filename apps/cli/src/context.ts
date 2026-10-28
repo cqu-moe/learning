@@ -2,17 +2,16 @@ import type { LearningClient, Execution, Result } from '@learning/sdk';
 import { CourseSchema, ResourceRefSchema, JobSchema, parseLearningDraft, DiscussionDraftSchema } from '@learning/sdk';
 import { SqliteStateStore } from '@learning/sdk/node';
 import { lstat, readFile } from 'node:fs/promises';
-import { getOutput, CliError } from './output.js';
+import { getOutput, CliError, shellQuote } from './output.js';
 import type { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { acquireDataDirLock, createCliRuntime } from './runtime.js';
 import { ensureDataDir, resolveDataDir } from './data-dir.js';
-import { createPrompts } from './prompts.js';
 import { readPreferences } from './preferences.js';
-import type { Platform, Scope } from '@learning/sdk/public';
+import type { Scope } from '@learning/sdk/public';
 import type { Output } from './output.js';
-import { addProfile, getProfile, listProfiles, validName } from './profiles.js';
+import { getProfile, listProfiles } from './profiles.js';
 import type { LocalProfile } from './profiles.js';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
 import { redactDiagnosticValues } from './telemetry.js';
@@ -28,11 +27,10 @@ export async function withCliRuntime(
   const dataDir = ensureDataDir(program.opts<{ home?: string }>().home);
   const hasKey = existsSync(resolve(dataDir, 'master.key'));
   const hasState = existsSync(resolve(dataDir, 'state.db'));
-  const initialize = !hasKey || !hasState;
-  if (initialize && !getOutput(program).mode.guided) throw new CliError('INTERACTION_REQUIRED', '本地尚未初始化，请运行 learning init。', 3);
   if (!hasKey && hasState) throw new CliError('STORAGE', '本地数据的密钥缺失，请恢复原来的 master.key 后重试。', 3);
+  if (!hasKey || !hasState) throw new CliError('INTERACTION_REQUIRED', '本地尚未初始化，请运行 learning init。', 3, [], [`learning --home ${shellQuote(dataDir)} init`]);
   getOutput(program).setHome(dataDir);
-  const lock = write || initialize ? acquireDataDirLock(dataDir, process.pid) : null;
+  const lock = write ? acquireDataDirLock(dataDir, process.pid) : null;
   if (lock !== null && !lock.ok) {
     throw new CliError('CONFLICT', lock.reason, 3);
   }
@@ -48,8 +46,8 @@ export async function withCliRuntime(
   }
 }
 
-export function printResult(program: Command, value: unknown, human: string): void {
-  getOutput(program).set(value, human);
+export function printResult(program: Command, value: unknown): void {
+  getOutput(program).set(value);
 }
 
 export async function selectProfile(program: Command, runtime: CliRuntime, scope?: Scope): Promise<LocalProfile> {
@@ -58,7 +56,10 @@ export async function selectProfile(program: Command, runtime: CliRuntime, scope
     redactDiagnosticValues(getOutput(program), [profile.name, profile.scope.profileId]);
     if (scope && (profile.scope.profileId !== scope.profileId || profile.scope.platform !== scope.platform || profile.scope.userId !== scope.userId)) throw new CliError('FORBIDDEN', '目标属于另一个账号。', 3);
     if (program.opts<{ profile?: string }>().profile === undefined) program.setOptionValueWithSource('profile', profile.name, 'inferred');
-    runtime.heavy = new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope: profile.scope }, runtime.log);
+    runtime.heavy = new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope: profile.scope,
+      referenceFontDirectory: resolve(resolveDataDir(program.opts<{ home?: string }>().home), 'cache', 'fonts'),
+      ...(process.env.LEARNING_REFERENCE_FONT === undefined ? {} : { referenceFontPath: process.env.LEARNING_REFERENCE_FONT }),
+    }, runtime.log);
     return profile;
   };
   const chosen = program.opts<{ profile?: string }>().profile;
@@ -70,25 +71,6 @@ export async function selectProfile(program: Command, runtime: CliRuntime, scope
   }
   const profiles = await listProfiles(runtime.state);
   const preferred = scope?.profileId ?? (await readPreferences(runtime.state)).defaultProfileId;
-  if (getOutput(program).mode.guided && scope === undefined) {
-    const prompts = createPrompts(getOutput(program).mode);
-    const platforms: Record<Platform, string> = { ykt: '雨课堂', xuetang: '学堂在线', zhs: '智慧树' };
-    const selected = profiles.length ? await prompts.ask({ name: 'profile', message: '选择账号', initialValue: profiles.find(profile => profile.scope.profileId === preferred)?.scope.profileId ?? profiles[0]!.scope.profileId, options: [
-      ...profiles.map(profile => ({ value: profile.scope.profileId, label: `${profile.name} · ${platforms[profile.scope.platform]}` })),
-      { value: '__add', label: '添加账号' },
-    ] }) : '__add';
-    if (selected !== '__add') {
-      const profile = profiles.find(profile => profile.scope.profileId === selected);
-      if (!profile) throw new CliError('INVALID_INPUT', '请选择有效账号。');
-      return attach(profile);
-    }
-    const platform = String(await prompts.ask({ name: 'platform', message: '选择平台', options: Object.entries(platforms).map(([value, label]) => ({ value, label })) })) as Platform;
-    if (!(platform in platforms)) throw new CliError('INVALID_INPUT', '请选择有效平台。');
-    const name = String(await prompts.ask({ name: 'name', message: '账号名称', initialValue: platforms[platform], validate: value => typeof value !== 'string' || !validName(value) ? '请输入有效名称。' : profiles.some(profile => profile.name === value) ? '名称已存在，请换一个。' : undefined }));
-    const created = await addProfile(runtime.state, name, platform);
-    if (!created) throw new CliError('CONFLICT', '账号名称已存在，请重新添加。', 3);
-    return attach(created);
-  }
   if (!profiles.length) throw new CliError('INTERACTION_REQUIRED', '尚未配置账号，请运行 learning profile add。', 3);
   if (preferred !== null) {
     const profile = profiles.find(profile => profile.scope.profileId === preferred);
@@ -96,18 +78,16 @@ export async function selectProfile(program: Command, runtime: CliRuntime, scope
     return attach(profile);
   }
   if (profiles.length === 1) return attach(profiles[0]!);
-  const output = getOutput(program);
-  if (!output.mode.interactive) throw new CliError('INVALID_INPUT', '存在多个账号，请传入 --profile <名称>。', 2, ['profile']);
-  const name = await createPrompts(output.mode).ask({ name: 'profile', message: '选择账号', options: profiles.map(profile => ({ value: profile.name, label: `${profile.name} (${profile.scope.platform})` })) });
-  return attach(profiles.find(profile => profile.name === name)!);
+  throw new CliError('INVALID_INPUT', '存在多个账号，请传入 --profile <名称>。', 2, ['profile']);
 }
 
 const targetScopes = new WeakMap<Command, Scope>();
-export async function inferTargetScope(program: Command, argument: string | undefined, value: unknown, discussion = false): Promise<void> {
+export async function inferTargetScope(program: Command, argument: string | undefined, value: unknown, discussion = false, homeworkDirectory = false): Promise<void> {
   if (typeof value !== 'string') return;
   if (argument === 'file' || argument === 'draft') {
     if (!existsSync(value)) throw new CliError('INVALID_INPUT', `草稿文件不存在：${value}`, 2, [argument]);
     const info = await lstat(value);
+    if (homeworkDirectory && info.isDirectory() && !info.isSymbolicLink()) return;
     if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) throw new CliError('INVALID_INPUT', '草稿必须是不超过 4 MiB 的普通文件。');
     const text = await readFile(value, 'utf8');
     const scope = discussion ? DiscussionDraftSchema.parse(JSON.parse(text)).ref.resource.course.scope : parseLearningDraft(text).ref.resource.course.scope;

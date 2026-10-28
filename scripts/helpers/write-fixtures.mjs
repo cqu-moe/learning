@@ -15,8 +15,12 @@ export function writeFixtures() {
   const state = { homework: {}, embedded: false, examStatus: 0, examAnswers: [], comments: [] };
   const problem = (id, text) => ({ problem_id: id, content: { ProblemType: 1, Body: text, Options: [{ key: 'A', value: '甲' }, { key: 'B', value: '乙' }] } });
   const problems = [problem(11, '精确答案'), problem(12, '无公开答案'), problem(13, '来源冲突'), problem(14, '仅建议')];
-  const hwRead = platform => platform === 'ykt'
-    ? get(yt, '/mooc-api/v1/lms/exercise/get_exercise_list/888001/', () => ({ success: true, data: { problems: problems.map(p => ({ ...p, user: { answer: state.homework[p.problem_id] ?? null } })) } }), { classroom_id: '28930736' })
+  const hwRead = (platform, changed = []) => platform === 'ykt'
+    ? get(yt, '/mooc-api/v1/lms/exercise/get_exercise_list/888001/', () => ({ success: true, data: { problems: problems.map(p => ({
+      ...p,
+      content: { ...p.content, Body: changed.includes(p.problem_id) ? p.content.Body + '（平台已更新）' : p.content.Body },
+      user: { my_count: state.homework[p.problem_id] === undefined ? 0 : 1, answer: state.homework[p.problem_id] ?? null },
+    })) } }), { classroom_id: '28930736' })
     : get(xt, '/api/v1/lms/exercise/get_exercise_list/888/900/', () => ({ success: true, data: { exercise_id: 888, problems: [{ problem_id: 21, content: { Type: 'SingleChoice', Body: '学堂作业', Options: [{ key: 'A', value: '甲' }, { key: 'B', value: '乙' }] }, user: { my_count: state.homework.xt ? 1 : 0, answer: state.homework.xt ?? null } }] } }));
   const leaf = (platform, id, kind, assessmentId) => get(platform === 'ykt' ? yt : xt, `${platform === 'ykt' ? '/mooc-api' : '/api'}/v1/lms/learn/leaf_info/${platform === 'ykt' ? '28930736' : '100'}/${id}/`, { success: true, data: { leaf_type: kind, content_info: { leaf_type_id: assessmentId } } }, platform === 'ykt' ? { classroom_id: '28930736' } : { sign: 'SIGN-A' });
   const embeddedRead = () => [get(yt, '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', { success: true, data: { leaf_type: 0, sku_id: 901, content_info: { media: { exercise_id: 888 } } } }, { classroom_id: '28930736' }), get(yt, '/mooc-api/v1/lms/exercise/leaf_video/problem/901/502/888/', () => ({ success: true, data: [{ ...problem(11, '内嵌题'), user: { is_right: state.embedded } }] }), { classroom_id: '28930736' })];

@@ -20,24 +20,37 @@ for (const key of Object.keys(env)) {
   if (/^(path|bun_options|node_options|posthog_project_token|posthog_host|learning_model_.+|learning_telemetry_token|learning_bundled_telemetry_token)$/i.test(key)) delete env[key];
 }
 env.PATH = '';
-function run(args, expected = 0) {
-  const result = spawnSync(binary, ['--home', '账号 数据', ...args], {
-    cwd: root, env, encoding: 'utf8', timeout: 20_000,
+function rawRun(args, expected = 0, overrideEnv = {}) {
+  const result = spawnSync(binary, args, {
+    cwd: root, env: { ...env, ...overrideEnv }, encoding: 'utf8', timeout: 20_000,
   });
   assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, expected, `${args.join(' ')}\n${result.stderr}\n${result.stdout}`);
+  return result;
+}
+function run(args, expected = 0, overrideEnv = {}) {
+  const result = rawRun(['--home', '账号 数据', ...args], expected, overrideEnv);
+  assert.equal(result.stderr, '', `${args.join(' ')} emitted unexpected stderr`);
   return result.stdout;
 }
-function json(args, expected = 0) {
-  const stdout = run([...args, '--json'], expected);
+function envelope({ stdout, stderr }) {
+  assert.equal(stderr, '', 'unexpected diagnostic stderr');
   assert.equal(stdout.trim().split('\n').length, 1, 'one JSON document per command');
   assert.ok(!stdout.includes('\u001b'), 'no terminal escapes in JSON');
   return JSON.parse(stdout);
 }
+function json(args, expected = 0) {
+  return envelope(rawRun(['--home', '账号 数据', ...args, '--json'], expected));
+}
 const failures = [];
 try {
-  assert.equal(run(['--version']).trim(), version);
-  assert.match(run(['--help']), /learning/);
+  assert.equal(envelope(rawRun(['--version'])).data.text, version);
+  assert.match(envelope(rawRun(['--help'])).data.text, /learning/);
+  const noticeHome = resolve(root, 'telemetry notice');
+  const firstNotice = envelope(rawRun(['--home', noticeHome, 'init'], 0, { CI: '0', VITEST: '0' }));
+  assert.equal(firstNotice.warnings.some(warning => warning.code === 'TELEMETRY_NOTICE'), true, 'first telemetry notice must be a structured warning');
+  const secondNotice = envelope(rawRun(['--home', noticeHome, 'init'], 0, { CI: '0', VITEST: '0' }));
+  assert.equal(secondNotice.warnings.some(warning => warning.code === 'TELEMETRY_NOTICE'), false, 'telemetry notice must only be emitted once');
   const telemetryStatusText = run(['telemetry', 'status', '--json']);
   assert.doesNotMatch(telemetryStatusText, /phc_[A-Za-z0-9_-]+/, 'telemetry status must not display the token');
   const telemetryStatus = JSON.parse(telemetryStatusText).data;

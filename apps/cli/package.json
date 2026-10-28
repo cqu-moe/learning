@@ -14,26 +14,17 @@
   ],
   "scripts": {
     "typecheck": "pnpm --filter @learning/sdk build && tsc -p tsconfig.json",
-    "build": "pnpm --filter @learning/sdk build && tsc -p tsconfig.build.json",
+    "build": "pnpm --filter @learning/sdk build && node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "test": "pnpm run build && vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@clack/prompts": "1.8.1",
     "@learning/sdk": "workspace:*",
-    "cli-progress": "3.12.0",
-    "cli-table3": "0.6.5",
-    "cli-truncate": "6.1.1",
     "commander": "15.0.0",
-    "jpeg-js": "0.4.4",
-    "jsqr": "1.4.0",
-    "pngjs": "5.0.0",
     "qrcode": "1.5.4",
-    "string-width": "8.3.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@types/cli-progress": "3.11.6",
     "@types/node": "24.13.6",
     "typescript": "5.9.3",
     "vitest": "5.0.1"

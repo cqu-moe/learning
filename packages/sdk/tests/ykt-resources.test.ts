@@ -103,7 +103,8 @@ describe('ykt resources (T07)', () => {
     });
     expect(assessment.questions).toHaveLength(1);
     expect(assessment.questions[0]?.body.decodeState).toBe('partial');
-    expect(assessment.questions[0]?.body.plainText).toContain('textfonts');
+    expect(assessment.questions[0]?.body.plainText).toContain('【未解码】');
+    expect(assessment.questions[0]?.body.plainText).not.toContain('<span');
   });
 
   it('parses srt edge cases deterministically', () => {
