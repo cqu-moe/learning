@@ -5,11 +5,12 @@
 ## 已合入的最近工作
 
 - CLI 错误诊断、源码堆栈和 0.2.10 发行：[PR #27](https://github.com/cqu-moe/learning/pull/27)。随后修复了脱敏性能与 Windows 发行清单：[PR #28](https://github.com/cqu-moe/learning/pull/28)、[PR #29](https://github.com/cqu-moe/learning/pull/29)。具体验证环境与缺口见历史记录末尾。
-- [PR #30](https://github.com/cqu-moe/learning/pull/30) 已合入 Agent 专用 CLI、配套 Skill 和普通作业流程；[实现、审查与验证记录](progress/2026-10-28-agent-cli.md)已按任务归档。Web 不据此判定为已合入；当前任务以用户明确要求及分支差异为准。
+- [PR #30](https://github.com/cqu-moe/learning/pull/30) 已合入 Agent 专用 CLI、配套 Skill 和普通作业流程；[实现、审查与验证记录](progress/2026-10-28-agent-cli.md)已按任务归档。Web 的独立交付状态见下方记录。
 - 真实平台、付费模型和真实遥测入库的验收逐任务列明。[功能状态表](FEATURE-STATUS.md)使用前与当前代码和相关任务记录核对。
 
 ## 本次工作
 
+- [2026-10-28：本地 Web 仪表盘、任务发起恢复与 Agent CLI 互操作](progress/2026-10-28-web-dashboard.md)：U01–U03 本地验收完成，包含雨课堂二维码来源修复；用户已授权 PR 和合并，远端检查待执行。
 - [2026-10-28：源码校验门禁与 Agent 文档整理](progress/2026-10-28-retro-guardrails.md)。
 
 ## 按需查阅

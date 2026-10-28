@@ -4,7 +4,7 @@
 
 Node、pnpm 和 Bun 版本从 `package.json`、`.bun-version` 与 `docs/toolchain.md` 读取。先运行改动所属的最小回归，再完成当前 `.github/workflows/ci.yml` 要求的适用检查。
 
-- SDK/CLI 改动沿用根 scripts 的 lint、typecheck、test、build，以及 `test:e2e` 的 CLI 进程测试；导入/导出边界用 `scripts/check-boundaries.mjs`。
+- SDK/CLI/Web 改动沿用根 scripts 的 lint、typecheck、test、build；`test:e2e` 包含 CLI 进程与 Web/CLI 互操作测试。导入/导出边界用 `scripts/check-boundaries.mjs`，Web 另运行 `pnpm check:design`。
 - 源码证据检查的回归入口为 `node --test scripts/test-source-lock.mjs`。`node scripts/check-source-lock.mjs` 默认要求三个私有参考 checkout 存在、版本匹配且处于 detached HEAD。
 - 无参考仓库的 CI 使用 `node scripts/check-source-lock.mjs --allow-missing-references`。仅缺失目录可明确报告 `SKIP`；JSON/清单损坏、缺项、重复项、错误 ref、已存在但损坏的 checkout、版本不匹配和非 detached 状态仍导致失败。跳过参考源码不构成协议核验通过。
 - fixture 核验请求方法、地址、参数、headers、body 和错误 envelope；默认未登记请求失败。新回归应先在旧实现上因目标行为失败，再验证修复。

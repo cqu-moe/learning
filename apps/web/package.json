@@ -1,0 +1,39 @@
+{
+  "name": "@learning/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174",
+    "build": "pnpm --filter @learning/sdk build && tsc --noEmit && vite build",
+    "typecheck": "pnpm --filter @learning/sdk build && tsc --noEmit",
+    "start": "node server/index.ts",
+    "test": "pnpm --filter @learning/sdk build && vitest run",
+    "test:interop": "pnpm --filter @learning/cli build && vitest run --config vitest.interop.config.ts",
+    "check:design": "node node_modules/@cqu-moe/ui/dist/check-design.mjs src"
+  },
+  "dependencies": {
+    "@learning/sdk": "workspace:*",
+    "@cqu-moe/theme": "file:./.design/cqu-moe-theme-1.1.0.tgz",
+    "@cqu-moe/ui": "file:./.design/cqu-moe-ui-1.1.0.tgz",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router": "7.18.4",
+    "lucide-react": "1.48.0",
+    "qrcode": "1.5.4",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/node": "24.13.6",
+    "@types/qrcode": "1.5.5",
+    "@vitejs/plugin-react": "6.1.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  },
+  "packageManager": "pnpm@11.19.0"
+}

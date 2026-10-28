@@ -31,7 +31,7 @@ export function digestOf(input: ActionInput): string {
 
 /** Durable preview → sending → done transition. A lost response is never resent. */
 export class ActionStore {
-  private readonly executors = new Map<string, () => Promise<Receipt>>();
+  private readonly executors = new Map<string, (options?: Options) => Promise<Receipt>>();
   private readonly preflights = new Map<string, () => Promise<void>>();
   private readonly log: DiagnosticLog | undefined;
 
@@ -77,7 +77,7 @@ export class ActionStore {
     if (!ok) throw failure('CONFLICT', 'operation changed concurrently', record.operationId);
   }
 
-  async prepare(input: ActionInput, generation: number, executor: () => Promise<Receipt>, options: { blockers?: string[]; warnings?: Preview['warnings']; scope?: Scope; preflight?: () => Promise<void> } = {}): Promise<Preview> {
+  async prepare(input: ActionInput, generation: number, executor: (options?: Options) => Promise<Receipt>, options: { blockers?: string[]; warnings?: Preview['warnings']; scope?: Scope; preflight?: () => Promise<void> } = {}): Promise<Preview> {
     const parsed = ActionInputSchema.parse(input);
     const id = `preview-${crypto.randomUUID()}`;
     const operationId = `operation-${crypto.randomUUID()}`;
@@ -120,7 +120,7 @@ export class ActionStore {
     await this.preflights.get(previewId)?.();
     await this.update(stored, { ...record, phase: 'sending' });
     try {
-      const outcome = ReceiptSchema.parse(await executor());
+      const outcome = ReceiptSchema.parse(await executor(options));
       const receipt: Receipt = { ...outcome, operationId: record.operationId };
       const sending = await this.load(previewId);
       await this.update(sending.stored, { ...sending.record, phase: 'done', receipt });

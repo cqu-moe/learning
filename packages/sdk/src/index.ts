@@ -145,9 +145,9 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       log: runtime.log,
     });
   };
-  const liveCheckin = async (lessonId: string): Promise<{ lessonToken: string; jwt: string }> => {
+  const liveCheckin = async (lessonId: string, options?: Options): Promise<{ lessonToken: string; jwt: string }> => {
     const response = await (await httpBound()).request({ kind: 'write', method: 'POST', url: 'https://www.yuketang.cn/api/v3/lesson/checkin',
-      headers: { 'content-type': 'application/json;charset=utf-8' }, body: JSON.stringify({ source: 1, lessonId }) });
+      headers: { 'content-type': 'application/json;charset=utf-8' }, body: JSON.stringify({ source: 1, lessonId }), ...(options?.signal ? { signal: options.signal } : {}) });
     const payload = await response.json() as { code?: number; data?: { lessonToken?: string } };
     if (payload.code !== 0 || typeof payload.data?.lessonToken !== 'string' || payload.data.lessonToken === '') throw new LearningError({ code: 'UNCERTAIN', message: 'live checkin did not confirm a lesson token', retryAfterMs: null, operationId: null });
     return { lessonToken: payload.data.lessonToken, jwt: response.headers.get('set-auth') ?? '' };
@@ -398,8 +398,8 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           if (!ownsScope(actionInput.lesson.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'live lesson belongs to another profile', retryAfterMs: null, operationId: null });
           const session = await readSession(runtime.state, runtime.masterKey, scope);
           if (session === null || !session.identityVerified || !session.platformUserId) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified Yuketang login required before live checkin', retryAfterMs: null, operationId: null });
-          return actionStore.prepare(actionInput, session.generation, async () => {
-            const { lessonToken, jwt } = await liveCheckin(actionInput.lesson.lessonId);
+          return actionStore.prepare(actionInput, session.generation, async (executeOptions) => {
+            const { lessonToken, jwt } = await liveCheckin(actionInput.lesson.lessonId, executeOptions);
             const job = await jobRunner.create(scope, 'live', { total: null, payload: actionInput, generation: session.generation });
             liveSessions.set(job.id, new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, log: runtime.log, jobId: job.id, wake: async () => { await jobRunner.wake(job.id); await runtime.wake(); },
               lessonId: actionInput.lesson.lessonId, userId: session.platformUserId!, lessonToken, jwt }));
@@ -597,6 +597,13 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         return { type: 'receipt', receipt };
       },
       reconcile: async (operationId) => {
+        if (operationId.startsWith('live-checkin:')) {
+          const jobId = /^live-checkin:(job-[^:]+):/.exec(operationId)?.[1];
+          if (jobId === undefined) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid live checkin operation id', retryAfterMs: null, operationId });
+          const job = await assertOwnedJob(jobId);
+          if (job.kind !== 'live' || (await jobRunner.metadata(jobId)).pendingOperationId !== operationId) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'pending live checkin changed', retryAfterMs: null, operationId });
+          return { operationId, state: 'uncertain', message: 'live checkin outcome cannot be proven; do not repeat', result: null };
+        }
         if (((operationId.startsWith('heartbeat:') || operationId.startsWith('article:')) && platform === 'ykt') || (operationId.startsWith('xtx-heartbeat:') && platform === 'xuetang') || ((operationId.startsWith('hike:') || operationId.startsWith('share-save:') || operationId.startsWith('prelearn:')) && platform === 'zhs')) {
           const jobId = /^(?:(?:xtx-)?heartbeat|article|hike|share-save|prelearn):(job-[^:]+):/.exec(operationId)?.[1];
           if (jobId === undefined) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid heartbeat operation id', retryAfterMs: null, operationId });
@@ -737,14 +744,14 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         if (session === null || !session.identityVerified || !session.platformUserId || (await jobRunner.metadata(jobId)).generation !== session.generation) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'live session changed before rejoin', retryAfterMs: null, operationId: jobId });
         const saved = ActionInputSchema.parse(await jobRunner.input(jobId));
         if (saved.kind !== 'live.join') throw new LearningError({ code: 'INTEGRITY', message: 'live job has invalid input', retryAfterMs: null, operationId: jobId });
-        const { lessonToken, jwt } = await liveCheckin(saved.lesson.lessonId);
+        const operationId = await jobRunner.beginLiveRejoin(jobId);
+        const { lessonToken, jwt } = await liveCheckin(saved.lesson.lessonId, options);
         const live = new YktLiveSession({ transport: runtime.transport, clock: runtime.clock, log: runtime.log, jobId, wake: async () => { await jobRunner.wake(jobId); await runtime.wake(); },
           lessonId: saved.lesson.lessonId, userId: session.platformUserId, lessonToken, jwt });
         liveSessions.set(jobId, live);
         try {
-          const requeued = await jobRunner.requeueLive(jobId);
           await jobRunner.emitGap(jobId, 'live socket re-established; events during process exit were not recoverable');
-          return requeued;
+          return await jobRunner.requeueLive(jobId, operationId);
         } catch (cause) { await live.close(); liveSessions.delete(jobId); throw cause; }
       },
       cancel: async (jobId) => { await assertOwnedJob(jobId); const live = liveSessions.get(jobId); if (live) { await live.close(); liveSessions.delete(jobId); } return jobRunner.cancel(jobId); },

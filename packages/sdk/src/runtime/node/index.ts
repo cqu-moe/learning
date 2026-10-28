@@ -4,6 +4,8 @@ export { NodeFetchTransport, NodeSocket } from './transport.js';
 export { NodeArtifactStore } from './artifacts.js';
 export { createCompatibleModelClient, ModelLabelSchema } from './model.js';
 export { probeMediaDuration } from './media-probe.js';
+export { removeLocalProfileData } from './local-profile.js';
+export { readSession as readLocalSession } from '../../session/store.js';
 export type { Runtime, ModelClient } from '../types.js';
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

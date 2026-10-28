@@ -11,9 +11,11 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "test:e2e": "pnpm --filter @learning/cli exec vitest run --config vitest.e2e.config.ts",
+    "test:e2e": "pnpm --filter @learning/cli exec vitest run --config vitest.e2e.config.ts && pnpm --filter @learning/web test:interop",
     "build": "pnpm -r build",
-    "cli": "pnpm --filter @learning/cli start"
+    "cli": "pnpm --filter @learning/cli start",
+    "web": "pnpm --filter @learning/web build && pnpm --filter @learning/web start",
+    "check:design": "pnpm --filter @learning/web check:design"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -1,5 +1,41 @@
 [
   {
+    "id": "U03",
+    "title": "整合 Agent CLI 与 Web 本地互操作（用户指定）",
+    "deps": ["U02"],
+    "files": ["apps/web", "apps/cli/src/commands/profile.ts", "packages/sdk/src/runtime/node/local-profile.ts"],
+    "test": "apps/web/tests/interop.test.ts",
+    "consume": "main 9229491 Agent CLI；现有共享 SQLite/session/jobs/artifacts",
+    "produce": "共用账号与默认账号、互斥写入、双向任务恢复、Web 账号管理与失效锁清理",
+    "steps": ["保留 Web 成果并合并 main，验证真实 CLI 子进程与 Web API 的同目录互操作"],
+    "checks": ["登录会话双向可用", "同一检查点双向恢复", "活跃写锁不抢占", "账号删除清理两端数据并保留其他账号"],
+    "command": "pnpm --filter @learning/web test:interop"
+  },
+  {
+    "id": "U02",
+    "title": "Web 任务发起、执行与恢复（用户指定）",
+    "deps": ["U01"],
+    "files": ["apps/web", "packages/sdk/src/services/jobs.ts", "packages/sdk/src/services/actions.ts", "packages/sdk/src/index.ts", "docs/WEB-UI.md"],
+    "test": "apps/web/tests/tasks.test.ts",
+    "consume": "用户继续指令；SDK actions/jobs；CQU Design 1.1.0",
+    "produce": "资源与参数选择、预览确认、后台执行、恢复核对与文件下载",
+    "steps": ["先验证真实 HTTP/SQLite/SDK 边界，再接 React 交互；保留不确定写入"],
+    "checks": ["重复确认不创建重复任务", "暂停和重启保留进度", "未知签到结果不重发", "离线浏览器发起恢复通过"],
+    "command": "pnpm --filter @learning/web test"
+  },
+  {
+    "id": "U01",
+    "title": "本地 React Web 仪表盘首版（用户指定）",
+    "deps": [],
+    "files": ["apps/web", "pnpm-workspace.yaml", "package.json", "scripts/check-boundaries.mjs", "docs/WEB-UI.md"],
+    "test": "apps/web/tests/api.test.ts",
+    "consume": "2026-10-28 用户授权；docs/WEB-UI.md；SDK 正式 exports；CQU Design 1.1.0",
+    "produce": "本地账号/课程/任务仪表盘、隔离 API 与响应式 React 页面",
+    "steps": ["复用 CQU Design 生成器和组件", "接入 SDK 本地数据和明确触发的登录/课程读取", "验证 API 正常/异常和浏览器双主题多宽度"],
+    "checks": ["不依赖 CLI 交互代码，不访问真实平台", "Host/Origin、账号隔离、写锁和密钥保护", "失败可恢复，未知进度不伪造"],
+    "command": "pnpm --filter @learning/web test && pnpm --filter @learning/web build && pnpm check:design && node scripts/check-boundaries.mjs"
+  },
+  {
     "id": "T00",
     "title": "固定源码与证据目录",
     "deps": [],
