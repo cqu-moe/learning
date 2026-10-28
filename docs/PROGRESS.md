@@ -1208,3 +1208,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - Ego 浏览器在合成4312服务实测默认账号、有效登录核验、退出、Enter添加与移除、失效锁提示/确认清理；CLI `config show` 读回 Web 设置。删除和解锁弹窗 Esc 回到触发按钮，操作成功后聚焦添加账号。账号页1440/768/390/320浅深共8张截图及390解锁弹窗、320页面底部实看，无横向溢出；桌面正常竖向滚动条占宽单独计量。初次文本选择器点中 ActionButton 隐藏标签后改用实际 aria-label；测试锁提前注入时移除被正确拒绝，清锁后重试成功。截图 `u03-accounts-*`、`u03-unlock-390-light.png`；验收 TaskSpace9 已关闭，最新合成服务继续监听4312，真实 `~/.learning` 未触及。
 - 独立 GLM5.3/max 复核共享清理与生命周期修复，最终没有剩余 must-fix；主线程复核源码及测试。`node scripts/check-source-lock.mjs` 实际 exit1：本 worktree 缺 `.reference/ykt-cli`（`48a92c24498980d01aa045cf734ba3095d5f5bd1`）、`.reference/xuetang-cli`（`628a8fa8a4b90897f285a109aa591a8f6263846d`）、`.reference/zhs-cli`（`56d02171cf73c45694d69f886c902d2ecedadaaa`）；本次不改平台协议，记录参考源码核验缺口，不掩盖为通过，不拉取或运行旧 CLI。
 - U03 **done（本机/离线互操作验收）**。未运行真实教学平台登录/学习/签到/答题/发帖/交卷、付费模型、真实遥测、五目标原生矩阵或远程 CI；未推送、开 PR、远程合并、发布或部署。Web 的作业编辑/提交与讨论发布尚未实现，不宣称全量 CLI 功能已迁移。下一事项为用户审阅本地整合结果或另行指定的真实平台/发布验收，不自动扩大范围。
+
+### 2026-10-28 · 本地 GUI 使用入口
+
+- 用户询问 GUI 用法。确认4311没有现存监听后，以 Node24.11.1 启动已构建的正式 `apps/web/server/index.ts`，显式使用共享 `/Users/uu/.learning`，仅监听 `127.0.0.1:4311`；进程保持运行。`curl --fail --max-time 5` 静态首页返回 HTTP200 / exit0，Codex 打开该地址的请求已排队。
+- 4312仍是合成演示；正式入口显示本机共享账号/课程/任务，由用户主动扫码、刷新和启动。没有自动发起教学平台登录、课程读取或写入，没有付费模型请求；本次未改产品代码，沿用上一节构建与测试，不重复全套。下一步为用户通过4311使用界面，真实平台流程不宣称已验收。
+
+### 2026-10-28 · 修复雨课堂二维码被 Web 误拒绝
+
+- 用户在正式4311页面主动获取二维码，报告「登录二维码来源不受信任」。根因是 `apps/web/server/app.ts` 的显示层仅允许微信域名；SDK 的雨课堂二维码本可使用平台自身链接，原合成 fixture 却只覆盖微信链接，导致离线验收漏检。
+- 针对该错误匿名读取一次公开 `https://www.yuketang.cn/api/v3/user/login/app-web-pre-info`，没有携带账号 Cookie；仅输出 HTTP200/code0、二维码127字节、`https:`/`www.yuketang.cn`/默认端口/无userinfo。没有输出或保存实际二维码内容及票据，也未轮询、交换或完成认证。由实际协议和域名制作合成 fixture，未把真实登录材料写入仓库。
+- 最小产品修复仅在既有 HTTPS 检查中增加精确 `https://www.yuketang.cn` origin；原微信白名单、未知来源拒绝、服务端生成 PNG 和浏览器不读取票据的行为保留。扩大原 API 回归覆盖官方雨课堂/微信正例，以及陌生域名、相似后缀域名、userinfo混淆和HTTP负例；共享 YKT fixture 改为雨课堂 origin 的合成链接。
+- RED：`pnpm --filter @learning/web exec vitest run tests/api.test.ts -t 'renders an offline login QR'` 实际1 failed/1 passed，exit1，失败消息与用户截图一致（`qr-origin-red.log`）。修复后 Web **32/32**、SDK ykt-catalog **14/14**、CLI catalog **30/30**、Web/CLI interop **7/7**，共83通过，均 exit0；日志 `artifacts/web-ui/qr-origin-{web,sdk,cli,interop}-green.log`。Node24.11.1/pnpm11.19.0 下 lint、Web类型检查/构建、边界、设计检查与 diff检查均 exit0；既有 JS体积警告保留。GLM5.3/max只读复核无剩余必须修复项。
+- 确认正式服务没有持有写锁的操作后，正常结束旧服务（exit0），并在相同 `LEARNING_HOME=/Users/uu/.learning` 和4311端口启动修复后的服务；已有账号、课程和任务保留。本次未做真实账号扫码确认、教学平台写入、付费模型、完整原生/远端矩阵或推送发布；下一步为用户刷新页面后重新获取二维码并自行完成手机验证。

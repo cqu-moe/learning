@@ -456,7 +456,7 @@ export function createWebServer(options: WebServerOptions): http.Server {
     }
     let url: URL;
     try { url = new URL(event.qr.value); } catch { throw new HttpError(502, 'PROTOCOL', '登录二维码链接无效。'); }
-    if (url.protocol !== 'https:' || !(url.hostname === 'weixin.qq.com' || url.hostname.endsWith('.weixin.qq.com'))) {
+    if (url.protocol !== 'https:' || !(url.origin === 'https://www.yuketang.cn' || url.hostname === 'weixin.qq.com' || url.hostname.endsWith('.weixin.qq.com'))) {
       throw new HttpError(502, 'PROTOCOL', '登录二维码来源不受信任。');
     }
     try {

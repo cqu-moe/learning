@@ -37,14 +37,15 @@ it('does not initialize shared storage while another process holds the first-run
 
 class OfflineLoginTransport implements Transport {
   readonly requests: Request[] = [];
+  private readonly fake = new FakeTransport();
 
-  constructor(private readonly mode: 'hang' | 'fail' | 'bad-qr' | 'unknown-qr', private readonly fake = new FakeTransport()) {
+  constructor(private readonly mode: 'hang' | 'fail' | 'bad-qr' | 'unknown-qr', qrContent?: string) {
     if (mode !== 'fail') {
       const interaction = structuredClone(loadFixture('ykt/qr-login').interactions[0]!);
-      if ((mode === 'bad-qr' || mode === 'unknown-qr') && interaction.response.body !== undefined) {
+      if ((qrContent !== undefined || mode === 'bad-qr' || mode === 'unknown-qr') && interaction.response.body !== undefined) {
         const body = interaction.response.body as { data: { qrContent: string } } | null;
         if (body === null) throw new Error('fixture QR body is missing');
-        body.data.qrContent = mode === 'bad-qr' ? 'https://example.com/invalid-qr' : 'not a url';
+        body.data.qrContent = qrContent ?? (mode === 'bad-qr' ? 'https://example.com/invalid-qr' : 'not a url');
         interaction.response.body = body;
       }
       this.fake.scriptInteractions([interaction]);
@@ -369,8 +370,11 @@ describe('local web API', () => {
     expect(existsSync(join(dataDir, 'learning.lock'))).toBe(false);
   });
 
-  it('cancels an offline login and releases the writer lock', async () => {
-    const transport = new OfflineLoginTransport('hang');
+  it.each([
+    'https://www.yuketang.cn/fixture-login?ticket=fixture',
+    'https://open.weixin.qq.com/connect/confirm?uuid=fixture',
+  ])('renders an offline login QR from %s and cancels without leaving a lock', async qrContent => {
+    const transport = new OfflineLoginTransport('hang', qrContent);
     const { port } = await start({ dataDir, transport });
     const profile = await addProfile(port, 'cancel-login', 'ykt');
     const created = await call(port, `/api/profiles/${profile.scope.profileId}/login`, { method: 'POST', body: {}, headers: localHeaders(port) });
@@ -378,9 +382,15 @@ describe('local web API', () => {
     const id = (created.body as { id: string }).id;
     const before = await waitFor(
       () => call(port, `/api/logins/${id}`, { headers: localHeaders(port) }),
-      result => LoginStateSchema.parse(result.body).qr !== null,
+      result => {
+        const state = LoginStateSchema.parse(result.body);
+        return state.qr !== null || state.status === 'failed';
+      },
     );
-    expect(LoginStateSchema.parse(before.body).status).toBe('waiting');
+    const shown = LoginStateSchema.parse(before.body);
+    expect(shown.status, shown.message ?? '').toBe('waiting');
+    expect(shown.qr?.imageDataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(shown.qr?.url).toBeNull();
     expect(existsSync(join(dataDir, 'learning.lock'))).toBe(true);
     const canceled = await call(port, `/api/logins/${id}`, { method: 'DELETE', body: {}, headers: localHeaders(port) });
     expect(canceled.status).toBe(200);
@@ -404,8 +414,13 @@ describe('local web API', () => {
     await waitFor(() => existsSync(join(dataDir, 'learning.lock')), value => !value);
   });
 
-  it('rejects an untrusted QR source and releases the lock', async () => {
-    const transport = new OfflineLoginTransport('bad-qr');
+  it.each([
+    'https://example.com/invalid-qr',
+    'https://www.yuketang.cn.evil.test/invalid-qr',
+    'https://www.yuketang.cn@evil.test/invalid-qr',
+    'http://www.yuketang.cn/invalid-qr',
+  ])('rejects untrusted QR source %s and releases the lock', async qrContent => {
+    const transport = new OfflineLoginTransport('bad-qr', qrContent);
     const { port } = await start({ dataDir, transport });
     const profile = await addProfile(port, 'bad-qr', 'ykt');
     const created = await call(port, `/api/profiles/${profile.scope.profileId}/login`, { method: 'POST', body: {}, headers: localHeaders(port) });
