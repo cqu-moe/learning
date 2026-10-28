@@ -169,18 +169,14 @@ function loadOrCreateState(dataDir: string): { state: TelemetryState; created: b
   return { state, created: true };
 }
 
-function writeFirstNotice(): void {
-  try {
-    process.stderr.write('learning 会发送匿名使用统计及脱敏错误诊断（含堆栈），不采集凭据、课程正文或 AI 对话内容。\n');
-  } catch {
-    // The notice is best-effort and must never affect command output or exit status.
-  }
+function writeFirstNotice(output: Output): void {
+  output.recordWarning('TELEMETRY_NOTICE', 'learning 会发送匿名使用统计及脱敏错误诊断（含堆栈），不采集凭据、课程正文或 AI 对话内容。');
 }
 
 function diagnosticWarning(controller: TelemetryController, code: string, message: string): void {
   if (controller.diagnosticWarnings.has(code)) return;
   controller.diagnosticWarnings.add(code);
-  try { process.stderr.write(`learning [${code}] ${message}\n`); } catch { /* Keep the original result. */ }
+  try { process.stderr.write(JSON.stringify({ schemaVersion: 1, type: 'warning', data: { code, message } }) + '\n'); } catch { /* Keep the original result. */ }
 }
 
 function reportDropped(controller: TelemetryController): void {
@@ -198,7 +194,7 @@ function baseProperties(controller: TelemetryController, operation: string): Rec
     release: pkg.version,
     cli_version: pkg.version,
     actor_type: 'installation',
-    trigger: 'user',
+    trigger: 'agent',
     operation: safeOperation(operation),
     is_test: controller.environment !== 'production' || isTruthy(runtimeEnv('LEARNING_TELEMETRY_IS_TEST')),
     ...runtimeFacts(),
@@ -360,7 +356,7 @@ export async function startTelemetry(output: Output, dataDir: string, command: s
     diagnosticWarnings: new Set(),
   };
   controllers.set(output, controller);
-  if (loaded.created) writeFirstNotice();
+  if (loaded.created) writeFirstNotice(output);
   queueEvent(controller, 'cli_command_started', {
     ...baseProperties(controller, command),
     operation_id: controller.commandOperationId,

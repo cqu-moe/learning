@@ -141,7 +141,7 @@ try {
         // target and while opening it. Each production PowerShell has a 30s bound.
         const timeoutMs = process.platform === 'win32' ? 75_000 : 20_000;
         const startedAt = Date.now();
-        const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json', '--no-interactive'], proxy.url);
+        const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json'], proxy.url);
         const child = spawn(command, argv, { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] });
         activeChild = child;
         let stdout = '', stderr = '', stdoutBytes = 0, stderrBytes = 0, timedOut = false, spawnErrorCode;

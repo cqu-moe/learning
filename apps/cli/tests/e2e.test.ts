@@ -105,7 +105,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
 
   it('version matches the package manifest', () => {
     const run = runPackedCli(['--version']);
-    expect(run.stdout.trim()).toBe(pkg.version);
+    expect(JSON.parse(run.stdout).data.text).toBe(pkg.version);
   });
 
   it('init/doctor run offline without any cloud configuration', () => {
@@ -113,7 +113,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     expect(init.exitCode).toBe(0);
     const doctor = runPackedCli(['doctor'], init.home);
     expect(doctor.exitCode).toBe(0);
-    expect(doctor.stdout).toContain('Node：');
+    expect(JSON.parse(doctor.stdout).data.node).toBe(process.version);
     const jobs = runPackedCli(['jobs', 'list', '--json'], init.home);
     expect(jobs.exitCode).toBe(0);
     expect(JSON.parse(jobs.stdout).data.jobs).toEqual([]);
@@ -122,8 +122,8 @@ describe('packed cli e2e (T31, A311/A312)', () => {
   it('no unapproved live platform writes happen in offline e2e', () => {
     const run = runPackedCli(['run', 'fixture-course', '--dry-run']);
     expect(run.exitCode).toBe(3);
-    expect(run.stdout).toBe('');
-    expect(run.stderr).toContain('尚未初始化');
+    expect(JSON.parse(run.stdout).error.message).toContain('尚未初始化');
+    expect(run.stderr).toBe('');
     expect(run.stdout).not.toContain('yuketang.cn');
     expect(run.stdout).not.toContain('xuetangx.com');
     expect(run.stdout).not.toContain('zhihuishu.com');
@@ -142,7 +142,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     for (const path of paths) {
       const result = runPackedCli([...path.split(' '), '--help']);
       expect(result.exitCode, path).toBe(0);
-      expect(result.stdout, path).toContain('用法：');
+      expect(JSON.parse(result.stdout).data.text, path).toContain('Usage:');
     }
   }, 20_000);
 
@@ -186,7 +186,7 @@ describe('packed cli e2e (T31, A311/A312)', () => {
     for (const args of cases) {
       const result = run(args);
       expect(result.status, `${args.join(' ')}: ${result.stderr}`).not.toBe(0);
-      expect(result.stdout, args.join(' ')).toBe('');
+      expect(JSON.parse(result.stdout), args.join(' ')).toMatchObject({ ok: false, error: { code: expect.any(String) } });
       expect(result.stderr, args.join(' ')).not.toContain('undeclared request');
     }
   }, 20_000);

@@ -948,7 +948,7 @@ pnpm --filter @learning/sdk exec vitest run tests/download.test.ts
 
 **测试文件：** `packages/sdk/tests/render.test.ts`
 
-**输入接口/依据：** Y05；RenderInput/RenderOutput；APPS A04 的本地预算；本机用户自行提供参考字体
+**输入接口/依据：** Y05；RenderInput/RenderOutput；APPS A04 的本地预算；用户于 2026-10-27 确认参考字体首次自动下载、固定摘要校验与缓存，见 YKT-HOMEWORK。
 
 **输出：** /render-node、HeavyRenderer本机实现；受控PDF/字体算法
 
@@ -962,7 +962,7 @@ expect(browserNetworkRequests).toHaveLength(0);
 ```
 
 - [ ] pdf-lib对有界图片集组PDF，先查页数/压缩字节/像素，再渲染；不宣称无界流式PDF。
-- [ ] 固定Chromium Canvas页面生成字形，TS匹配沿原算法意图；禁止任意用户HTML脚本或字体网络请求。
+- [ ] 普通作业使用纯 JS opentype 字形解析与 TS 匹配，不依赖 Chromium/Canvas；仅准备阶段下载固定校验的公开参考字库，解码器只读本地字节，不接触 Cookie 或执行任意 HTML。2026-10-27 按已确认方案替代原 Canvas 路线，实测结果见 PROGRESS。
 - [ ] golden人工已核验映射，易混候选保留unresolved；renderer/字体摘要版本化；没有字体文件不复制系统字体进交付。
 - [ ] HeavyRenderer 本机 start/status/cancel 覆盖三类输入；特殊课件按固定源码验证路径/副作用，不执行任意 HTML。CLI 本地注入 /render-node，不依赖 apps/executor、Docker、R2或服务器。进程恢复返回missing，旧attempt结果不发布。
 - [ ] 运行下面命令及根 `pnpm typecheck`，再跑依赖链相关回归；失败先找原因，不修改验收标准。
@@ -1078,7 +1078,7 @@ expect(featureStatus.every(x => x.status !== 'live-tested' || x.evidence.length 
 
 - [ ] CI 只跑两包边界、Node SDK/CLI 单测、构建和本地CLI进程 E2E。root test:e2e 指向 pnpm --filter @learning/cli exec vitest run --config vitest.e2e.config.ts；该独立配置的include仅tests/e2e.test.ts，不继承单元配置的同名exclude。普通单元配置排除e2e.test.ts，避免漏跑或双跑；没有Web测试。
 - [ ] 在临时干净消费者目录安装/链接打包后的 SDK 与 CLI，不使用源码路径别名；验证 bin/shebang/import 与 learning --help/init/fixture课程/导出/恢复。root/public 静态图不带 Node 实现，不构建空 Web 来凑检查。
-- [ ] 写 INSTALL/USAGE：固定 Node/pnpm、私有源码安装、build、首次init、profile/扫码、本机密钥/可选模型、显式本机浏览器/参考字体、备份/升级/回滚、unlock/Ctrl+C/resume/reconcile及清理；不编写云 DEPLOY 或要求Cloudflare Secret。
+- [ ] 写 INSTALL/USAGE：固定 Node/pnpm、私有源码安装、build、首次init、profile/扫码、本机密钥/可选模型、显式本机浏览器/自动参考字体缓存、备份/升级/回滚、unlock/Ctrl+C/resume/reconcile及清理；不编写云 DEPLOY 或要求Cloudflare Secret。
 - [ ] 按平台/能力分别记录代码、fixture、本机集成和经用户授权的真实只读/写入证据。字体质量仍按 T24，缺样本记具体阻塞；未授权真机写入 not-run，Web/Cloudflare仅deferred且不计当前完成分母。
 - [ ] 核对本期28项与所有当前验收；T31结束后停止，不回到T27–T30，不自动安装或开发延期应用。
 - [ ] 运行下面命令及根 `pnpm typecheck`，再跑依赖链相关回归；失败先找原因，不修改验收标准。

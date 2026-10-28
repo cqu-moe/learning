@@ -157,7 +157,7 @@ try {
         options.signal?.throwIfAborted();
         const startedAt = Date.now();
         const timeout = Math.max(options.timeout ?? 0, commandTimeoutMs);
-        const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json', '--no-interactive'], proxy.url);
+        const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json'], proxy.url);
         const child = spawn(command, argv, { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] });
         children.add(child);
         const abortChild = () => child.kill('SIGKILL');

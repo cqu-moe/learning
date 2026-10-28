@@ -194,6 +194,7 @@ export const AssessmentSchema = z.object({
   timed: z.boolean().nullable(),
   fingerprint: nonEmpty,
   questions: z.array(QuestionSchema),
+  assets: z.array(ArtifactSchema).optional(),
 });
 export type Assessment = z.infer<typeof AssessmentSchema>;
 
@@ -398,7 +399,7 @@ export type JobStatus = z.infer<typeof JobStatusSchema>;
 
 export const ItemResultSchema = z.object({
   key: nonEmpty,
-  state: z.enum(['succeeded', 'failed', 'skipped', 'needs-input', 'uncertain']),
+  state: z.enum(['succeeded', 'partial', 'failed', 'skipped', 'needs-input', 'uncertain']),
   message: stringNullable,
   artifacts: z.array(ArtifactSchema),
 });
@@ -461,7 +462,7 @@ export const ExportInputSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('assessments'),
     refs: z.array(AssessmentRefSchema),
-    format: z.enum(['json', 'markdown', 'yaml']),
+    format: z.enum(['json', 'markdown', 'yaml', 'homework']),
   }),
   z.object({
     type: z.literal('slides'),

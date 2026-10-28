@@ -8,11 +8,18 @@ import { safeFilename } from './exports.js';
 import type { JobRunner } from './jobs.js';
 import { advanceMedia } from './media-export.js';
 import type { MediaAsset } from './direct-media.js';
+import { renderAssessmentMarkdown } from '../content/markdown.js';
+import { draftAssessment } from './drafts.js';
+import { exportHomeworkDraftYaml } from './homework-draft.js';
+import { isCancellation } from '../runtime/diagnostics.js';
+import { sha256Hex } from '../types/sha256.js';
+
+export const HOMEWORK_MANIFEST_MIME = 'application/vnd.learning.homework+json';
 
 function serialize(assessment: Assessment, format: 'json' | 'yaml' | 'markdown'): string {
   if (format === 'json') return JSON.stringify(assessment, null, 2) + '\n';
   if (format === 'yaml') return YAML.stringify(assessment);
-  return `# ${assessment.ref.assessmentId}\n\n\`\`\`json\n${JSON.stringify(assessment, null, 2)}\n\`\`\`\n`;
+  return renderAssessmentMarkdown(assessment);
 }
 
 /** One read-only assessment per slice. The input is persisted with the job. */
@@ -35,6 +42,56 @@ export async function advanceExport(input: {
   const next = saved.refs.find((ref) => !input.job.items.some((item) => item.key === keyOf(ref)));
   if (next === undefined) return input.runner.advance(input.job.id, async () => ({ completed: true }));
   return input.runner.advance(input.job.id, async () => {
+    if (saved.format === 'homework') {
+      let assessment: Assessment;
+      try { assessment = await input.getAssessment(next); }
+      catch (error) {
+        if (isCancellation(error)) throw error;
+        input.runner.reportRecovery('homework.export.read', error, { job_id: input.job.id, resource_key: next.resource.key });
+        const items: ItemResult[] = [...input.job.items, { key: keyOf(next), state: 'failed', message: `作业读取失败（${error instanceof LearningError ? error.data.code : 'INTERNAL'}）`, artifacts: [] }];
+        return { completed: items.length === saved.refs.length, items };
+      }
+      const artifacts: ItemResult['artifacts'] = [...(assessment.assets ?? [])];
+      const prefix = `${safeFilename(next.assessmentId)}-${safeFilename(next.resource.key).slice(0, 12)}`;
+      const files = [
+        { extension: 'md', mimeType: 'text/markdown', text: renderAssessmentMarkdown(assessment) },
+        { extension: 'yaml', mimeType: 'application/yaml', text: exportHomeworkDraftYaml(draftAssessment(assessment), assessment) },
+        { extension: 'json', mimeType: HOMEWORK_MANIFEST_MIME, text: JSON.stringify(assessment) },
+      ];
+      for (const file of files) {
+        const id = `${input.job.id}:${keyOf(next)}:${file.extension}`;
+        const bytes = new TextEncoder().encode(file.text);
+        let result: { bytes: number; sha256: string };
+        let existing: ReadableStream<Uint8Array> | null = null;
+        try { existing = await input.runtime.artifacts.open(id); }
+        catch (error) { if ((error as { code?: string }).code !== 'ENOENT') throw error; }
+        if (existing !== null) {
+          const reader = existing.getReader();
+          let offset = 0;
+          let same = true;
+          try {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (offset + value.length > bytes.length || value.some((byte, index) => byte !== bytes[offset + index])) { same = false; break; }
+              offset += value.length;
+            }
+          } finally { await reader.cancel(); }
+          if (!same || offset !== bytes.length) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'homework changed during export recovery; start a new download', retryAfterMs: null, operationId: input.job.id });
+          result = { bytes: bytes.length, sha256: sha256Hex(file.text) };
+        } else {
+          await input.runtime.artifacts.remove(id);
+          const writer = await input.runtime.artifacts.create({ id, mimeType: file.mimeType });
+          try { await writer.write(bytes); result = await writer.finish(); }
+          catch (error) { await writer.abort(); throw error; }
+        }
+        artifacts.push({ id, scope: input.scope, filename: `${prefix}.${file.extension}`, mimeType: file.mimeType, bytes: result.bytes, sha256: result.sha256, createdAtMs: input.runtime.clock.nowMs() });
+      }
+      const incomplete = assessment.questions.filter(question => [question.body, ...question.options.map(option => option.body)].some(body => !['not-needed', 'complete'].includes(body.decodeState)));
+      const item: ItemResult = { key: keyOf(next), state: incomplete.length ? 'partial' : 'succeeded', message: incomplete.length ? `题面不完整：${incomplete.map(question => question.id).join('、')}` : null, artifacts };
+      const items = [...input.job.items, item];
+      return { completed: items.length === saved.refs.length, items };
+    }
     const assessment = await input.getAssessment(next);
     const content = serialize(assessment, saved.format);
     const artifactId = `${input.job.id}:${keyOf(next)}`;
