@@ -1,5 +1,11 @@
 # learning — SDK + CLI 本期实施状态
 
+### 2026-10-28 · PR #30 Windows 首次初始化超时诊断
+
+- [CI 40633596598](https://github.com/cqu-moe/learning/actions/runs/40633596598) 对应 `8a90de7882e2257e3ee78b676fd70485c5f1bc62`：verify 与 Linux/macOS 四个 binary 成功；Windows 在独立程序首次 `init` 的遥测提示用例超过既有 20 秒预算，`spawnSync` 返回 ETIMEDOUT。该初始化路径未被五项修复改动；现有日志不足以确认是权限脚本慢启动还是退出挂起，未将它认定为已修复的产品缺陷。
+- 只补齐证据缺口：已有 Windows 权限诊断在前序失败后仍运行（取消除外），子进程超时断言保留命令和 stdout/stderr。验收失败仍阻止交付，不更改产品、超时预算、断言或依赖；诊断输出不能替代真实独立程序门禁。
+- macOS arm64 / Node24.11.1：`node --check scripts/test-binary.mjs`、实际独立程序 `test-binary.mjs --without-telemetry`、`pnpm lint`、`git diff --check` 均 exit0，日志 `dist/agent-review-ci-diagnostics.log`。Windows 无本机运行环境，后续以新提交 CI 的原生执行及诊断结果继续判断；不合并、不发布，不操作真实平台或付费模型。
+
 ### 2026-10-28 · PR #30 五项审查修复与门禁验证
 
 - 用户明确要求修复五项发现、推送当前 PR 并确保 CI 全过。复用 `learning-agent-cli/learning`、`codex/agent-cli`，起点 `a817b61`；远端 main 与 PR 分支重新 fetch 后仍分别为 `d2b39c5` / `a817b61`，没有覆盖其他更新。保留前一轮本地审查记录，一并纳入本次提交。

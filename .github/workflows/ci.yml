@@ -79,7 +79,7 @@ jobs:
       - name: Verify native WSS proxy and denial controls
         run: node scripts/test-ws-proxy.mjs
       - name: Diagnose Windows private-directory initialization
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && !cancelled()
         run: node scripts/diagnose-windows-private-directory.mjs
       - name: Preserve Windows startup and certificate diagnostics before long journeys
         if: runner.os == 'Windows' && !cancelled()

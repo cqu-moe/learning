@@ -24,7 +24,7 @@ function rawRun(args, expected = 0, overrideEnv = {}) {
   const result = spawnSync(binary, args, {
     cwd: root, env: { ...env, ...overrideEnv }, encoding: 'utf8', timeout: 20_000,
   });
-  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.error, undefined, `${args.join(' ')}\n${result.error?.message}\n${result.stderr}\n${result.stdout}`);
   assert.equal(result.status, expected, `${args.join(' ')}\n${result.stderr}\n${result.stdout}`);
   return result;
 }
