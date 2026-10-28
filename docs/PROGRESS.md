@@ -1,6 +1,6 @@
 # learning — SDK + CLI 本期实施状态
 
-> 2026-10-28 用户指定新增 U01「本地 React Web 仪表盘」。首版已完成离线验收，详见文末与 [WEB-UI](WEB-UI.md)。下表仍记录 SDK/CLI 1.1 基线，旧任务状态与云端延期不变。
+> 2026-10-28 用户指定 U01–U03「本地 React Web 仪表盘、任务发起/恢复与 Agent CLI 联调」。已完成本机离线验收，详见文末与 [WEB-UI](WEB-UI.md)。下表仍记录 SDK/CLI 1.1 基线，旧任务状态与云端延期不变。
 
 ### 2026-10-28 · PR #30 Windows 首次初始化超时诊断
 
@@ -1195,3 +1195,16 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - Ego 浏览器在4312的严格合成 fixture 中实测：课程选择视频 → 预览 → 确认 → 运行中暂停（1/2）→ 原任务恢复 → 完成（2/2）；实际浏览器下载内容为合成视频字节。参数可清空重输，Esc 关闭并回焦「新建任务」。任务表单1440/768/390/320浅深主题截图已检查，浅色四宽度的实测页面宽度等于视口宽度；320/390表单内部滚动，无整页横向溢出。截图 `artifacts/web-ui/u02-composer-*-{light,dark}.png`，下载证据 `u02-browser-download.bin`。验收任务空间已关闭。
 - 4312预览继续使用临时目录与合成3账号/6课程/4任务；Transport 只允许登记的 fixture 请求，其余 fetch/connect 全部拒绝，未使用真实 `~/.learning`。正常产品启动仍为 `pnpm web`（4311）；浏览器页面可关闭，但本地服务需保持运行。无法确认的旧写锁不抢占；不能从平台证明的写入结果不自动重试。
 - 未运行真实平台登录/学习/签到/答题/交卷/发帖、付费模型、真实账号数据、独立移动设备、五目标原生程序或远程 CI；未提交、推送、开 PR、发布或部署。下一当前任务为用户审阅 U02 与后续明确授权的真实平台联调；不自动开发云端或其他用户流程。
+
+### 2026-10-28 · U03 整合 Agent CLI 与 Web 共享数据联调
+
+- 用户明确授权整合已合入 main 的 Agent CLI，联调共用账号、数据和任务恢复。`git fetch origin main` 确认 `9229491`（PR #30）；先将 U01/U02 保存为本地 `130ed4b`，再合并为 `b75c43e`，保留两侧实现与历史记录。README/PROGRESS/锁文件冲突按当前 Web + Agent CLI 范围解决；精确合并原两份依赖锁，没有升级已有包。沿用 `codex/learning-web-dashboard`，未更改用户主工作区或已安装程序。
+- 账号页补齐设为默认、核验登录、退出本地登录、移除账号和遗留锁清理。共用 `cli:preferences`，保留 downloadDir；通过 SDK 解密读取有效会话，撤销 tombstone 不再被误报为已登录。有效写锁和无法确认的锁不抢占；清理前再次核对原 PID 与锁内容。首次初始化也遵守既有写锁，避免 Web/CLI 同时初始化共享密钥与数据库。
+- SDK `/node/local-profile.ts` 复用并收敛两端账号清理：按完整 scope 清理任务、预览、操作记录、CLI/Web 课程资源、媒体检查点和内部文件，仅重置匹配默认账号；保留其他账号与已另存文件。CLI `profile remove` 调用同一实现。Web 目录写入完整 CLI ref/kind/title/path 缓存；任务标题可读取 CLI 缓存，PDF/字体使用同一本地目录。没有新表、新依赖、第二份任务状态或自动重交机制。
+- `apps/web/tests/interop.test.ts` 使用真实 Agent CLI 子进程、真实 Web HTTP/SQLite 与严格 fixture：Web 扫码后 CLI 核验同一 Cookie，CLI 导入后 Web 核验；默认账号双向可见，退出与移除同步生效；CLI→Web 与 Web→CLI 都暂停并恢复原 HLS job/checkpoint，只请求未完成分片，实际产物均为 `head-tail`；活跃锁阻止另一端写入；CLI 删除清理 Web 缓存并使旧预览失效。独立 `test:interop` 接入根 `test:e2e`，先构建 CLI，避免和整仓并行单测争用 dist。
+- 实际红绿：账号控制最初 HTTP404（预期200），首次初始化没有拒绝另一进程持锁，两项均先红后绿。最终只读审查另发现排队登录捕获已删除账号、assessment 预览持有已退出会话；新增真实回归分别观察到删除后仍多发3次认证请求、退出/CLI重新登录后旧预览仍返回200（预期409）。修复为获锁后重新核验完整账号、预览绑定既有会话 generation、导出执行重新加载 Cookie；Web **28/28**、interop **7/7** exit0。原学习 executor 与 uncertain 不重发保留。日志 `u03-{management,startup,login-race,preview-session}-red.log`、`u03-{web,interop}-review-green.log`（前两项分别为 `u03-management-red.log`、`u03-startup-red.log`）。
+- macOS arm64 / Node **24.11.1** / pnpm **11.19.0**：冻结安装、`pnpm lint`、`pnpm typecheck`、`pnpm build`、`pnpm test`、`pnpm test:e2e`、`node scripts/check-boundaries.mjs`、设计检查与 `node scripts/test-release.mjs` 均 exit0。完整首轮 SDK343、CLI218、Web27、CLI进程7、interop5，共600通过；上述最后三条回归后再跑 Web28、interop7、lint、Web类型检查/构建、边界/设计检查均 exit0，累计最终 **603通过、2跳过**。两项字体样本测试因未提供 `LEARNING_FONT_REFERENCE`/`LEARNING_FONT_FIXTURES` 跳过；合成字体回归通过。完整日志 `artifacts/web-ui/u03-*-final.log`，最后复验 `u03-review-{lint,build}.log`；单 JS chunk685.04kB/gzip208.26kB警告保留，未调高阈值。
+- 合并锁文件后的冻结安装通过（缓存复用，新增14/移除31个包）；最初沙箱中供应链元数据解析因网络 ENOTFOUND 被终止，随后获准重跑成功。互操作 fixture 最初用无活动句柄的 Promise 导致 CLI 提前退出，改为有界且可取消的等待；课程缓存顺序断言改为比较同一确切集合，不假定哈希键排序。这些是测试装配问题，未放宽产品检查。
+- Ego 浏览器在合成4312服务实测默认账号、有效登录核验、退出、Enter添加与移除、失效锁提示/确认清理；CLI `config show` 读回 Web 设置。删除和解锁弹窗 Esc 回到触发按钮，操作成功后聚焦添加账号。账号页1440/768/390/320浅深共8张截图及390解锁弹窗、320页面底部实看，无横向溢出；桌面正常竖向滚动条占宽单独计量。初次文本选择器点中 ActionButton 隐藏标签后改用实际 aria-label；测试锁提前注入时移除被正确拒绝，清锁后重试成功。截图 `u03-accounts-*`、`u03-unlock-390-light.png`；验收 TaskSpace9 已关闭，最新合成服务继续监听4312，真实 `~/.learning` 未触及。
+- 独立 GLM5.3/max 复核共享清理与生命周期修复，最终没有剩余 must-fix；主线程复核源码及测试。`node scripts/check-source-lock.mjs` 实际 exit1：本 worktree 缺 `.reference/ykt-cli`（`48a92c24498980d01aa045cf734ba3095d5f5bd1`）、`.reference/xuetang-cli`（`628a8fa8a4b90897f285a109aa591a8f6263846d`）、`.reference/zhs-cli`（`56d02171cf73c45694d69f886c902d2ecedadaaa`）；本次不改平台协议，记录参考源码核验缺口，不掩盖为通过，不拉取或运行旧 CLI。
+- U03 **done（本机/离线互操作验收）**。未运行真实教学平台登录/学习/签到/答题/发帖/交卷、付费模型、真实遥测、五目标原生矩阵或远程 CI；未推送、开 PR、远程合并、发布或部署。Web 的作业编辑/提交与讨论发布尚未实现，不宣称全量 CLI 功能已迁移。下一事项为用户审阅本地整合结果或另行指定的真实平台/发布验收，不自动扩大范围。

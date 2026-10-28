@@ -151,6 +151,7 @@ export function Jobs() {
 const itemStates: Record<Job["items"][number]["state"], string> = {
   succeeded: "已完成",
   failed: "未完成",
+  partial: "部分完成",
   skipped: "已跳过",
   "needs-input": "需要处理",
   uncertain: "结果待核对",

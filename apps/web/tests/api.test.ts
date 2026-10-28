@@ -24,6 +24,17 @@ type TestServer = { server: Server; port: number };
 const servers: TestServer[] = [];
 type Transport = Runtime['transport'];
 
+it('does not initialize shared storage while another process holds the first-run lock', async () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, 'learning.lock'), `${process.pid}\ncli-initializing`);
+  let server: Server | undefined;
+  try {
+    expect(() => { server = createWebServer({ dataDir: dir, transport: new FakeTransport() }); }).toThrow(/写入/);
+    expect(existsSync(join(dir, 'master.key'))).toBe(false);
+    expect(existsSync(join(dir, 'state.db'))).toBe(false);
+  } finally { if (server) await new Promise<void>(resolve => server!.close(() => resolve())); }
+});
+
 class OfflineLoginTransport implements Transport {
   readonly requests: Request[] = [];
 
@@ -228,6 +239,39 @@ describe('local web API', () => {
     expect(LoginStateSchema.parse(final.body).status).toBe('canceled');
     expect(fake.requests).toHaveLength(1);
     expect(existsSync(join(dataDir, 'learning.lock'))).toBe(false);
+  });
+
+  it('does not start a queued login after the profile has been removed', async () => {
+    const fake = new FakeTransport();
+    fake.scriptInteractions(loadFixture('ykt/courses-list').interactions);
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>(resolve => { enter = resolve; });
+    const released = new Promise<void>(resolve => { release = resolve; });
+    const transport: Transport = {
+      fetch: async input => { enter(); await released; return fake.fetch(input); },
+      connect: () => { throw new Error('unexpected socket'); },
+    };
+    const { port, server } = await start({ dataDir, transport });
+    const profile = await addProfile(port, 'removed-login');
+    const courses = call(port, `/api/profiles/${profile.scope.profileId}/courses`, { headers: localHeaders(port) });
+    await entered;
+    try {
+      const queued = new Promise<void>(resolve => server.once('request', req => req.once('end', () => setImmediate(resolve))));
+      const removing = call(port, `/api/profiles/${profile.scope.profileId}/control`, { method: 'POST', body: { action: 'remove' }, headers: localHeaders(port) });
+      await queued;
+      const created = await call(port, `/api/profiles/${profile.scope.profileId}/login`, { method: 'POST', body: {}, headers: localHeaders(port) });
+      expect(created.status).toBe(200);
+      const id = (created.body as { id: string }).id;
+      release();
+      expect((await courses).status).toBe(200);
+      expect((await removing).status).toBe(200);
+      const final = await waitFor(() => call(port, `/api/logins/${id}`, { headers: localHeaders(port) }), response => LoginStateSchema.parse(response.body).status !== 'waiting');
+      expect(LoginStateSchema.parse(final.body)).toMatchObject({ status: 'failed', qr: null });
+      expect(DashboardSchema.parse((await call(port, '/api/dashboard', { headers: localHeaders(port) })).body).profiles).toHaveLength(0);
+      expect(fake.requests).toHaveLength(1);
+      expect(existsSync(join(dataDir, 'learning.lock'))).toBe(false);
+    } finally { release(); }
   });
 
   it('returns SDK-validated jobs and rejects malformed cache instead of hiding it as empty', async () => {

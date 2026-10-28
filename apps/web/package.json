@@ -9,6 +9,7 @@
     "typecheck": "pnpm --filter @learning/sdk build && tsc --noEmit",
     "start": "node server/index.ts",
     "test": "pnpm --filter @learning/sdk build && vitest run",
+    "test:interop": "pnpm --filter @learning/cli build && vitest run --config vitest.interop.config.ts",
     "check:design": "node node_modules/@cqu-moe/ui/dist/check-design.mjs src"
   },
   "dependencies": {

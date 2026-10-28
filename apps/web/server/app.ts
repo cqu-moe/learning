@@ -13,6 +13,8 @@ import {
   SqliteStateStore,
   loadOrCreateMasterKey,
   probeMediaDuration,
+  readLocalSession,
+  removeLocalProfileData,
 } from '@learning/sdk/node';
 import type { Runtime } from '@learning/sdk/node';
 import type { AuthEvent, Course, Job, OutlineNode } from '@learning/sdk/public';
@@ -31,6 +33,8 @@ import {
   LoginStateSchema,
   ProfileSchema,
   StartLoginInputSchema,
+  ProfileControlInputSchema,
+  UnlockInputSchema,
 } from '../shared/contracts.ts';
 import type { LoginQr, Profile } from '../shared/contracts.ts';
 
@@ -83,13 +87,7 @@ function courseKey(key: string): string {
   return `cli:course:${key}`;
 }
 
-function resourceKeys(key: string) {
-  return {
-    ref: `cli:resource:${key}`,
-    kind: `cli:resource-kind:${key}`,
-    title: `cli:resource-title:${key}`,
-  };
-}
+const PreferencesSchema = z.object({ version: z.literal(1), defaultProfileId: z.string().nullable(), downloadDir: z.string().nullable() });
 
 function validProfileName(name: string): boolean {
   return name.trim() === name && [...name].every(char => {
@@ -102,6 +100,16 @@ function validProfileName(name: string): boolean {
 function pidAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; }
   catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
+}
+
+function writerStatus(dataDir: string): z.infer<typeof DashboardSchema>['writer'] {
+  try {
+    const pid = Number(readFileSync(resolve(dataDir, 'learning.lock'), 'utf8').trim().split('\n')[0]);
+    if (!Number.isSafeInteger(pid) || pid <= 0) return { state: 'unknown', pid: null };
+    return { state: pidAlive(pid) ? 'active' : 'stale', pid };
+  } catch (error) {
+    return { state: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'idle' : 'unknown', pid: null };
+  }
 }
 
 function acquireLock(dataDir: string): { ok: true; release: () => void } | { ok: false; reason: string } {
@@ -183,8 +191,13 @@ export function createWebServer(options: WebServerOptions): http.Server {
   if (existsSync(statePath) && !existsSync(keyPath)) {
     throw new HttpError(409, 'STORAGE', '已有本地数据库但缺少密钥；拒绝重新生成密钥。');
   }
-  const masterKey = loadOrCreateMasterKey(dataDir);
-  const state = new SqliteStateStore(statePath);
+  const { masterKey, state } = (() => {
+    const lock = !existsSync(statePath) ? acquireLock(dataDir) : null;
+    if (lock && !lock.ok) throw new HttpError(409, 'CONFLICT', lock.reason);
+    try {
+      return { masterKey: loadOrCreateMasterKey(dataDir), state: new SqliteStateStore(statePath) };
+    } finally { lock?.release(); }
+  })();
   const artifacts = new NodeArtifactStore(resolve(dataDir, 'artifacts'));
   const transport = options.transport ?? new NodeFetchTransport();
   const staticDir = options.staticDir === undefined ? resolve(import.meta.dirname, '..', 'dist') : resolve(options.staticDir);
@@ -231,7 +244,7 @@ export function createWebServer(options: WebServerOptions): http.Server {
     return ProfileSchema.parse({
       name: record.name,
       scope: record.scope,
-      hasSession: await state.get(`session:${record.scope.profileId}`) !== null,
+      hasSession: await readLocalSession(state, masterKey, record.scope) !== null,
     });
   }
 
@@ -250,16 +263,19 @@ export function createWebServer(options: WebServerOptions): http.Server {
   async function cacheResources(nodes: OutlineNode[]): Promise<void> {
     for (const node of nodes) {
       for (const resource of node.resources) {
-        const keys = resourceKeys(resource.ref.key);
-        const [ref, kind, title] = await Promise.all([state.get(keys.ref), state.get(keys.kind), state.get(keys.title)]);
+        const key = resource.ref.key;
+        const rows = [
+          { key: `cli:resource:${key}`, value: ResourceRefSchema.parse(resource.ref) },
+          { key: `cli:resource-kind:${key}`, value: ResourceKindSchema.parse(resource.kind) },
+          { key: `cli:resource-title:${key}`, value: resource.title },
+          { key: `cli:resource-path:${key}`, value: resource.path },
+          { key: `web:resource:${key}`, value: ResourceSchema.parse(resource) },
+        ];
         const ok = await state.commit({
-          expected: [{ key: keys.ref, revision: ref?.revision ?? null }, { key: keys.kind, revision: kind?.revision ?? null }, { key: keys.title, revision: title?.revision ?? null }],
-          changes: [{ key: keys.ref, value: ResourceRefSchema.parse(resource.ref) }, { key: keys.kind, value: ResourceKindSchema.parse(resource.kind) }, { key: keys.title, value: resource.title }],
+          expected: await Promise.all(rows.map(async row => ({ key: row.key, revision: (await state.get(row.key))?.revision ?? null }))),
+          changes: rows,
         });
         if (!ok) throw new HttpError(409, 'CONFLICT', '资源缓存已变化，请重试。');
-        const fullKey = `web:resource:${resource.ref.key}`;
-        const full = await state.get(fullKey);
-        if (!await state.commit({ expected: [{ key: fullKey, revision: full?.revision ?? null }], changes: [{ key: fullKey, value: ResourceSchema.parse(resource) }] })) throw new HttpError(409, 'CONFLICT', '资源缓存已变化，请重试。');
       }
       await cacheResources(node.children);
     }
@@ -301,11 +317,14 @@ export function createWebServer(options: WebServerOptions): http.Server {
 
   async function dashboard(): Promise<z.infer<typeof DashboardSchema>> {
     const profiles = await Promise.all((await listProfileRecords()).map(profileView));
+    const saved = await state.get('cli:preferences');
     return DashboardSchema.parse({
       profiles,
       courses: await cachedCourses(),
       jobs: await sdkJobs(),
       updatedAtMs: Date.now(),
+      defaultProfileId: saved === null ? null : PreferencesSchema.parse(saved.value).defaultProfileId,
+      writer: writerStatus(dataDir),
     });
   }
 
@@ -324,6 +343,47 @@ export function createWebServer(options: WebServerOptions): http.Server {
       if (!ok) throw new HttpError(409, 'CONFLICT', '账号名称已存在。');
       return profileView(record);
     });
+  }
+
+  async function controlProfile(id: string, input: unknown) {
+    const { action } = ProfileControlInputSchema.parse(input);
+    return withLock(async () => {
+      const profile = await profileById(id);
+      if (action === 'default') {
+        const key = 'cli:preferences';
+        const old = await state.get(key);
+        const preferences = old === null ? { version: 1, defaultProfileId: null, downloadDir: null } : PreferencesSchema.parse(old.value);
+        if (!await state.commit({ expected: [{ key, revision: old?.revision ?? null }], changes: [{ key, value: { ...preferences, defaultProfileId: id } }] })) throw new HttpError(409, 'CONFLICT', '默认账号已变化，请重试。');
+        return { id, message: '已设为默认账号。' };
+      }
+      const runtime = runtimeFor();
+      const client = createLearningClient({ scope: profile.scope, runtime });
+      try {
+        if (action === 'probe') {
+          const result = await client.auth.probe();
+          return { id, state: result.state, message: result.state === 'valid' ? '登录有效。' : result.state === 'expired' ? '登录已失效，请重新扫码。' : '暂时无法确认登录状态，请稍后重试。' };
+        }
+        await client.auth.disconnect();
+        if (action === 'disconnect') return { id, message: '已退出本地登录，账号与任务记录保留。' };
+        await removeLocalProfileData(runtime, profile.scope);
+        const key = profileKey(profile.name);
+        const record = await state.get(key);
+        if (!record || !await state.commit({ expected: [{ key, revision: record.revision }], changes: [{ key, value: null }] })) throw new HttpError(409, 'CONFLICT', '账号已变化，请刷新。');
+        return { id, message: '已移除账号及其本地缓存和任务。' };
+      } finally { await client.close(); }
+    });
+  }
+
+  function unlock(input: unknown) {
+    const { pid } = UnlockInputSchema.parse(input);
+    const path = resolve(dataDir, 'learning.lock');
+    const current = writerStatus(dataDir);
+    if (current.state === 'idle') return { unlocked: false, message: '当前没有写入锁。' };
+    if (current.state !== 'stale' || current.pid !== pid) throw new HttpError(409, 'CONFLICT', '写入进程仍在运行或锁已变化，请刷新后重试。');
+    const original = readFileSync(path, 'utf8');
+    if (Number(original.trim().split('\n')[0]) !== pid || pidAlive(pid) || readFileSync(path, 'utf8') !== original) throw new HttpError(409, 'CONFLICT', '无法确认写入进程已退出，保留现有锁。');
+    unlinkSync(path);
+    return { unlocked: true, message: '已清理失效锁，可以恢复任务。' };
   }
 
   async function coursePage(profileId: string, search: URLSearchParams): Promise<unknown> {
@@ -376,6 +436,7 @@ export function createWebServer(options: WebServerOptions): http.Server {
 
   const tasks = createTaskService({
     runtime: runtimeFor(),
+    dataDir,
     profile: profileById,
     job: jobForProfile,
     lock: () => {
@@ -434,6 +495,10 @@ export function createWebServer(options: WebServerOptions): http.Server {
           throw new HttpError(409, 'CONFLICT', lock.reason);
         }
         release = lock.release;
+        const current = await profileById(profileId);
+        if (current.scope.userId !== profile.scope.userId || current.scope.profileId !== profile.scope.profileId || current.scope.platform !== profile.scope.platform) {
+          throw new HttpError(409, 'PRECONDITION_CHANGED', '账号已变化，请重新登录。');
+        }
         const flow = await client.auth.begin({ method: 'qr' });
         const resultGuard = flow.result.then(
           () => ({ ok: true as const }),
@@ -669,6 +734,7 @@ export function createWebServer(options: WebServerOptions): http.Server {
       const path = url.pathname;
       const respond = (value: unknown) => sendJson(response, 200, value);
       if (request.method === 'GET' && path === '/api/dashboard') return respond(await dashboard());
+      if (request.method === 'POST' && path === '/api/system/unlock') return respond(unlock(await readBody(request)));
       if (request.method === 'POST' && path === '/api/tasks/preview') {
         const createdPreview: { id?: string } = {};
         let aborted = false;
@@ -686,6 +752,7 @@ export function createWebServer(options: WebServerOptions): http.Server {
       }
       if (request.method === 'POST' && path === '/api/profiles') return respond(await createProfile(await readBody(request)));
       let match: RegExpMatchArray | null;
+      if ((match = path.match(/^\/api\/profiles\/([^/]+)\/control$/)) && request.method === 'POST') return respond(await controlProfile(decodeSegment(match[1]!), await readBody(request)));
       if ((match = path.match(/^\/api\/tasks\/([^/]+)\/start$/)) && request.method === 'POST') {
         StartLoginInputSchema.parse(await readBody(request));
         return respond(await tasks.start(decodeSegment(match[1]!)));

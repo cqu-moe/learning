@@ -1,12 +1,14 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { createLearningClient } from '@learning/sdk';
 import { LocalHeavyRenderer } from '@learning/sdk/render-node';
+import { readLocalSession } from '@learning/sdk/node';
 import type { Runtime } from '@learning/sdk/node';
-import { CourseSchema, ResourceSchema, LessonSchema } from '@learning/sdk/public';
+import { CourseSchema, ResourceSchema, ResourceRefSchema, LessonSchema } from '@learning/sdk/public';
 import type { ExportInput, Job, Scope } from '@learning/sdk/public';
 import { TaskInputSchema, JobDetailSchema, TaskPreviewSchema, JobControlInputSchema } from '../shared/contracts.ts';
 import type { TaskPreview } from '../shared/contracts.ts';
@@ -14,12 +16,13 @@ import { HttpError, errorFrom } from './errors.ts';
 
 type Client = ReturnType<typeof createLearningClient>;
 type Profile = { name: string; scope: Scope };
-type Pending = { view: TaskPreview; client: Client; exportInput?: ExportInput; actionId?: string; started?: Promise<Job> };
+type Pending = { view: TaskPreview; client: Client; generation: number | null; exportInput?: ExportInput; actionId?: string; started?: Promise<Job> };
 const runnable = (job: Job) => ['queued', 'running', 'waiting'].includes(job.status);
 const sameScope = (a: Scope, b: Scope) => a.userId === b.userId && a.profileId === b.profileId && a.platform === b.platform;
 
 export function createTaskService(options: {
   runtime: Runtime;
+  dataDir: string;
   lock(): () => void;
   profile(id: string): Promise<Profile>;
   job(id: string): Promise<{ job: Job; profile: Profile }>;
@@ -29,7 +32,10 @@ export function createTaskService(options: {
   const errors = new Map<string, string>();
   let active: { id: string | null; client: Client; stop: boolean; controller: AbortController; done: Promise<void> } | undefined;
   let closed = false;
-  const clientFor = (scope: Scope) => createLearningClient({ scope, runtime: { ...runtime, heavy: new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope }) } });
+  const clientFor = (scope: Scope) => createLearningClient({ scope, runtime: { ...runtime, heavy: new LocalHeavyRenderer({ artifacts: runtime.artifacts, scope,
+    referenceFontDirectory: resolve(options.dataDir, 'cache', 'fonts'),
+    ...(process.env.LEARNING_REFERENCE_FONT === undefined ? {} : { referenceFontPath: process.env.LEARNING_REFERENCE_FONT }),
+  }) } });
 
   async function courseFor(key: string) {
     const stored = await runtime.state.get(`cli:course:${key}`);
@@ -72,7 +78,8 @@ export function createTaskService(options: {
       const { course, profile } = await courseFor(input.courseKey);
       client = clientFor(profile.scope);
       const view: TaskPreview = { id: randomUUID(), kind: input.kind, courseTitle: course.title, profileName: profile.name, items: [], settings: [], warnings: [], blockers: [], expiresAtMs: Date.now() + 600_000 };
-      const entry: Pending = { view, client };
+      const session = await readLocalSession(runtime.state, runtime.masterKey, profile.scope);
+      const entry: Pending = { view, client, generation: session?.generation ?? null };
       if ('resourceKeys' in input) {
         if (new Set(input.resourceKeys).size !== input.resourceKeys.length) throw new HttpError(422, 'INVALID_INPUT', '资源不能重复选择。');
         const resources = await Promise.all(input.resourceKeys.map(async key => {
@@ -126,6 +133,11 @@ export function createTaskService(options: {
         }
       }
       if (closed) throw new HttpError(503, 'UNAVAILABLE', '本地服务正在关闭。');
+      if (entry.exportInput) {
+        // Resolve can hydrate cookies; execution must hydrate the current session.
+        await client.close();
+        client = entry.client = clientFor(profile.scope);
+      }
       pending.set(view.id, entry);
       client = undefined;
       return TaskPreviewSchema.parse(view);
@@ -167,6 +179,10 @@ export function createTaskService(options: {
     if (item.view.expiresAtMs <= Date.now()) throw new HttpError(409, 'PRECONDITION_CHANGED', '预览已过期，请重新预览。');
     if (item.view.blockers.length) throw new HttpError(409, 'CONFLICT', '请先处理预览中的阻碍项。');
     item.started = launch(item.client, async (signal) => {
+      const profile = await options.profile(item.client.scope.profileId);
+      if (!sameScope(profile.scope, item.client.scope)) throw new HttpError(403, 'FORBIDDEN', '账号已变化，请重新预览。');
+      const session = await readLocalSession(runtime.state, runtime.masterKey, profile.scope);
+      if ((session?.generation ?? null) !== item.generation) throw new HttpError(409, 'PRECONDITION_CHANGED', '登录状态已变化，请重新预览。');
       if (item.exportInput) return item.client.jobs.createExport(item.exportInput, { signal });
       const result = await item.client.actions.execute(item.actionId!, { signal });
       if (result.type !== 'job') throw new HttpError(500, 'INTERNAL', '任务未返回执行记录。');
@@ -198,6 +214,12 @@ export function createTaskService(options: {
         const stored = await runtime.state.get(`web:resource:${item.key}`);
         const resource = stored && ResourceSchema.safeParse(stored.value);
         if (resource && resource.success && sameScope(resource.data.ref.course.scope, profile.scope)) itemTitles[item.key] = resource.data.title;
+        else {
+          const ref = await runtime.state.get(`cli:resource:${item.key}`);
+          const parsed = ref && ResourceRefSchema.safeParse(ref.value);
+          const title = await runtime.state.get(`cli:resource-title:${item.key}`);
+          if (parsed && parsed.success && sameScope(parsed.data.course.scope, profile.scope) && typeof title?.value === 'string') itemTitles[item.key] = title.value;
+        }
       }
       return JobDetailSchema.parse({ job, active: active?.id === id, error: errors.get(id) ?? null, events, itemTitles });
     } finally { await client.close(); }

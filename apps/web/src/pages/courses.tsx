@@ -41,7 +41,7 @@ export function Courses() {
   const [query, setQuery] = useState("");
   const [platform, setPlatform] = useState("all");
   const [profileId, setProfileId] = useState(
-    data.profiles[0]?.scope.profileId ?? "",
+    data.defaultProfileId ?? data.profiles[0]?.scope.profileId ?? "",
   );
   const [cursor, setCursor] = useState<string | null>(null);
   const [complete, setComplete] = useState<string | null>(null);

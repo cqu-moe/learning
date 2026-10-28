@@ -16,7 +16,7 @@ CLI 默认向 stdout 输出一个 `schemaVersion: 1` JSON envelope；`--output-f
 | [SDK](docs/SDK.md) / [contracts](docs/contracts.d.ts) | SDK行为与接口声明，不是实现 |
 | [PLATFORMS](docs/PLATFORMS.md) | 固定三平台协议与功能差异，范围没有随Web缩水 |
 | [APPS](docs/APPS.md) | 当前CLI命令、本地任务与渲染、安装交付 |
-| [PLAN](docs/PLAN.md) / [tasks.json](docs/tasks.json) | 当前任务 U01/U02 与已完成的 T00–T26/T31 |
+| [PLAN](docs/PLAN.md) / [tasks.json](docs/tasks.json) | 当前任务 U01–U03 与已完成的 T00–T26/T31 |
 | [ACCEPTANCE](docs/ACCEPTANCE.md) | 当前56组验收要求，不是已通过测试 |
 | [HANDOFF](docs/HANDOFF.md) | 首次、继续、迁移、纠偏和复核提示词 |
 | [PROGRESS](docs/PROGRESS.md) | 实际进度模板；已有记录时合并而非覆盖 |
@@ -30,6 +30,6 @@ CLI 默认向 stdout 输出一个 `schemaVersion: 1` JSON envelope；`--output-f
 
 继续开发时先读 AGENTS、SPEC 和 PROGRESS，按 HANDOFF 的继续/复核提示执行；合并已有进度，不能覆盖 PROGRESS 或删除已写文件。旧文档移出模型活动上下文。
 
-原 SDK/CLI 1.1 阶段为 T00–T26 与 T31。当前用户授权的本地 Web 工作按 U01/U02 和 [Web UI 范围](docs/WEB-UI.md) 执行；云端部署与原生封装仍延期，不要求云账号或 Docker。
+原 SDK/CLI 1.1 阶段为 T00–T26 与 T31。当前用户授权的本地 Web 工作按 U01–U03 和 [Web UI 范围](docs/WEB-UI.md) 执行；云端部署与原生封装仍延期，不要求云账号或 Docker。
 
 三个参考仓库需私有读取权限或只读checkout。离线工程工作不需要真实平台Cookie、模型Key或云密钥。真机和付费调用另行授权；编写代码不等于授权真实提交。

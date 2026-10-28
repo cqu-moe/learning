@@ -13,6 +13,7 @@ import type { Course, Job, Json, Scope } from '@learning/sdk/public';
 
 const directory = mkdtempSync(join(tmpdir(), 'learning-web-browser-'));
 const interactions: FixtureInteraction[] = [
+  ...loadFixture('ykt/qr-login').interactions,
   ...loadFixture('ykt/nested-outline').interactions,
   ...loadFixture('ykt/media').interactions,
   ...loadFixture('ykt/history-slides').interactions.slice(0, 1),
@@ -70,7 +71,10 @@ for (const [index, status] of states.entries()) {
 await store.commit({ expected: rows.map(row => ({ key: row.key, revision: null })), changes: rows });
 await writeSession(store, loadOrCreateMasterKey(directory), { schemaVersion: 1, scope: profiles[0]!.scope, generation: 1, platformUserId: '424242', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: now });
 store.close();
-server.listen(4312, '127.0.0.1', () => console.log('Synthetic browser fixture: http://127.0.0.1:4312 (synthetic allowlist; no real platform access)'));
+server.listen(4312, '127.0.0.1', () => {
+  console.log('Synthetic browser fixture: http://127.0.0.1:4312 (synthetic allowlist; no real platform access)');
+  console.log(`Synthetic data directory: ${directory}`);
+});
 const close = () => server.close(() => { rmSync(directory, { recursive: true, force: true }); process.exit(0); });
 process.once('SIGINT', close);
 process.once('SIGTERM', close);

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { SqliteStateStore } from '@learning/sdk/node';
+import { NodeArtifactStore, SqliteStateStore } from '@learning/sdk/node';
 import type { Json } from '@learning/sdk/public';
 
 const cli = resolve(import.meta.dirname, '../dist/index.js');
@@ -82,22 +82,50 @@ describe('local profiles', () => {
     const resource = { course: course.ref, key: 'resource', native: { kind: 'ykt', leafId: '2', leafInfoId: null } };
     const otherCourse = { ref: { scope: other.scope, key: 'other-course', native: { kind: 'ykt', classroomId: '4' } }, title: 'other course', system: null, term: null, teachers: [], locked: null };
     const otherResource = { course: otherCourse.ref, key: 'other-resource', native: { kind: 'ykt', leafId: '3', leafInfoId: null } };
-    const job = { id: 'job-owned', scope, kind: 'export', status: 'paused', createdAtMs: 1, updatedAtMs: 1, nextRunAtMs: null, completed: 0, total: 1, items: [], warnings: [] };
+    const fullResource = { ref: resource, title: '第一讲', kind: 'video', path: ['course'], order: 1, durationSeconds: null, locked: false };
+    const otherFullResource = { ...fullResource, ref: otherResource };
+    const lesson = { ref: { scope, course: course.ref, lessonId: 'lesson-owned' }, title: '第一课', startsAtMs: null, finished: null };
+    const otherLesson = { ...lesson, ref: { ...lesson.ref, scope: other.scope, course: otherCourse.ref, lessonId: 'lesson-other' } };
+    const artifact = { id: 'artifact-owned', scope, filename: 'owned.txt', mimeType: 'text/plain', bytes: 3, sha256: 'a'.repeat(64), createdAtMs: 1 };
+    const job = { id: 'job-owned', scope, kind: 'export', status: 'paused', createdAtMs: 1, updatedAtMs: 1, nextRunAtMs: null, completed: 1, total: 1, items: [{ key: 'resource', state: 'succeeded', message: null, artifacts: [artifact] }], warnings: [] };
+    const preview = { id: 'preview-owned', scope, kind: 'study', digest: 'digest', generation: 1, expiresAtMs: 2, description: 'study', startsTimer: false, finalSubmission: false, blockers: [], warnings: [] };
     const state = new SqliteStateStore(resolve(dir, 'state.db'));
     const records: [string, Json][] = [
       ['job:job-owned', job], ['job-meta:job-owned', { inputDigest: 'x', generation: 1, cursor: null, pendingOperationId: null, running: false }],
       ['job-input:job-owned', { type: 'media', resources: [resource], quality: 'best', subtitles: false }], ['job-events:job-owned', []],
       ['cli:course:course', course], ['cli:resource:resource', resource], ['cli:resource-kind:resource', 'video'], ['cli:resource-title:resource', '第一讲'], ['cli:resource-path:resource', ['course']],
       ['cli:course:other-course', otherCourse], ['cli:resource:other-resource', otherResource], ['cli:resource-path:other-resource', ['other-course']],
+      ['web:resource:resource', fullResource], ['web:resource:other-resource', otherFullResource],
+      ['web:lesson:course:lesson-owned', lesson], ['web:lesson:other-course:lesson-other', otherLesson],
+      ['preview:preview-owned', { preview, operationId: 'operation-owned', phase: 'preview', receipt: null, inputCiphertext: 'ciphertext' }],
+      ['operation:operation-owned', 'preview-owned'],
+      ['download:job-owned:resource', { url: 'https://example.test/video', validator: null, bytes: 0, checkpoint: { id: 'job-owned:resource:media', bytes: 0, sha256: 'a'.repeat(64) } }],
+      ['cli:preferences', { version: 1, defaultProfileId: scope.profileId, downloadDir: '/tmp/learning-exports' }],
     ];
     expect(await state.commit({ expected: records.map(([key]) => ({ key, revision: null })), changes: records.map(([key, value]) => ({ key, value })) })).toBe(true);
+    const artifacts = new NodeArtifactStore(resolve(dir, 'artifacts'));
+    for (const id of [artifact.id, 'job-owned:resource:media', 'artifact-other']) {
+      const writer = await artifacts.create({ id, mimeType: 'text/plain' });
+      await writer.write(new TextEncoder().encode('abc'));
+      await writer.finish();
+    }
     state.close();
     expect(run(dir, 'profile', 'remove', 'alpha', '--yes').code).toBe(0);
     const reopened = new SqliteStateStore(resolve(dir, 'state.db'));
-    for (const [key] of records.filter(([key]) => !key.includes('other-'))) expect(await reopened.get(key)).toBeNull();
+    for (const [key] of records.filter(([key]) => !key.includes('other-') && key !== 'cli:preferences')) expect(await reopened.get(key)).toBeNull();
     expect(await reopened.get('cli:course:other-course')).not.toBeNull();
     expect(await reopened.get('cli:resource:other-resource')).not.toBeNull();
     expect(await reopened.get('cli:resource-path:other-resource')).not.toBeNull();
+    expect(await reopened.get('web:resource:other-resource')).not.toBeNull();
+    expect(await reopened.get('web:lesson:other-course:lesson-other')).not.toBeNull();
+    expect(await reopened.get('operation:operation-owned')).toBeNull();
+    expect(await reopened.get('download:job-owned:resource')).toBeNull();
+    expect(await reopened.get('cli:preferences')).toMatchObject({ value: { version: 1, defaultProfileId: null, downloadDir: '/tmp/learning-exports' } });
     reopened.close();
+    const reopenedArtifacts = new NodeArtifactStore(resolve(dir, 'artifacts'));
+    await expect(reopenedArtifacts.open(artifact.id)).rejects.toThrow();
+    await expect(reopenedArtifacts.open('job-owned:resource:media')).rejects.toThrow();
+    const preserved = await reopenedArtifacts.open('artifact-other');
+    await preserved.cancel();
   });
 });

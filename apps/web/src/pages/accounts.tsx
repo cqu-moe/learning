@@ -4,13 +4,23 @@ import { Link, useRevalidator } from "react-router";
 import {
   ArrowRight,
   CheckCircle2,
+  LockKeyhole,
+  LogOut,
+  MoreHorizontal,
   Plus,
   QrCode,
+  RefreshCw,
+  ShieldCheck,
   Smartphone,
+  Star,
+  Trash2,
   UsersRound,
 } from "lucide-react";
 import {
   ActionButton,
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Button,
   Dialog,
   DialogContent,
@@ -19,6 +29,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   Input,
   Label,
   PageHeader,
@@ -38,6 +53,29 @@ import type { Profile, LoginState } from "../../shared/contracts.ts";
 import { useDashboard } from "../data.ts";
 import { api, errorMessage } from "../api.ts";
 import { Failure, platforms } from "../components.tsx";
+
+const AccountControlResultSchema = z.object({
+  id: z.string(),
+  message: z.string(),
+  state: z.enum(["valid", "expired", "indeterminate"]).optional(),
+});
+const UnlockResultSchema = z.object({
+  unlocked: z.boolean(),
+  message: z.string(),
+});
+
+type AccountAction = "default" | "probe" | "disconnect" | "remove";
+type WriterState = {
+  state: "idle" | "active" | "stale" | "unknown";
+  pid: number | null;
+};
+
+const actionLabels: Record<AccountAction, string> = {
+  default: "设为默认账号",
+  probe: "核验登录",
+  disconnect: "退出本地登录",
+  remove: "移除账号",
+};
 
 function AddAccount() {
   const { revalidate } = useRevalidator();
@@ -98,7 +136,7 @@ function AddAccount() {
       }}
     >
       <DialogTrigger asChild>
-        <Button>
+        <Button id="add-account">
           <Plus aria-hidden="true" />
           添加账号
         </Button>
@@ -196,17 +234,34 @@ const loginLabels = {
 };
 const terminal = ["authenticated", "failed", "canceled"];
 
-function AccountCard({ profile }: { profile: Profile }) {
+function AccountCard({
+  profile,
+  isDefault,
+  mutationBusy,
+  mutationLock,
+  onBusyChange,
+}: {
+  profile: Profile;
+  isDefault: boolean;
+  mutationBusy: boolean;
+  mutationLock: { current: boolean };
+  onBusyChange: (profileId: string | null) => void;
+}) {
   const { revalidate } = useRevalidator();
   const [open, setOpen] = useState(false);
   const [login, setLogin] = useState<LoginState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [operation, setOperation] = useState<AccountAction | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const managementTrigger = useRef<HTMLButtonElement>(null);
   const activeId = useRef<string | null>(null);
   const mounted = useRef(true);
   const startController = useRef<AbortController | null>(null);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
       mounted.current = false;
       startController.current?.abort();
       if (activeId.current)
@@ -215,9 +270,8 @@ function AccountCard({ profile }: { profile: Profile }) {
           z.unknown(),
           { method: "DELETE", body: "{}", keepalive: true },
         ).catch(() => undefined);
-    },
-    [],
-  );
+    };
+  }, []);
   useEffect(() => {
     if (!open || !login || terminal.includes(login.status)) return;
     const controller = new AbortController();
@@ -313,11 +367,88 @@ function AccountCard({ profile }: { profile: Profile }) {
         ),
       );
   }
+  async function runControl(action: AccountAction) {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
+    onBusyChange(profile.scope.profileId);
+    setOperation(action);
+    setControlError(null);
+    try {
+      const result = await api(
+        `/profiles/${encodeURIComponent(profile.scope.profileId)}/control`,
+        AccountControlResultSchema,
+        { method: "POST", body: JSON.stringify({ action }) },
+      );
+      if (action === "remove") setRemoveOpen(false);
+      if (result.state && result.state !== "valid") toast.warning(result.message);
+      else toast.success(result.message);
+      void revalidate().then(() => {
+        if (action === "remove") document.getElementById("add-account")?.focus();
+      }).catch(() =>
+        toast.error("操作已完成，但账号列表刷新失败。请刷新页面。"),
+      );
+    } catch (failure) {
+      if (mounted.current) setControlError(errorMessage(failure));
+    } finally {
+      mutationLock.current = false;
+      if (mounted.current) {
+        setOperation(null);
+      }
+      onBusyChange(null);
+    }
+  }
   return (
     <article className="surface account-card">
-      <div className="account-card-heading">
-        <UsersRound size={20} aria-hidden="true" />
-        <span>{platforms[profile.scope.platform]}</span>
+      <div className="account-card-top">
+        <div className="account-card-heading">
+          <UsersRound size={20} aria-hidden="true" />
+          <span>{platforms[profile.scope.platform]}</span>
+          {isDefault && <span className="account-default">默认账号</span>}
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              ref={managementTrigger}
+              variant="ghost"
+              size="icon"
+              aria-label={`管理${profile.name}`}
+              disabled={mutationBusy}
+            >
+              <MoreHorizontal aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              disabled={isDefault}
+              onSelect={() => void runControl("default")}
+            >
+              <Star aria-hidden="true" />
+              {isDefault ? "已是默认账号" : actionLabels.default}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void runControl("probe")}>
+              <ShieldCheck aria-hidden="true" />
+              {operation === "probe" ? "正在核验…" : actionLabels.probe}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!profile.hasSession}
+              onSelect={() => void runControl("disconnect")}
+            >
+              <LogOut aria-hidden="true" />
+              {operation === "disconnect" ? "正在退出…" : actionLabels.disconnect}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => {
+                setControlError(null);
+                setRemoveOpen(true);
+              }}
+            >
+              <Trash2 aria-hidden="true" />
+              {actionLabels.remove}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <h2>{profile.name}</h2>
       <p className="account-session">
@@ -333,6 +464,15 @@ function AccountCard({ profile }: { profile: Profile }) {
           ? "记录可能已过期，读取课程时会核验登录状态。"
           : "扫码后即可获取这个账号的课程。"}
       </p>
+      {operation && (
+        <p className="account-operation" role="status">
+          {operation === "remove"
+            ? "正在移除账号…"
+            : `正在${operation === "default" ? "设置默认账号" : operation === "probe" ? "核验登录" : "退出本地登录"}…`}
+        </p>
+      )}
+      {controlError && !removeOpen && <Failure message={controlError} />}
+      <div className="account-card-actions">
       <Dialog
         open={open}
         onOpenChange={(value) => {
@@ -434,12 +574,236 @@ function AccountCard({ profile }: { profile: Profile }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
+      <Dialog
+        open={removeOpen}
+        onOpenChange={(value) => {
+          if (!mutationLock.current) {
+            setRemoveOpen(value);
+            setControlError(null);
+          }
+        }}
+      >
+        <DialogContent onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          managementTrigger.current?.focus();
+        }}>
+          <DialogHeader>
+            <DialogTitle>移除{profile.name}？</DialogTitle>
+            <DialogDescription>
+            这个操作会从本机移除账号，并清理它的课程缓存、任务记录和内部任务文件。
+            </DialogDescription>
+          </DialogHeader>
+          <Alert variant="destructive">
+            <Trash2 aria-hidden="true" />
+            <AlertTitle>将清理本机数据</AlertTitle>
+            <AlertDescription>
+              Web 与 Agent 共用的账号数据会一起移除。已另存的导出文件保留，平台上的课程和学习记录不受影响。
+            </AlertDescription>
+          </Alert>
+          {controlError && <Failure message={controlError} />}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={operation !== null}
+              onClick={() => setRemoveOpen(false)}
+            >
+              保留账号
+            </Button>
+            <ActionButton
+              variant="destructive"
+              state={
+                operation === "remove"
+                  ? "loading"
+                  : controlError
+                    ? "error"
+                    : "idle"
+              }
+              labels={{
+                idle: "确认移除",
+                loading: "正在移除…",
+                success: "已移除",
+                error: "重试移除",
+              }}
+              onClick={() => void runControl("remove")}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </article>
+  );
+}
+
+function WriterStatePanel({
+  writer,
+  mutationBusy,
+  mutationLock,
+  onBusyChange,
+}: {
+  writer: WriterState;
+  mutationBusy: boolean;
+  mutationLock: { current: boolean };
+  onBusyChange: (target: string | null) => void;
+}) {
+  const { revalidate, state: revalidateState } = useRevalidator();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const unlockTrigger = useRef<HTMLButtonElement>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  async function unlock(pid: number) {
+    if (mutationLock.current) return;
+    mutationLock.current = true;
+    onBusyChange("system-unlock");
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api("/system/unlock", UnlockResultSchema, {
+        method: "POST",
+        body: JSON.stringify({ pid }),
+      });
+      if (result.unlocked) {
+        setOpen(false);
+        toast.success(result.message);
+      } else {
+        setError(result.message);
+        toast.warning(result.message);
+      }
+      void revalidate().then(() => {
+        if (result.unlocked) document.getElementById("add-account")?.focus();
+      }).catch(() =>
+        toast.error("锁状态请求已完成，但页面刷新失败。请刷新页面。"),
+      );
+    } catch (failure) {
+      if (mounted.current) setError(errorMessage(failure));
+    } finally {
+      mutationLock.current = false;
+      if (mounted.current) setBusy(false);
+      onBusyChange(null);
+    }
+  }
+
+  if (writer.state === "idle") return null;
+  const pidText = writer.pid === null ? "" : `（PID ${writer.pid}）`;
+  return (
+    <section className="surface writer-panel" aria-label="本机数据锁状态">
+      {writer.state === "active" && (
+        <Alert>
+          <LockKeyhole aria-hidden="true" />
+          <AlertTitle>本机数据正在被使用</AlertTitle>
+          <AlertDescription>
+            本机已有任务或登录操作正在写入{pidText}。请等待操作结束或暂停任务后再管理账号。
+          </AlertDescription>
+        </Alert>
+      )}
+      {writer.state === "unknown" && (
+        <Alert>
+          <LockKeyhole aria-hidden="true" />
+          <AlertTitle>暂时无法确认本机数据锁</AlertTitle>
+          <AlertDescription>
+            为避免影响其他 Learning 窗口或 Agent，本页不会提供清理入口。请稍后刷新状态。
+          </AlertDescription>
+        </Alert>
+      )}
+      {writer.state === "stale" && (
+        <Alert>
+          <RefreshCw aria-hidden="true" />
+          <AlertTitle>检测到异常退出遗留的数据锁</AlertTitle>
+          <AlertDescription>
+            {writer.pid === null
+              ? "锁记录没有进程号，本页无法安全清理。请刷新确认状态。"
+              : `已确认进程 ${writer.pid} 不再运行。清理遗留锁后，可以继续管理账号或恢复任务。`}
+          </AlertDescription>
+        </Alert>
+      )}
+      {writer.state === "stale" && writer.pid !== null && (
+        <Button
+          ref={unlockTrigger}
+          variant="outline"
+          disabled={mutationBusy}
+          onClick={() => {
+            setError(null);
+            setOpen(true);
+          }}
+        >
+          <RefreshCw aria-hidden="true" />
+          清理遗留锁
+        </Button>
+      )}
+      {(writer.state === "unknown" ||
+        (writer.state === "stale" && writer.pid === null)) && (
+        <Button
+          variant="outline"
+          disabled={revalidateState !== "idle"}
+          onClick={() =>
+            void revalidate().catch(() =>
+              toast.error("锁状态刷新失败。请稍后重试。"),
+            )
+          }
+        >
+          <RefreshCw aria-hidden="true" />
+          {revalidateState === "idle" ? "重新检查锁状态" : "正在检查…"}
+        </Button>
+      )}
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!mutationLock.current) {
+            setOpen(value);
+            setError(null);
+          }
+        }}
+      >
+        <DialogContent onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          unlockTrigger.current?.focus();
+        }}>
+          <DialogHeader>
+            <DialogTitle>清理遗留的本机数据锁？</DialogTitle>
+            <DialogDescription>
+              将清理 PID {writer.pid} 对应的遗留锁记录。这一步不会删除账号、课程缓存或任务记录。
+            </DialogDescription>
+          </DialogHeader>
+          {error && <Failure message={error} />}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setOpen(false)}
+            >
+              暂不清理
+            </Button>
+            <ActionButton
+              variant="destructive"
+              state={busy ? "loading" : error ? "error" : "idle"}
+              labels={{
+                idle: "确认清理锁",
+                loading: "正在清理…",
+                success: "已清理",
+                error: "重试清理",
+              }}
+              onClick={() => {
+                if (writer.pid !== null) void unlock(writer.pid);
+              }}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }
 
 export function Accounts() {
   const data = useDashboard();
+  const mutationLock = useRef(false);
+  const [busyTarget, setBusyTarget] = useState<string | null>(null);
   return (
     <>
       <PageHeader
@@ -447,10 +811,23 @@ export function Accounts() {
         description="连接常用的学习平台，让课程集中在这里。"
         actions={<AddAccount />}
       />
+      <WriterStatePanel
+        writer={data.writer}
+        mutationBusy={busyTarget !== null}
+        mutationLock={mutationLock}
+        onBusyChange={setBusyTarget}
+      />
       {data.profiles.length ? (
         <div className="account-grid">
           {data.profiles.map((profile) => (
-            <AccountCard key={profile.scope.profileId} profile={profile} />
+            <AccountCard
+              key={profile.scope.profileId}
+              profile={profile}
+              isDefault={data.defaultProfileId === profile.scope.profileId}
+              mutationBusy={busyTarget !== null}
+              mutationLock={mutationLock}
+              onBusyChange={setBusyTarget}
+            />
           ))}
         </div>
       ) : (
@@ -464,7 +841,8 @@ export function Accounts() {
       )}
       <p className="page-note">
         账号与登录信息保存在本机，与 Learning
-        命令行共用。首次登录或会话过期时，需要在手机上完成验证。
+        命令行共用。首次登录或会话过期时，需要在手机上完成验证。退出本地登录只移除本机会话，
+        会保留账号、课程缓存和任务；移除账号才会清理这些本机数据。
       </p>
     </>
   );

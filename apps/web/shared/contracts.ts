@@ -20,7 +20,11 @@ export const DashboardSchema = z.object({
   courses: z.array(CourseSchema),
   jobs: z.array(JobSchema),
   updatedAtMs: z.number().int().nonnegative(),
+  defaultProfileId: z.string().nullable(),
+  writer: z.object({ state: z.enum(['idle', 'active', 'stale', 'unknown']), pid: z.number().int().positive().nullable() }),
 });
+export const ProfileControlInputSchema = z.strictObject({ action: z.enum(['default', 'probe', 'disconnect', 'remove']) });
+export const UnlockInputSchema = z.strictObject({ pid: z.number().int().positive() });
 export const CoursePageSchema = z.object({
   items: z.array(CourseSchema),
   nextCursor: z.string().nullable(),

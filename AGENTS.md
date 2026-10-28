@@ -6,6 +6,8 @@
 
 浏览器只消费中立 DTO 和同源 HTTP API，Node 服务使用 SDK 正式导出，不导入 CLI 内部、不复制平台协议。平台登录和在线查询只由用户操作触发；开发验收用隔离目录与离线 fixture。远程部署、云端运行时、原生壳和未纳入首版的写操作仍延期。
 
+U03 已由用户指定：整合 main 的 Agent CLI，并验证共用账号、默认账号、课程缓存、写锁及任务恢复。Web 承接这些用户操作；账号清理复用 SDK `/node`，两端检查点保持兼容。真实 CLI 子进程与 Web 的离线联调接入根 `test:e2e`，不以单端测试替代互操作验收。
+
 ## SDK/CLI 1.1 阶段范围（T00–T31）
 
 仓库 `cqu-moe/learning`。当前使用1.1的 SPEC、SDK、contracts.d.ts、PLATFORMS、APPS、ACCEPTANCE、PLAN。**本期只完成共享 SDK + 本地 CLI，Web 延期。** 最终版1.0和更早v0.1/v0.2不得并列执行。
