@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// T01 check: exactly two workspace packages, manifest/boundary rules, and the
+// Workspace manifest/boundary rules and the
 // public/root static import graph (A011/A012). Includes a self-test proving the
 // import-graph checker rejects Node/CLI leakage (negative case).
 import fs from 'node:fs';
@@ -36,6 +36,10 @@ export function collectImportViolations(entryFile, srcRoot) {
         violations.push({ file, spec, reason: 'node-builtin' });
         continue;
       }
+      if (/^@learning\/sdk\/(node|render-node)(?:\/|$)/.test(spec)) {
+        violations.push({ file, spec, reason: 'node-runtime-subpath' });
+        continue;
+      }
       if (!spec.startsWith('.')) continue; // bare specifiers gated by manifest rules
       const base = resolve(dirname(file), spec);
       const candidates = spec.endsWith('.js')
@@ -55,6 +59,10 @@ export function collectImportViolations(entryFile, srcRoot) {
         violations.push({ file, spec, reason: 'cli-import' });
         continue;
       }
+      if (target.includes('/apps/web/server/')) {
+        violations.push({ file, spec, reason: 'web-server-import' });
+        continue;
+      }
       stack.push(target);
     }
   }
@@ -69,6 +77,10 @@ function selfTest() {
     const bad = collectImportViolations(resolve(dir, 'bad-import.ts'), dir);
     if (!bad.some((v) => v.reason === 'node-builtin')) {
       fail('self-test: checker did not reject a node: builtin import');
+    }
+    fs.writeFileSync(resolve(dir, 'bad-subpath.ts'), "import { SqliteStateStore } from '@learning/sdk/node';\n");
+    if (!collectImportViolations(resolve(dir, 'bad-subpath.ts'), dir).some(v => v.reason === 'node-runtime-subpath')) {
+      fail('self-test: checker did not reject SDK Node subpath');
     }
     fs.writeFileSync(resolve(dir, 'entry.ts'), "export * from './chain.js';\n");
     fs.writeFileSync(resolve(dir, 'chain.ts'), "export const chain = 'ok';\n");
@@ -94,15 +106,17 @@ function selfTest() {
 // --- workspace rules ---------------------------------------------------------
 const sdkManifestPath = resolve(root, 'packages/sdk/package.json');
 const cliManifestPath = resolve(root, 'apps/cli/package.json');
-const manifestPaths = [sdkManifestPath, cliManifestPath];
+const webManifestPath = resolve(root, 'apps/web/package.json');
+const manifestPaths = [sdkManifestPath, cliManifestPath, webManifestPath];
 for (const p of manifestPaths) {
   if (!fs.existsSync(p)) fail(`${rel(p)} missing`);
 }
 const manifests = manifestPaths.filter((p) => fs.existsSync(p)).map((p) => JSON.parse(fs.readFileSync(p, 'utf8')));
-if (manifests.length === 2) {
+if (manifests.length === 3) {
   const names = manifests.map((m) => m.name);
   if (names[0] !== '@learning/sdk') fail(`packages/sdk name must be @learning/sdk, got ${names[0]}`);
   if (names[1] !== '@learning/cli') fail(`apps/cli name must be @learning/cli, got ${names[1]}`);
+  if (names[2] !== '@learning/web') fail(`apps/web name must be @learning/web, got ${names[2]}`);
   for (const m of manifests) {
     if (m.private !== true) fail(`${m.name} must be private`);
   }
@@ -110,9 +124,10 @@ if (manifests.length === 2) {
   if (typeof cliSdkDep !== 'string' || !cliSdkDep.startsWith('workspace:')) {
     fail('apps/cli must depend on @learning/sdk via workspace: protocol');
   }
+  if (!manifests[2].dependencies?.['@learning/sdk']?.startsWith('workspace:')) fail('apps/web must depend on @learning/sdk via workspace: protocol');
 }
 
-for (const forbidden of ['apps/web', 'apps/executor', 'packages/sdk/src/runtime/cloudflare']) {
+for (const forbidden of ['apps/executor', 'packages/sdk/src/runtime/cloudflare']) {
   if (fs.existsSync(resolve(root, forbidden))) fail(`forbidden path exists: ${forbidden}`);
 }
 
@@ -122,8 +137,8 @@ if (!fs.existsSync(workspacePath)) {
 } else {
   const ws = fs.readFileSync(workspacePath, 'utf8');
   const entries = [...ws.matchAll(/^\s*-\s*(\S+)\s*$/gm)].map((m) => m[1]);
-  if (entries.length !== 2 || !entries.includes('packages/sdk') || !entries.includes('apps/cli')) {
-    fail(`workspace must list exactly [packages/sdk, apps/cli], got ${JSON.stringify(entries)}`);
+  if (entries.length !== 3 || !entries.includes('packages/sdk') || !entries.includes('apps/cli') || !entries.includes('apps/web')) {
+    fail(`workspace must list exactly [packages/sdk, apps/cli, apps/web], got ${JSON.stringify(entries)}`);
   }
 }
 
@@ -132,14 +147,22 @@ if (!fs.existsSync(rootManifestPath)) {
   fail('root package.json missing');
 } else {
   const rootPkg = JSON.parse(fs.readFileSync(rootManifestPath, 'utf8'));
-  const allowed = new Set(['lint', 'typecheck', 'test', 'build', 'cli', 'test:e2e']);
+  const allowed = new Set(['lint', 'typecheck', 'test', 'build', 'cli', 'test:e2e', 'web', 'check:design']);
   for (const key of Object.keys(rootPkg.scripts ?? {})) {
     if (!allowed.has(key)) fail(`root script not allowed: ${key}`);
   }
-  for (const banned of ['test:worker', 'dev:web', 'deploy:web']) {
+  for (const banned of ['test:worker', 'deploy:web']) {
     if (rootPkg.scripts?.[banned]) fail(`root script ${banned} must not exist`);
   }
   if (rootPkg.name !== 'learning' || rootPkg.private !== true) fail('root manifest must be private name=learning');
+}
+
+for (const dep of [...Object.keys(manifests[2]?.dependencies ?? {}), ...Object.keys(manifests[2]?.devDependencies ?? {})]) {
+  if (/^(hono|wrangler)(-|$)|^@cloudflare\//.test(dep)) fail(`web depends on deferred cloud dependency ${dep}`);
+}
+const webSrc = resolve(root, 'apps/web/src');
+for (const v of collectImportViolations(resolve(webSrc, 'main.tsx'), webSrc)) {
+  fail(`web browser import violation: ${v.spec ?? ''} (${v.reason})`);
 }
 
 const bannedDep = (name) =>
@@ -193,4 +216,4 @@ if (failures.length > 0) {
   for (const f of failures) console.error(`FAIL ${f}`);
   process.exit(1);
 }
-console.log('OK boundaries: two-package workspace, no web/cloud deps, public graph clean');
+console.log('OK boundaries: SDK/CLI/Web workspace, no cloud deps, SDK public and browser graphs clean');

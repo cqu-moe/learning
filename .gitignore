@@ -12,3 +12,4 @@ dist/
 master.key
 
 .tools/
+artifacts/web-ui/

@@ -1,5 +1,7 @@
 # learning — SDK + CLI 本期定稿规范
 
+> 2026-10-28 补充：用户已授权本地 React Web 仪表盘。新增 `apps/web` 与必要的 React/Vite/CQU Design 依赖；当前 UI 范围以 [WEB-UI](WEB-UI.md) 为准。下文为 SDK/CLI 1.1 的历史基线，其他业务/安全契约继续生效，云端仍延期。
+
 版本：1.1 · 日期：2026-09-23 · 本期范围：共享 SDK 与本地 CLI；Web 延期。
 
 **本文件与 SDK、contracts、PLATFORMS、APPS、ACCEPTANCE、PLAN 配套，整体替代最终版 1.0 及更早的 v0.1/v0.2。** 本次是修改设计与实施计划，不是已经实现产品。保留项目/仓库名 `learning / cqu-moe/learning`。

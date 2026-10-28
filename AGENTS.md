@@ -1,6 +1,12 @@
-# learning — SDK + CLI 本期实施约束
+# learning — 工作区约束
 
-## 当前有效范围
+## 2026-10-28 用户授权补充：本地 Web 仪表盘
+
+用户已明确启动 React Web UI，并选择本地运行、共用本机数据目录。新增 `apps/web`，使用 CQU Moe Design 的本地包和模板；本补充覆盖下文「只建两个 workspace」「禁止 React/Vite」「Web 全部延期」的旧范围。SDK/CLI 既有版本与验证边界不变。当前交付范围与验收见 `docs/WEB-UI.md`。U02 已由用户指定：任务选择、预览、确认、发起与恢复放在 Web；CLI 面向 Agent。下文 T00–T31 的停止条件和延期限制仅适用于原 SDK/CLI 阶段，不重新限制已授权 U01/U02。
+
+浏览器只消费中立 DTO 和同源 HTTP API，Node 服务使用 SDK 正式导出，不导入 CLI 内部、不复制平台协议。平台登录和在线查询只由用户操作触发；开发验收用隔离目录与离线 fixture。远程部署、云端运行时、原生壳和未纳入首版的写操作仍延期。
+
+## SDK/CLI 1.1 阶段范围（T00–T31）
 
 仓库 `cqu-moe/learning`。当前使用1.1的 SPEC、SDK、contracts.d.ts、PLATFORMS、APPS、ACCEPTANCE、PLAN。**本期只完成共享 SDK + 本地 CLI，Web 延期。** 最终版1.0和更早v0.1/v0.2不得并列执行。
 

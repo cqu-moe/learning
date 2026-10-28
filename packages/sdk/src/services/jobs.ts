@@ -118,7 +118,7 @@ export class JobRunner {
     return this.update(id, (job, meta) => {
       if (job.status !== 'running' && !meta.running) return null;
       return {
-        job: { ...job, status: job.kind === 'export' || job.kind === 'live' ? 'paused' : 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() },
+        job: { ...job, status: meta.pendingOperationId === null && (job.kind === 'export' || job.kind === 'live') ? 'paused' : 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() },
         meta: { ...meta, running: false },
       };
     });
@@ -222,10 +222,20 @@ export class JobRunner {
     return job;
   }
 
-  async requeueLive(id: string): Promise<Job> {
+  async beginLiveRejoin(id: string): Promise<string> {
+    const operationId = `live-checkin:${id}:${crypto.randomUUID()}`;
+    await this.update(id, (current, meta) => {
+      if (current.kind !== 'live' || !['paused', 'waiting', 'needs-input', 'uncertain'].includes(current.status) || meta.running || meta.pendingOperationId !== null) throw error('UNCERTAIN', 'live checkin must be reconciled before rejoining', id);
+      return { job: { ...current, status: 'uncertain', nextRunAtMs: null, updatedAtMs: this.clock.nowMs() }, meta: { ...meta, pendingOperationId: operationId } };
+    });
+    await this.emitState(id);
+    return operationId;
+  }
+
+  async requeueLive(id: string, confirmedOperationId?: string): Promise<Job> {
     const job = await this.update(id, (current, meta) => {
-      if (current.kind !== 'live' || !['paused', 'waiting', 'needs-input', 'uncertain'].includes(current.status) || meta.running || meta.pendingOperationId !== null) throw error('CONFLICT', 'live job cannot be rejoined from this state', id);
-      return { job: { ...current, status: 'queued', nextRunAtMs: this.clock.nowMs(), updatedAtMs: this.clock.nowMs() }, meta: { ...meta, running: false } };
+      if (current.kind !== 'live' || !['paused', 'waiting', 'needs-input', 'uncertain'].includes(current.status) || meta.running || meta.pendingOperationId !== (confirmedOperationId ?? null)) throw error('CONFLICT', 'live job cannot be rejoined from this state', id);
+      return { job: { ...current, status: 'queued', nextRunAtMs: this.clock.nowMs(), updatedAtMs: this.clock.nowMs() }, meta: { ...meta, pendingOperationId: null, running: false } };
     });
     await this.emitState(id);
     return job;

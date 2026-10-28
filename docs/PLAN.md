@@ -1,5 +1,7 @@
 # learning Implementation Plan — SDK + CLI 本期实施计划
 
+> 2026-10-28 用户指定 U01/U02：本地 React Web 仪表盘，见 [WEB-UI](WEB-UI.md)。在隔离分支实现账号、课程、任务监控及任务发起/恢复；此授权覆盖下文 Web 延期限制，旧 T00–T31 状态不重置，不自动开发云端。
+
 版本 1.1，2026-09-23。此次只修改实施范围；未执行产品任务。先读当前 SPEC，不再使用最终版1.0或更早稿的 Web 任务。
 
 > **For agentic workers:** 有 superpowers 时按 executing-plans 逐任务实施；没有插件也按本文相同步骤，不另装插件作为前提。一次只完成用户指定任务，不自动多模型并行。

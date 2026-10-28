@@ -1,5 +1,7 @@
 # learning — SDK + CLI 本期实施状态
 
+> 2026-10-28 用户指定新增 U01「本地 React Web 仪表盘」。首版已完成离线验收，详见文末与 [WEB-UI](WEB-UI.md)。下表仍记录 SDK/CLI 1.1 基线，旧任务状态与云端延期不变。
+
 版本1.1。记录已实施代码与实际验证；2026-09-23 继续复核后，早期多项“done”仅覆盖纯函数或合成 fixture，未形成完整 CLI 执行链。下表采用当前状态，历史记录保留为当时证据。当前分母为28项，T27–T30延期。
 
 | 任务 | 内容 | 状态 | 实际测试命令/退出码 | 阻塞 |
@@ -1091,3 +1093,33 @@ T27 Web登录/UserDO、T28 API/DO/R2/Cloudflare Runtime、T29页面/Web E2E、T3
 - 先改诊断回归并在旧清理实现上实际运行 `node scripts/test-error-diagnostics.mjs`，exit1，断言 `.exe` 不应残留外部映射失败（`dist/error-diagnostics/windows-map-red.log`）；单独小探针同样实测留下 `probe.exe` 与 `probe.map`。修复后诊断脚本 exit0，源码行号/函数名/cause/fatal monitor 均保留。
 - macOS arm64 / Node24.11.1 / pnpm11.19.0 / Bun1.4.3：`pnpm lint`、`node scripts/test-release.mjs`、`build-cli.mjs --without-telemetry`、`CI=1 test-distribution.mjs --without-telemetry`、`git diff --check` 均 exit0；实际本地采集仍为 1 异常 / 4 个 SDK TS 帧，日志 `windows-map-green.log`。本轮只修改构建清理、诊断验收和记录，未重复 SDK/CLI 单测，未改产品逻辑、版本、依赖或放宽发布清单。
 - 下一步为打包补修 PR 的五目标 CI 与合并，然后使用修复后的标准流水线发布同一个 0.2.10。真实平台、付费模型和真实 PostHog 入库未验证；没有推进其他 PLAN 或 Web。
+
+
+### 2026-10-28 · U01 本地 React Web 仪表盘首版
+
+- 用户明确要求 React 用户界面，并选择「本地 Web 仪表盘」。复用已隔离 worktree 的 `codex/learning-web-dashboard` 分支；旧 Web 禁止范围由本次授权覆盖，未修改 SDK/CLI 产品源码、未合并隔壁 Agent CLI 分支。U01 **done（首版本机/离线验收）**；不把它记为全业务 UI 或真实教学平台验收完成。
+- `apps/web` 使用 CQU Moe Design 官方生成器与本地 theme/ui 1.1.0 tarball，复用 AppShell、ThemeProvider、Toaster、PageState 和公开组件。新增概览、账号添加/扫码/取消、课程搜索/平台筛选/主动刷新/分页/目录、任务状态/结果/暂停/取消；未知进度不虚构百分比。React 浏览器代码只消费 HTTP DTO，不导入 CLI 或 SDK Node 适配。
+- 本地 Node HTTP API 复用 SDK、SQLite、`LEARNING_HOME` 和 CLI 数据键/写锁，保留完整 scope 与不确定结果；Host/Origin/Cross-Site、JSON/schema、静态 realpath、旧数据库缺密钥和锁冲突均有检查。登录失败返回安全中文消息，取消立即处理；已成功写入与后续界面刷新失败分别提示。SIGINT/SIGTERM 等待在途请求/登录清理后关闭数据库。
+- 修改范围：`apps/web/{src,server,shared,tests,.design}` 与配置/说明；根 package/workspace/lock、导入边界检查、AGENTS/README，以及 SPEC/PLAN/tasks、延期说明和 `docs/WEB-UI.md`。参考设计仓库保持只读，构建产物、合成截图、临时数据库和日志不入 Git。
+- 环境：macOS arm64，Node **24.11.1**、pnpm **11.19.0**；React/DOM 19.3.0、Vite **8.3.0**、TypeScript 5.9.3、Vitest 5.0.1。最初模板引入 Vite 8.3.1 并重新解析 source-map-js，复核后恢复仓库已有 Vite 8.3.0 / source-map-js 1.2.1；断言原锁文件全部包版本仍保留。最终 `pnpm install --offline --frozen-lockfile` exit0，冻结安装和供应链策略检查通过，无原有直接依赖版本升级。
+- 实际红绿：最初两包边界检查按旧规则拒绝新 Web；更新为三消费者且禁止浏览器导入 Node/CLI 后 exit0。API 写锁回归在原控制实现返回 200（预期409）时 exit1，修复后通过。退出期间重复关闭原实现令在途课程请求返回500；排队登录取消后仍多发一次认证请求，两个专项实际 exit1（`artifacts/web-ui/lifecycle-red.log`），修复后完整 **17/17 exit0**（`api-final.log`）。中间一次 login POST 响应状态判断造成测试挂起，人工终止 exit130 后修正；新增测试使用 Promise.withResolvers 曾触发当前 ES2022 类型检查 exit2，改为普通 Promise 后通过，没有放宽 TS 配置。
+- 最终命令：`pnpm lint`、`pnpm typecheck`、`pnpm build`、`pnpm --filter @learning/web test`、`node scripts/check-boundaries.mjs`、`node apps/web/node_modules/@cqu-moe/ui/dist/check-design.mjs apps/web/src`、`git diff --check` 均 exit0。完整 build 覆盖 SDK/CLI/Web；Web API 17/17 使用真实本机 HTTP + 临时 SQLite + 严格 SDK fixture。日志在 `artifacts/web-ui/{lint,typecheck,build,api}-final.log`。构建仍提示单 JS chunk 651.10 kB（gzip199.76 kB）超过500 kB；本地首版保留，没有修改警告阈值。
+- 正式 `server/index.ts --port 4313` 在独立临时目录通过启动自检：dashboard 的账号/课程/任务为空，HTML 返回200，防嵌入响应头生效，SIGTERM exit0。未触及真实 `~/.learning`；浏览器 fixture 监听4312，临时合成3账号/6课程/4任务，Transport 对全部平台 fetch/connect 直接拒绝。产品正常入口为根目录 `pnpm web`（4311），fixture不参与产品启动。
+- Ego 浏览器已实看 1440/768/390/320 × 浅深主题，共8张概览截图，无整页横向溢出；追加课程390、账号320、任务列表/详情320截图亦检查。修复全局链接颜色覆盖共享主按钮的问题。验证主题刷新保持、系统主题初始渲染、手机导航切换后收起、搜索/筛选/无结果、空账号输入校验、Enter本地保存、重名错误保留输入、离线刷新失败保留6门缓存课程、合成任务暂停/取消和刷新持久化。取消确认框 Esc 恢复焦点；完全拦截不发网的 login POST 挂起测试验证 Esc 关闭并触发 AbortController。截图为 `artifacts/web-ui/dashboard-*-{light,dark}.png` 及页面名截图；均为合成数据。
+- 独立 GLM 5.3/max 前端审查发现登录挂起不可关闭、变更成功后刷新失败被误报，均已修复并复查；后端结果由主线程逐段复核和上述实际命令验证。自动审批曾拒绝在旧本机入口点击「扫码登录」，原因是可能触发真实认证；后续只在拒绝外网的 fixture/页面请求拦截中验收，未绕过限制。
+- 未运行真实平台登录/学习/答题/交卷/发帖、付费模型、真实账号数据、独立移动设备/Windows/Linux、原生封装、远程 CI 或云部署。SDK/CLI 产品未改，未重复原有完整单元/CLI进程/五目标程序矩阵；本轮共用 SDK 的路径由 Web fixtures、整仓静态检查与构建覆盖。未提交、推送、开 PR 或发布。
+- 下一当前任务：用户审阅首版界面，确定后续需要补齐的任务发起/恢复和其他用户流程；这些不在本次最小仪表盘内。真实平台联调需另行授权，云端和原生壳不自动执行。
+
+### 2026-10-28 · U02 Web 任务发起、执行与恢复
+
+- 用户继续授权「把任务发起和恢复补齐，用户操作都放到 Web UI 里，CLI 只留给 Agent 用」。沿用 `codex/learning-web-dashboard` 隔离分支和已有 U01 改动；U02 **done（本机/离线验收）**。Web 独立消费 SDK，未改 CLI 产品代码、未合并隔壁 Agent CLI 分支，也不把答题编辑/交卷/发布讨论记为已迁移。
+- 课程页新增任务表单：学习资源、视频导出、普通作业导出、课件导出、课堂任务；选择具体资源或课堂、填写参数、生成预览、明确确认后启动。初始不勾选资源，前后端验证范围和参数，智慧树倍速按课程类型限制；提交失败保留输入，同一预览重复确认返回同一任务。任务中心提供进度、事件、项目结果、暂停/取消/恢复、只读核对不确定结果和文件下载。
+- `apps/web/server/tasks.ts` 保留预览对应的 SDK client，确认后后台驱动真实 `jobs.advance`；全程占用既有本地写锁，暂停/终止完成后才释放。同一数据目录同时运行一个任务，重启后沿用原 job/checkpoint。下载校验账号/任务/产物归属、长度与 SHA-256，再流式传输；本地 PDF 复用 SDK `/render-node`。不新增数据库表、外部依赖或自动重交机制。
+- 共享 SDK 仅修复三处必要生命周期边界：`services/jobs.ts` 在课堂重新签到前用既有 metadata 记录 pending，未知结果保留 uncertain；`index.ts` 核对该记录时不猜平台结果或重发，先保留事件再清除已确认标记，并透传取消信号；`services/actions.ts` 的 executor 接收既有 Options。Web 关闭先取消任务初始化/执行，再等待 HTTP 与锁清理，最后关闭 SQLite。
+- 涉及 `apps/web/{server,shared,src,tests}`，上述三个 SDK 文件及 WEB-UI/README/AGENTS/PLAN/tasks/PROGRESS。U01 的原有工作区与依赖改动保留；U02 未升级依赖或工具链。独立 GLM 5.3/max 前端实现和后端只读审查由主线程复核，审查使用了跨项目标准；修订后无剩余必须修复项。
+- 实际红绿包括：任务 API 原先返回404；课堂恢复请求响应未知后原实现仍为 paused（应 uncertain）；关闭服务等待尚未完成的启动请求，700ms 有界回归失败。修复后九项任务回归全部通过，覆盖真实 HTTP/SQLite/SDK、重复确认、锁冲突、暂停后服务重启恢复、会话代际失效、资源/课堂归属、下载校验、未知签到不重发和初始化取消。首轮类型检查因测试导入 SDK 源码带入 DOM BufferSource 类型冲突失败，测试改为引用已构建内部模块后通过，未放宽类型检查。
+- macOS arm64 / Node **24.11.1** / pnpm **11.19.0**：最终 `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm test:e2e` 均 exit0。SDK **305/305**、CLI **218/218**、Web **26/26**（原 API 17 + 新任务 9）、CLI 进程 **7/7**，合计 **556** 项。日志为 `artifacts/web-ui/u02-{lint,typecheck,test,build,e2e}-final.log`。最后仅缩短表单标签后再次 Web build exit0，日志 `u02-web-build-final.log`；单 JS chunk 约675 kB（gzip206 kB）的既有体积警告仍在，未调高阈值。
+- `node scripts/check-boundaries.mjs`、`node apps/web/node_modules/@cqu-moe/ui/dist/check-design.mjs apps/web/src`、`git diff --check` 均 exit0。默认 SDK/CLI/Web 构建及浏览器导入边界通过；未将通过本机测试解释为真实平台或远端 CI 通过。
+- Ego 浏览器在4312的严格合成 fixture 中实测：课程选择视频 → 预览 → 确认 → 运行中暂停（1/2）→ 原任务恢复 → 完成（2/2）；实际浏览器下载内容为合成视频字节。参数可清空重输，Esc 关闭并回焦「新建任务」。任务表单1440/768/390/320浅深主题截图已检查，浅色四宽度的实测页面宽度等于视口宽度；320/390表单内部滚动，无整页横向溢出。截图 `artifacts/web-ui/u02-composer-*-{light,dark}.png`，下载证据 `u02-browser-download.bin`。验收任务空间已关闭。
+- 4312预览继续使用临时目录与合成3账号/6课程/4任务；Transport 只允许登记的 fixture 请求，其余 fetch/connect 全部拒绝，未使用真实 `~/.learning`。正常产品启动仍为 `pnpm web`（4311）；浏览器页面可关闭，但本地服务需保持运行。无法确认的旧写锁不抢占；不能从平台证明的写入结果不自动重试。
+- 未运行真实平台登录/学习/签到/答题/交卷/发帖、付费模型、真实账号数据、独立移动设备、五目标原生程序或远程 CI；未提交、推送、开 PR、发布或部署。下一当前任务为用户审阅 U02 与后续明确授权的真实平台联调；不自动开发云端或其他用户流程。
