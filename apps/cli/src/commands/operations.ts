@@ -13,7 +13,7 @@ export function registerOperationsCommands(program: Command): void {
         try {
           const receipt = await client.actions.reconcile(operationId);
           if (receipt.state === 'uncertain') process.exitCode = 5;
-          printResult(program, receipt, `${receipt.operationId}: ${receipt.state} — ${receipt.message}`);
+          printResult(program, receipt);
         } finally { await client.close(); }
       });
     });

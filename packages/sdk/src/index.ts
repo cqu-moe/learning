@@ -29,14 +29,18 @@ import { xtxHomeworkRead } from './providers/xuetang/homework-read.js';
 import { zhsQrLaunch, zhsWechatQrLaunch } from './providers/zhs/auth.js';
 import { zhsHikeCourses, zhsHikeOutline, zhsShareCourses, zhsShareOutline } from './providers/zhs/catalog.js';
 import { zhidaoQuery } from './providers/zhs/http.js';
-import { importFeedbackSet, importLegacyDraft } from './services/drafts.js';
-export { exportDraftYaml, parseLearningDraft } from './services/drafts.js';
+import { draftAssessment, importFeedbackSet, importLegacyDraft } from './services/drafts.js';
+export { draftAssessment, exportDraftYaml, parseLearningDraft } from './services/drafts.js';
+export { exportHomeworkDraftYaml, parseHomeworkDraft, HOMEWORK_DRAFT_FORMAT } from './services/homework-draft.js';
+export { safeFilename } from './services/exports.js';
+export { HOMEWORK_MANIFEST_MIME } from './services/export-runner.js';
 import { matchDraft } from './content/match.js';
 import { proposeMatches } from './services/model.js';
 import { probeSession } from './auth/flow.js';
 import { JobRunner } from './services/jobs.js';
 import { advanceExport } from './services/export-runner.js';
 import { ActionStore } from './services/actions.js';
+import { validateYktHomeworkQuestion } from './services/homework-validation.js';
 import { submitHomeworkProblem, submitEmbeddedAnswer } from './providers/ykt/homework-write.js';
 import { advanceYktStudy, reconcileYktHeartbeat, yktReadProgress } from './providers/ykt/study.js';
 import { createYktDurationResolver } from './providers/ykt/duration.js';
@@ -307,15 +311,17 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     },
     assessments: {
       resolve: async (resource) => {
+        if (!ownsScope(resource.course.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
         if (platform === 'ykt') return yktAssessmentsResolve(await httpBound(), resource);
         if (platform === 'xuetang') return xtxExamResolve(await httpBound(), resource);
         return asyncUnsupported(platform, `assessments.resolve(${resource.key})`);
       },
-      get: async (ref) => {
+      get: async (ref, options) => {
+        if (!ownsScope(ref.resource.course.scope)) throw new LearningError({ code: 'FORBIDDEN', message: 'assessment belongs to another profile', retryAfterMs: null, operationId: null });
         if (platform === 'ykt') {
           if (ref.kind === 'exam') return yktExamRead(await httpBound(), ref);
           if (ref.kind === 'embedded') return yktEmbeddedRead(await httpBound(), ref);
-          return yktAssessmentGet(await httpBound(), ref);
+          return yktAssessmentGet(await httpBound(), ref, runtime, options);
         }
         if (platform === 'xuetang' && ref.kind === 'exam') return xtxExamRead(await httpBound(), ref);
         if (platform === 'xuetang' && ref.kind === 'homework') return xtxHomeworkRead(await httpBound(), ref);
@@ -323,18 +329,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
       },
       draft: async (ref) => {
         const assessment = await clientRef.current!.assessments.get(ref);
-        return {
-          schemaVersion: 1 as const,
-          id: `draft-${ref.assessmentId}`,
-          ref,
-          fingerprint: assessment.fingerprint,
-          entries: assessment.questions.map((question) => ({
-            questionId: question.id,
-            fingerprint: question.fingerprint,
-            answer: { kind: 'unset' as const },
-            evidence: null,
-          })),
-        };
+        return draftAssessment(assessment);
       },
       importDraft: (text, format) => importLegacyDraft(text, format, scope),
       importFeedback: (text, ref) => importFeedbackSet(text, ref),
@@ -532,7 +527,10 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
         if (session === null || !session.identityVerified) throw new LearningError({ code: 'AUTH_REQUIRED', message: 'verified login is required before homework submission', retryAfterMs: null, operationId: null });
         const assessment = await clientRef.current!.assessments.get(actionInput.draft.ref);
         const question = assessment.questions.find((item) => item.id === questionId);
-        if (assessment.fingerprint !== actionInput.draft.fingerprint || question === undefined || question.fingerprint !== entry.fingerprint || question.kind === 'unknown') {
+        if ((platform === 'xuetang' || actionInput.draft.ref.kind === 'embedded') && assessment.fingerprint !== actionInput.draft.fingerprint) {
+          throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'homework content changed since draft creation', retryAfterMs: null, operationId: null });
+        }
+        if (question === undefined || question.fingerprint !== entry.fingerprint || question.kind === 'unknown') {
           throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'homework content changed since draft creation', retryAfterMs: null, operationId: null });
         }
         if (question.attemptsUsed !== null && question.attemptsUsed > 0) throw new LearningError({ code: 'PRECONDITION_CHANGED', message: 'homework problem was already submitted', retryAfterMs: null, operationId: null });
@@ -555,6 +553,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           });
         }
         if (course.native.kind !== 'ykt') return asyncUnsupported(platform, 'actions.prepare(homework.apply)');
+        if (actionInput.draft.ref.kind !== 'homework' && actionInput.draft.ref.kind !== 'embedded') return asyncUnsupported(platform, 'actions.prepare(homework.apply)');
         const classroomId = course.native.classroomId;
         if (actionInput.draft.ref.kind === 'embedded') {
           const resource = actionInput.draft.ref.resource;
@@ -573,10 +572,14 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
             return { operationId: 'ack', state: 'confirmed', message: result.isRight ? 'embedded answer correct' : 'embedded answer submitted but incorrect', result: { questionId, isRight: result.isRight, correctAnswer: result.correctAnswer } };
           });
         }
+        const validateCurrentQuestion = async (): Promise<void> => {
+          validateYktHomeworkQuestion(await clientRef.current!.assessments.get(actionInput.draft.ref), actionInput.draft, questionId);
+        };
+        validateYktHomeworkQuestion(assessment, actionInput.draft, questionId);
         return actionStore.prepare(actionInput, session.generation, async () => {
           await submitHomeworkProblem(await httpBound(), classroomId, questionId, entry.answer);
           return { operationId: 'ack', state: 'confirmed', message: 'homework problem acknowledged', result: { questionId } };
-        });
+        }, { preflight: validateCurrentQuestion });
       },
       execute: async (previewId, options) => {
         const operation = await actionStore.inspect(previewId);
@@ -630,6 +633,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
     jobs: {
       createExport: async (raw) => {
         const exportInput: ExportInput = ExportInputSchema.parse(raw);
+        if (exportInput.type === 'assessments' && exportInput.format === 'homework' && exportInput.refs.some(ref => ref.kind !== 'homework' || ref.resource.course.scope.platform !== 'ykt')) throw new LearningError({ code: 'INVALID_INPUT', message: 'homework bundles require ordinary Yuketang homework', retryAfterMs: null, operationId: null });
         const refs = exportInput.type === 'media' ? exportInput.resources.map((item) => item.course.scope)
           : exportInput.type === 'assessments' ? exportInput.refs.map((item) => item.resource.course.scope)
             : exportInput.lessons.map((item) => item.scope);
@@ -711,7 +715,7 @@ export function createLearningClient(input: { scope: Scope; runtime: Runtime }):
           runtime,
           job,
           scope,
-          getAssessment: (ref) => clientRef.current!.assessments.get(ref),
+          getAssessment: (ref) => clientRef.current!.assessments.get(ref, options),
           getSlides: async (ref) => (await clientRef.current!.resources.slides(ref)).value,
           getSlideImage: async (url) => {
             const response = await (await httpBound()).request({ kind: 'read', method: 'GET', url, ...(options?.signal ? { signal: options.signal } : {}) });

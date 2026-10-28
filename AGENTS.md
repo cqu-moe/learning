@@ -40,6 +40,12 @@
 
 仅编辑当前新仓库、运行被授权的离线检查。平台真机登录/学习/答题/发帖/交卷、付费模型、推送、云部署都需另行明确授权；本期没有云部署任务。
 
+## Agent CLI 契约（当前用户决定）
+
+CLI 只面向软件 Agent，不提供人工向导、pretty/plain、quiet、颜色或交互开关。默认 stdout 输出 `schemaVersion: 1` 单 JSON envelope；仅 `--output-format json|jsonl` 可选，`--json` 是兼容别名。裸跑与命令组返回命令目录，`schema [path...]` 就近返回选项/参数/default/required；缺少必填参数直接返回错误 `fields`。平台真机操作和付费模型仍按上文授权，`--yes` 只是执行确认，不是权限来源。
+
+配套 Skill 源码保存在 `skills/learning-cli/`，供安装到其他环境后使用；它只假设 `learning` 已安装，不假设本仓库路径。雨课堂普通作业下载/YAML/批量能力必须保留：下载需显式课程或资源 key，课程内全选用 `--all`；目录批量 apply 也需 `--all`。实时 CLI 只显式签到并监听事件，不提供直播答题提交入口；SDK `live.answer` 能力仍保留但必须单独授权和验证。详细契约见 `docs/adr/0003-agent-cli.md` 与 `docs/APPS.md`。
+
 不把Cookie、Key、个人原始转储或字体提交到git/文档。使用本机安全文件/环境变量，不要求用户粘贴秘密到聊天。参考仓库只读。
 
 已有代码或PROGRESS时按真实差异合并本版规范，不重置已完成任务，不删除用户改动，不reset/clean全仓或强推。已有Web代码只标延期，不未经授权删除或重写；当前默认构建/任务不得依赖它。

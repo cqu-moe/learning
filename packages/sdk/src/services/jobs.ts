@@ -171,7 +171,7 @@ export class JobRunner {
         const failures = items.filter((item) => item.state === 'failed').length;
         const needsInput = items.some((item) => item.state === 'needs-input');
         const uncertain = items.some((item) => item.state === 'uncertain');
-        status = uncertain ? 'uncertain' : needsInput ? 'needs-input' : failures === 0 ? 'succeeded' : failures === items.length ? 'failed' : 'partial';
+        status = uncertain ? 'uncertain' : needsInput ? 'needs-input' : items.some(item => item.state === 'partial') ? 'partial' : failures === 0 ? 'succeeded' : failures === items.length ? 'failed' : 'partial';
       } else if (result.status !== undefined) status = result.status;
       const job = await this.update(id, (previous, meta) => ({
         job: { ...previous, status, items, completed: items.filter((item) => item.state === 'succeeded').length,

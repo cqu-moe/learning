@@ -1,7 +1,5 @@
 import { CliError, getOutput } from '../output.js';
-import { createPrompts } from '../prompts.js';
-import { isWizard } from '../wizard.js';
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import type { LearningClient, SessionView } from '@learning/sdk';
 import type { Output } from '../output.js';
 import { createLearningClient, LearningError } from '@learning/sdk';
@@ -33,7 +31,7 @@ function readCookieFile(path: string): string {
   return text;
 }
 
-export async function loginWithQr(client: LearningClient, output: Output, dataDir: string, name: string, options: { qrFile?: string; variant: string }): Promise<SessionView> {
+export async function loginWithQr(client: LearningClient, output: Output, dataDir: string, options: { qrFile?: string; variant: string }): Promise<SessionView> {
   let qrPath: string | null = null;
   let descriptor: number | null = null;
   try {
@@ -54,41 +52,23 @@ export async function loginWithQr(client: LearningClient, output: Output, dataDi
       for await (const event of flow.events) {
         if (event.type === 'qr') {
           const qr = await import('qrcode');
-          let terminal: string | null = null;
-          if (descriptor === null && output.mode.format === 'pretty' && output.mode.color && output.mode.interactive) {
-            try {
-              const renderer = await import('../qr-terminal.js');
-              terminal = event.qr.type === 'text'
-                ? renderer.renderTextQrTerminal(event.qr.value)
-                : renderer.renderImageQrTerminal(Buffer.from(event.qr.base64, 'base64'));
-            } catch (error) {
-              trackException(output, error, { stage: 'login.qr.render', recovered: true });
-              terminal = null;
-            }
-          }
-          if (terminal !== null) process.stderr.write(terminal);
-          else {
-            const extension = event.qr.type === 'text' ? 'png' : event.qr.type;
-            if (descriptor === null) openQr(resolve(dataDir, `login-qr-${randomUUID()}.${extension}`));
-            if (descriptor !== null) {
-              const bytes = event.qr.type === 'text' ? await qr.default.toBuffer(event.qr.value, { type: 'png' }) : Buffer.from(event.qr.base64, 'base64');
-              let offset = 0;
-              while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset, bytes.length - offset, offset);
-              ftruncateSync(descriptor, bytes.length);
-              await output.message(`请扫描二维码图片：${qrPath}`);
-            }
+          const extension = event.qr.type === 'text' ? 'png' : event.qr.type;
+          if (descriptor === null) openQr(resolve(dataDir, `login-qr-${randomUUID()}.${extension}`));
+          if (descriptor !== null) {
+            const bytes = event.qr.type === 'text' ? await qr.default.toBuffer(event.qr.value, { type: 'png' }) : Buffer.from(event.qr.base64, 'base64');
+            let offset = 0;
+            while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset, bytes.length - offset, offset);
+            ftruncateSync(descriptor, bytes.length);
           }
           await output.event({ type: 'auth', data: { stage: 'qr', generation: event.generation, expiresAtMs: event.expiresAtMs, qrPath } });
         } else {
           await output.event({ type: 'auth', data: { stage: event.type, generation: 'generation' in event ? event.generation : null, expiresAtMs: null, qrPath: null } });
-          if (event.type === 'scanned') await output.message('已扫码，请在官方应用确认。');
-          if (event.type === 'exchanging') await output.message('正在完成登录。');
         }
       }
       const session = await flow.result;
       if (cancelError) throw cancelError;
       trackWorkflowEvent(output, { event: 'login_completed', properties: { method: 'qr', variant: options.variant } });
-      output.set(session, `已登录账号：${name}`);
+      output.set(session);
       return session;
     } finally {
       process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal);
@@ -109,31 +89,25 @@ export async function loginWithQr(client: LearningClient, output: Output, dataDi
 export function registerLoginCommands(program: Command): void {
   const login = program.command('login').description('扫码登录或导入本地 Cookie 文件')
     .option('--import <file>', '导入指定 Cookie 数组文件')
-    .option('--qr-file <file>', '二维码图片的新文件路径；机器扫码模式必须明确指定')
-    .option('--variant <variant>', '智慧树二维码：default 或 native', 'default');
+    .option('--qr-file <file>', '二维码图片的新文件路径；JSON 模式必填，JSONL 可自动生成')
+    .addOption(new Option('--variant <variant>', '智慧树二维码：default 或 native').default('default').choices(['default', 'native']));
   login.action(async () => {
     const output = getOutput(program);
     const options = login.opts<{ import?: string; qrFile?: string; variant: string }>();
     if (options.import !== undefined && options.qrFile !== undefined) throw new CliError('INVALID_INPUT', '--import 与 --qr-file 不能同时使用。');
     if (!['default', 'native'].includes(options.variant)) throw new CliError('INVALID_INPUT', '二维码类型必须为 default 或 native。');
-    if (isWizard(program) && options.import === undefined && options.qrFile === undefined) {
-      const prompts = createPrompts(output.mode);
-      const method = await prompts.ask({ name: 'method', message: '选择登录方式', options: [{ value: 'qr', label: '扫描二维码' }, { value: 'import', label: '导入本地 Cookie 文件' }] });
-      if (method === 'import') options.import = String(await prompts.ask({ name: 'file', message: 'Cookie 文件路径', validate: value => typeof value === 'string' && value.length > 0 ? undefined : '请输入文件路径。' }));
-    }
-    if (options.import !== undefined && login.getOptionValueSource('import') !== 'cli') login.setOptionValueWithSource('import', options.import, 'prompt');
-    if (!output.mode.interactive && options.import === undefined && options.qrFile === undefined) throw new CliError('INTERACTION_REQUIRED', '扫码需要人工操作；自动化请明确使用 --import 或 --qr-file。', 3);
+    if (output.mode.format === 'json' && options.import === undefined && options.qrFile === undefined) throw new CliError('INTERACTION_REQUIRED', '扫码登录需要 --qr-file，或使用 --output-format jsonl 获取二维码文件事件。', 3, ['qr-file']);
     await withCliRuntime(program, true, async (runtime, dataDir) => {
       const profile = await selectProfile(program, runtime);
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         if (options.import !== undefined) {
           const imported = await client.auth.importLegacy({ format: 'cookie-array', text: readCookieFile(options.import) });
-          printResult(program, unwrapResult(program, imported), `已导入 ${profile.name} 的会话，身份尚未在线验证。`);
+          printResult(program, unwrapResult(program, imported));
           trackWorkflowEvent(output, { event: 'login_completed', properties: { method: 'cookie_import' } });
           return;
         }
-        await loginWithQr(client, output, dataDir, profile.name, options);
+        await loginWithQr(client, output, dataDir, options);
       } finally { await client.close(); }
     });
   });
@@ -144,7 +118,7 @@ export function registerLoginCommands(program: Command): void {
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         const probe = await client.auth.probe();
-        printResult(program, probe, `${profile.name}: ${probe.state}`);
+        printResult(program, probe);
       } finally {
         await client.close();
       }

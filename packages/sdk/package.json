@@ -35,8 +35,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "pdf-lib": "1.17.1",
+    "opentype.js": "2.0.0",
     "parse5": "8.0.1",
+    "pdf-lib": "1.17.1",
     "tough-cookie": "6.0.2",
     "yaml": "2.9.1",
     "zod": "4.6.5"

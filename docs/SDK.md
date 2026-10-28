@@ -20,7 +20,7 @@ factory 仅构造对象，不能因为 import/创建就读 Cookie、联网或启
 
 课程表示选课/教学班，不按同名合并。OutlineNode 可以同时有 children 和 resources；显示用 id 不代替 native locator。没有稳定树节点 ID 可使用当前快照路径编号，但写入必须使用资源 native ID。模型中的 path 只用于显示与文件名。
 
-RichText.markdown 是清理后的内容，不是原始 HTML；plainText 用于匹配。parse5 保留块、列表、图片替代、换行；来源中可取到的 TeX/sub/sup 要保留。图片 URL 不受信任，要通过受控资产映射再显示；无法解析的公式保留文本并 warning，不能删掉。decodeState 不为 complete/not-needed 的题干不可自动匹配或给模型当明文。
+RichText.markdown 是清理后的内容，不是原始 HTML；匹配优先使用包含图片/公式身份的 Markdown，缺失时再用 plainText。parse5 保留块、图片映射、换行和来源中的 TeX/sub/sup；无法完整转换的 MathML 保留可读符号并标记 partial。图片 URL 不受信任，要通过受控资产映射再显示；decodeState 不为 complete/not-needed 的题干或选项不可自动匹配、提交或给模型当明文。普通雨课堂作业指纹基于题号、题型、规范化题干和带键的选项，字体换码不改变已解码题目身份。
 
 Page.nextCursor=null 不能自动意味着全集，必须看 completeness。cursor 内的 profile、参数摘要和页码需校验，不接受任意 URL。初始页面默认 50、最大 200；平台固定 pageSize 可保持原值，由服务汇总。无法证明下一页/终止条件返回 unknown，并在能力文档列出证据缺口。
 

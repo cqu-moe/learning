@@ -17,12 +17,12 @@ describe('unified warnings', () => {
  it('captures runtime, console and result warnings without losing other warning observers', async () => {
   const receiver=streams();const original=console.warn;const observer=vi.fn();
   process.on('warning',observer);
-  const capture=captureWarnings();const output=createOutput(resolveOutputMode({outputFormat:'jsonl',quiet:true}),receiver);
+  const capture=captureWarnings();const output=createOutput(resolveOutputMode({outputFormat:'jsonl'}),receiver);
   try {
    capture.attach(output.recordWarning);
    process.emitWarning('运行时警告',{code:'NODE_TEST',type:'CustomWarning'});
    console.warn('控制台%s','警告');
-   output.set({warnings:[{code:'SDK_RESULT',message:'结果警告'}]},'');
+   output.set({warnings:[{code:'SDK_RESULT',message:'结果警告'}]});
    await capture.drain();await output.finish();
    const {stdout,stderr}=receiver.read();expect(stderr).toBe('');
    const events=stdout.trim().split('\n').map(line=>JSON.parse(line));
@@ -58,17 +58,15 @@ it('preserves SDK warnings when a command unwraps only the result value', async 
  } finally {output.close();}
 });
 
-it.each([false, true])('only hides the SQLite experimental notice in the guided home, guided=%s', async guided => {
+it('retains runtime and SDK warnings in the result without stderr noise', async () => {
  const receiver = streams();
- const output = createOutput({ format: 'plain', interactive: true, quiet: false, color: false, debug: false, guided }, receiver);
+ const output = createOutput({ format: 'json', debug: false }, receiver);
  try {
   output.recordWarning('ExperimentalWarning', 'SQLite is an experimental feature and might change at any time');
-  output.recordWarning('ExperimentalWarning', 'Another experimental API');
   output.recordWarning('SKIPPED_UNKNOWN_DURATION', '未能读取视频时长，本次暂不处理。');
   await output.finish();
-  const { stderr } = receiver.read();
-  expect(stderr.includes('SQLite is an experimental')).toBe(!guided);
-  expect(stderr).toContain('Another experimental API');
-  expect(stderr).toContain('未能读取视频时长');
+  const { stdout, stderr } = receiver.read();
+  expect(JSON.parse(stdout).warnings.map((warning: { code: string }) => warning.code)).toEqual(['ExperimentalWarning', 'SKIPPED_UNKNOWN_DURATION']);
+  expect(stderr).toBe('');
  } finally { output.close(); }
 });

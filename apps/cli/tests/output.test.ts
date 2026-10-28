@@ -9,7 +9,7 @@ const run = (args: string[]) => spawnSync(process.execPath, [resolve(import.meta
 describe('machine output contract', () => {
   it('prints one result for init and doctor', () => {
     for (const command of ['init', 'doctor']) {
-      const result = run([command, '--json']);
+      const result = run([command]);
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
       expect(result.stdout.trim().split('\n')).toHaveLength(1);
@@ -35,8 +35,8 @@ describe('machine output contract', () => {
       expect(JSON.parse(result.stdout).ok).toBe(true);
     }
   });
-  it('retains JSONL events in quiet mode and ends with one result', () => {
-    const result = run(['doctor', '--output-format=jsonl', '--quiet']);
+  it('retains JSONL events and ends with one result', () => {
+    const result = run(['doctor', '--output-format=jsonl']);
     expect(result.status).toBe(0);
     const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
     expect(events[0].type).toBe('start');
@@ -84,7 +84,7 @@ registerHooks({ resolve(specifier, context, next) {
     let flushed = false;
     const slow = new Writable({ write(_chunk, _encoding, callback) { setTimeout(() => { flushed = true; callback(); }, 20); } });
     const output = createOutput(resolveOutputMode({ json: true }), { stdout: slow, stderr: slow });
-    output.set({}, '');
+    output.set({});
     await output.finish();
     expect(flushed).toBe(true);
     output.close();
@@ -95,13 +95,10 @@ registerHooks({ resolve(specifier, context, next) {
     second.close();
     process.exitCode = 0;
   });
-  it('disables prompts for CI and redirected output, without treating CI=false as enabled', async () => {
+  it('defaults to JSON without consulting terminal state', async () => {
     const { resolveOutputMode, cleanText } = await import('../src/output.js');
-    const terminal = { stdin: true, stdout: true, stderr: true, term: 'xterm', ci: 'false', noColor: undefined };
-    expect(resolveOutputMode({}, terminal).interactive).toBe(true);
-    expect(resolveOutputMode({}, { ...terminal, stdout: false }).interactive).toBe(false);
-    expect(resolveOutputMode({}, { ...terminal, ci: '1' }).interactive).toBe(false);
-    expect(resolveOutputMode({ outputFormat: 'jsonl' }, terminal).interactive).toBe(false);
+    expect(resolveOutputMode({})).toEqual({ format: 'json', debug: false });
+    expect(resolveOutputMode({ outputFormat: 'jsonl' })).toEqual({ format: 'jsonl', debug: false });
     expect(cleanText('\u001b]0;attack\u0007中文\r标题')).toBe('中文标题');
   });
 });
@@ -118,19 +115,26 @@ it('returns job lists in a stable named field', () => {
  expect(JSON.parse(result.stdout).data).toEqual({ jobs: [] });
 });
 
-it('queues warnings while a prompt is active and includes them in the final result', async () => {
- const {Writable}=await import('node:stream');
- const {createOutput,resolveOutputMode}=await import('../src/output.js');
- let stderr='';let stdout='';
- const output=createOutput(resolveOutputMode({outputFormat:'plain'}),{stdout:new Writable({write(chunk,_encoding,cb){stdout+=String(chunk);cb();}}),stderr:new Writable({write(chunk,_encoding,cb){stderr+=String(chunk);cb();}})});
+it('serializes concurrent JSONL events and retains every warning in the final result', async () => {
+ const { Writable } = await import('node:stream');
+ const { createOutput, resolveOutputMode } = await import('../src/output.js');
+ let stdout = ''; let stderr = '';
+ const output = createOutput(resolveOutputMode({ outputFormat: 'jsonl' }), {
+  stdout: new Writable({ write(chunk, _encoding, cb) { setTimeout(() => { stdout += String(chunk); cb(); }, 2); } }),
+  stderr: new Writable({ write(chunk, _encoding, cb) { stderr += String(chunk); cb(); } }),
+ });
  try {
-  await output.beginPrompt();
-  await output.warning('DURING_PROMPT','输入期间的警告');
-  expect(stderr).toBe('');
-  await output.endPrompt();
-  expect(stderr).toContain('警告 [DURING_PROMPT]');
+  await Promise.all([
+   output.event({ type: 'auth', data: { stage: 'scanned', generation: 1, expiresAtMs: null, qrPath: null } }),
+   output.warning('PARTIAL_CATALOG', '目录不完整'),
+   output.warning('PARTIAL_CATALOG', '目录不完整'),
+  ]);
   await output.finish();
-  expect(stderr.match(/DURING_PROMPT/g)).toHaveLength(1);
-  expect(stdout).toBe('');
- } finally {output.close();}
+  await output.finish();
+  const events = stdout.trim().split('\n').map(line => JSON.parse(line));
+  expect(events.map(event => event.sequence)).toEqual([1, 2, 3, 4]);
+  expect(events.map(event => event.type)).toEqual(['start', 'auth', 'warning', 'result']);
+  expect(events.at(-1).data.warnings).toEqual([{ code: 'PARTIAL_CATALOG', message: '目录不完整' }]);
+  expect(stderr).toBe('');
+ } finally { output.close(); }
 });

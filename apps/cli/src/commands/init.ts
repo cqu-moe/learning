@@ -17,7 +17,7 @@ export function registerInitCommand(program: Command): void {
       try {
         const runtime = createCliRuntime(dataDir);
         runtime.state.close();
-        printResult(program, { home: dataDir, initialized: true }, `已初始化：${dataDir}`);
+        printResult(program, { home: dataDir, initialized: true });
       } finally {
         lock.release();
       }

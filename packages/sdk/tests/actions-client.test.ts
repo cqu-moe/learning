@@ -21,15 +21,20 @@ function runtime(transport: FakeTransport): Runtime {
 describe('client action facade', () => {
   it('previews one verified homework answer and sends exactly once', async () => {
     const transport = new FakeTransport();
+    const read = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/exercise/get_exercise_list/888001/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { problems: [{ problem_id: 11, content: { ProblemType: 1, Body: '<p>题</p>', Options: [{ key: 'A', value: '<p>甲</p>' }] } }] } } } };
     transport.scriptInteractions([
-      { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/exercise/get_exercise_list/888001/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { problems: [{ problem_id: 11, content: { ProblemType: 1, Body: '<p>题</p>', Options: [{ key: 'A', value: '<p>甲</p>' }] } }] } } } },
+      read,
+      read,
+      read,
       { request: { method: 'POST', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/exercise/problem_apply/', headers: { xtbz: 'ykt', 'xt-agent': 'web', 'classroom-id': '28930736', 'content-type': 'application/json;charset=utf-8' }, body: { classroom_id: '28930736', problem_id: '11', answer: ['A'] } }, response: { status: 200, body: { success: true, data: { submitted: true } } } },
     ]);
     const rt = runtime(transport);
     await writeSession(rt.state, rt.masterKey, { schemaVersion: 1, scope, generation: 1, platformUserId: 'user', identityVerified: true, cookieJar: await new SessionCookieJar().serialize(), displayName: null, checkedAtMs: rt.clock.nowMs() });
     const client = createLearningClient({ scope, runtime: rt });
-    const questionFingerprint = sha256Hex(JSON.stringify([11, 1, '<p>题</p>']));
-    const draft = { schemaVersion: 1 as const, id: 'd1', ref, fingerprint: sha256Hex(JSON.stringify([questionFingerprint])), entries: [{ questionId: '11', fingerprint: questionFingerprint, answer: { kind: 'choice' as const, keys: ['A'] }, evidence: null }] };
+    const seeded = await client.assessments.draft(ref);
+    const entry = seeded.entries.find((item) => item.questionId === '11');
+    if (entry === undefined) throw Error('homework fixture has no question 11');
+    const draft = { ...seeded, id: 'd1', entries: [{ ...entry, answer: { kind: 'choice' as const, keys: ['A'] } }] };
     const action: ActionInput = { kind: 'homework.apply', draft, questionIds: ['11'] };
     const preview = await client.actions.prepare(action);
     expect(preview.kind).toBe('homework.apply');

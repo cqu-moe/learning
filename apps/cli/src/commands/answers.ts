@@ -42,7 +42,7 @@ export function registerAnswersCommands(program: Command): void {
             throw error;
           }
         }
-        printResult(program, { matches, applied, output: options.output ?? null }, `${matches.length} matches; ${applied} exact answers written`);
+        printResult(program, { matches, applied, output: options.output ?? null });
       } finally { await client.close(); }
     });
   });

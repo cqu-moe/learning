@@ -2,12 +2,16 @@ import type { Answer, AnswerDraft, FeedbackSet, Match, Question } from '../types
 
 function optionBodies(question: Question): Map<string, string> {
   const map = new Map<string, string>();
-  for (const option of question.options) map.set(option.key, option.body.plainText);
+  for (const option of question.options) map.set(option.key, option.body.markdown || option.body.plainText);
   return map;
 }
 
 function contentKey(question: Question): string {
-  return JSON.stringify([question.body.plainText, [...optionBodies(question).entries()].sort((a, b) => a[1].localeCompare(b[1]))]);
+  return JSON.stringify([question.body.markdown || question.body.plainText, [...optionBodies(question).entries()].sort((a, b) => a[1].localeCompare(b[1]))]);
+}
+
+function readable(question: Question): boolean {
+  return [question.body, ...question.options.map(option => option.body)].every(body => ['not-needed', 'complete'].includes(body.decodeState));
 }
 
 /** Content-based matching with option reordering; undecoded or foreign kinds never auto-apply (A131/A132). */
@@ -18,13 +22,14 @@ export function matchDraft(draft: AnswerDraft, sources: FeedbackSet[], questions
     if (target === undefined) {
       return { questionId: entry.questionId, state: 'missing', answer: null, sourceId: null, reason: 'question not found in target assessment' };
     }
-    if (target.body.decodeState !== 'not-needed' && target.body.decodeState !== 'complete') {
-      return { questionId: entry.questionId, state: 'blocked', answer: null, sourceId: null, reason: 'question body is not fully decoded' };
+    if (!readable(target)) {
+      return { questionId: entry.questionId, state: 'blocked', answer: null, sourceId: null, reason: 'question or options are incomplete' };
     }
     const candidates: Array<{ source: FeedbackSet; question: Question }> = [];
     let foreignContentMatch = false;
     for (const source of sources) {
       for (const candidate of source.questions) {
+        if (!readable(candidate)) continue;
         const contentMatches = candidate.fingerprint === entry.fingerprint || contentKey(candidate) === contentKey(target);
         if (!contentMatches) continue;
         if (source.ref.kind !== draft.ref.kind) {

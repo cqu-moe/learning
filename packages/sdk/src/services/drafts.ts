@@ -2,10 +2,17 @@ import YAML from 'yaml';
 import { LearningError } from '../types/errors.js';
 import { sha256Hex } from '../types/sha256.js';
 import { AnswerDraftSchema } from '../types/models.js';
-import type { Answer, AnswerDraft, FeedbackSet, Question } from '../types/models.js';
+import type { Answer, AnswerDraft, Assessment, FeedbackSet, Question } from '../types/models.js';
 import type { AssessmentRef, Scope } from '../types/refs.js';
+import { HOMEWORK_DRAFT_FORMAT, parseHomeworkDraft } from './homework-draft.js';
+import { homeworkQuestionFingerprint, normalizeContent } from '../content/html.js';
 
 export const MAX_DRAFT_BYTES = 4 * 1024 * 1024;
+
+export function draftAssessment(assessment: Assessment): AnswerDraft {
+  return { schemaVersion: 1, id: `draft-${assessment.ref.assessmentId}`, ref: assessment.ref, fingerprint: assessment.fingerprint,
+    entries: assessment.questions.map(question => ({ questionId: question.id, fingerprint: question.fingerprint, answer: { kind: 'unset' }, evidence: null })) };
+}
 
 const TRUE_TOKENS = new Set(['正确', '对', 't', 'true']);
 const FALSE_TOKENS = new Set(['错误', '错', 'f', 'false']);
@@ -52,7 +59,9 @@ function legacyAnswer(raw: unknown): Answer {
 }
 
 export function parseLearningDraft(text: string): AnswerDraft {
-  const result = AnswerDraftSchema.safeParse(parseYamlOrJson(text));
+  const parsed = parseYamlOrJson(text);
+  if (parsed !== null && typeof parsed === 'object' && 'format' in parsed && parsed.format === HOMEWORK_DRAFT_FORMAT) return parseHomeworkDraft(text);
+  const result = AnswerDraftSchema.safeParse(parsed);
   if (!result.success) throw new LearningError({ code: 'INVALID_INPUT', message: 'invalid learning draft schema', retryAfterMs: null, operationId: null });
   return result.data;
 }
@@ -113,16 +122,18 @@ export async function importFeedbackSet(text: string, ref: AssessmentRef): Promi
   const parsed = parseYamlOrJson(text) as { problems?: Array<{ problem_id?: number | string; content?: { ProblemType?: number; Body?: string; Options?: Array<{ key?: string; value?: string }>; Answers?: string[] } }> };
   const questions: Question[] = (parsed.problems ?? []).map((problem) => {
     const content = problem.content ?? {};
+    const ordinaryYkt = ref.kind === 'homework' && ref.resource.course.scope.platform === 'ykt';
+    const rich = (html: string) => ordinaryYkt ? normalizeContent(html, { images: new Map() }) : { markdown: html, plainText: html, decodeState: 'not-needed' as const, sourceHash: sha256Hex(html) };
     const official = content.Answers ?? [];
     const answer: Answer | null = official.length > 0 ? { kind: 'choice', keys: official.map((key) => key.toUpperCase()) } : null;
-    return {
+    const question: Question = {
       id: String(problem.problem_id ?? ''),
       kind: content.ProblemType === 1 ? 'single-choice' : content.ProblemType === 2 ? 'multi-choice' : content.ProblemType === 6 ? 'judgement' : content.ProblemType === 4 ? 'fill-blank' : 'unknown',
       rawType: String(content.ProblemType ?? ''),
-      body: { markdown: content.Body ?? '', plainText: content.Body ?? '', decodeState: 'not-needed', sourceHash: sha256Hex(content.Body ?? '') },
+      body: rich(content.Body ?? ''),
       options: (content.Options ?? []).map((option) => ({
         key: option.key ?? '',
-        body: { markdown: option.value ?? '', plainText: option.value ?? '', decodeState: 'not-needed' as const, sourceHash: sha256Hex(option.value ?? '') },
+        body: rich(option.value ?? ''),
       })),
       fingerprint: sha256Hex(JSON.stringify([problem.problem_id, content.ProblemType ?? null, content.Body ?? ''])),
       attemptsUsed: null,
@@ -130,6 +141,8 @@ export async function importFeedbackSet(text: string, ref: AssessmentRef): Promi
       myAnswer: null,
       feedback: answer === null ? null : { origin: 'platform-feedback', answer, sourceId: 'official', alternatives: [] },
     };
+    if (ordinaryYkt) question.fingerprint = homeworkQuestionFingerprint(question);
+    return question;
   });
   return { schemaVersion: 1, id: `feedback-${ref.assessmentId}`, ref, questions };
 }

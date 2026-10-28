@@ -45,6 +45,14 @@ describe('local profiles', () => {
     expect(existsSync(resolve(dir, 'master.key'))).toBe(false);
   });
 
+  it('requires explicit profile creation inputs without creating storage', () => {
+    const dir = home();
+    expect(run(dir, 'init').code).toBe(0);
+    expect(run(dir, 'profile', 'add', '--json').code).toBe(2);
+    expect(run(dir, 'profile', 'add', 'alpha', '--json').code).toBe(2);
+    expect(run(dir, 'profile', 'add', 'alpha', '--platform', 'ykt', '--json').code).toBe(0);
+  });
+
   it('adds, lists and removes a stable profile without leaking sessions', () => {
     const dir = home();
     expect(run(dir, 'init').code).toBe(0);
@@ -64,25 +72,32 @@ describe('local profiles', () => {
     expect(JSON.parse(run(dir, 'profile', 'list', '--json').stdout).data).toEqual({ profiles: [] });
   });
 
-  it('removes profile-owned jobs, metadata, inputs and cached catalog records', async () => {
+  it('removes profile-owned jobs, metadata, inputs and cached catalog records without touching another profile', async () => {
     const dir = home();
     expect(run(dir, 'init').code).toBe(0);
     const created = JSON.parse(run(dir, 'profile', 'add', 'alpha', '--platform', 'ykt', '--json').stdout).data as { scope: { userId: string; profileId: string; platform: 'ykt' } };
+    const other = JSON.parse(run(dir, 'profile', 'add', 'beta', '--platform', 'ykt', '--json').stdout).data as { scope: { userId: string; profileId: string; platform: 'ykt' } };
     const scope = created.scope;
     const course = { ref: { scope, key: 'course', native: { kind: 'ykt', classroomId: '1' } }, title: 'course', system: null, term: null, teachers: [], locked: null };
     const resource = { course: course.ref, key: 'resource', native: { kind: 'ykt', leafId: '2', leafInfoId: null } };
+    const otherCourse = { ref: { scope: other.scope, key: 'other-course', native: { kind: 'ykt', classroomId: '4' } }, title: 'other course', system: null, term: null, teachers: [], locked: null };
+    const otherResource = { course: otherCourse.ref, key: 'other-resource', native: { kind: 'ykt', leafId: '3', leafInfoId: null } };
     const job = { id: 'job-owned', scope, kind: 'export', status: 'paused', createdAtMs: 1, updatedAtMs: 1, nextRunAtMs: null, completed: 0, total: 1, items: [], warnings: [] };
     const state = new SqliteStateStore(resolve(dir, 'state.db'));
     const records: [string, Json][] = [
       ['job:job-owned', job], ['job-meta:job-owned', { inputDigest: 'x', generation: 1, cursor: null, pendingOperationId: null, running: false }],
       ['job-input:job-owned', { type: 'media', resources: [resource], quality: 'best', subtitles: false }], ['job-events:job-owned', []],
-      ['cli:course:course', course], ['cli:resource:resource', resource], ['cli:resource-kind:resource', 'video'], ['cli:resource-title:resource', '第一讲'],
+      ['cli:course:course', course], ['cli:resource:resource', resource], ['cli:resource-kind:resource', 'video'], ['cli:resource-title:resource', '第一讲'], ['cli:resource-path:resource', ['course']],
+      ['cli:course:other-course', otherCourse], ['cli:resource:other-resource', otherResource], ['cli:resource-path:other-resource', ['other-course']],
     ];
     expect(await state.commit({ expected: records.map(([key]) => ({ key, revision: null })), changes: records.map(([key, value]) => ({ key, value })) })).toBe(true);
     state.close();
     expect(run(dir, 'profile', 'remove', 'alpha', '--yes').code).toBe(0);
     const reopened = new SqliteStateStore(resolve(dir, 'state.db'));
-    for (const [key] of records) expect(await reopened.get(key)).toBeNull();
+    for (const [key] of records.filter(([key]) => !key.includes('other-'))) expect(await reopened.get(key)).toBeNull();
+    expect(await reopened.get('cli:course:other-course')).not.toBeNull();
+    expect(await reopened.get('cli:resource:other-resource')).not.toBeNull();
+    expect(await reopened.get('cli:resource-path:other-resource')).not.toBeNull();
     reopened.close();
   });
 });

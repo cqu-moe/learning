@@ -1,34 +1,29 @@
 import { readPreferences, savePreferences } from '../preferences.js';
 import { z } from 'zod';
-import { createPrompts, fillMissing, confirmAction } from '../prompts.js';
-import { getOutput, CliError, formatTable } from '../output.js';
-import type { Command } from 'commander';
+import { CliError } from '../output.js';
+import { Option, type Command } from 'commander';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ensureDataDir } from '../data-dir.js';
 import { CourseSchema, ResourceRefSchema, createLearningClient, JobSchema, PlatformSchema } from '@learning/sdk';
 import { withCliRuntime, printResult } from '../context.js';
+import { requireConfirmation } from '../input.js';
 import { addProfile, getProfile, listProfiles, removeProfile, validName } from '../profiles.js';
 
 export function registerProfileCommands(program: Command): void {
   const profile = program.command('profile').description('管理本地账号和写入锁');
   const add = profile
-    .command('add [name]')
+    .command('add <name>')
     .description('添加本地平台账号')
-    .option('--platform <platform>', '平台：ykt、xuetang 或 zhs');
-  add.action(async (inputName?: string) => {
-    const { name, platform } = await fillMissing(z.object({ name: z.string().refine(validName), platform: PlatformSchema }), { ...(inputName === undefined ? {} : { name: inputName }), ...add.opts() }, [
-      { name: 'name', message: '账号名称' },
-      { name: 'platform', message: '选择平台', options: [{ value: 'ykt', label: '雨课堂' }, { value: 'xuetang', label: '学堂在线' }, { value: 'zhs', label: '智慧树' }] },
-    ], createPrompts(getOutput(program).mode));
-    add.processedArgs[0] = name;
-    add.setOptionValueWithSource('platform', platform, add.getOptionValueSource('platform') ?? 'prompt');
+    .addOption(new Option('--platform <platform>', '平台：ykt、xuetang 或 zhs').choices(['ykt', 'xuetang', 'zhs']).makeOptionMandatory());
+  add.action(async (name: string) => {
+    const { platform } = z.object({ name: z.string().refine(validName), platform: PlatformSchema }).parse({ name, ...add.opts() });
     await withCliRuntime(program, true, async (runtime) => {
       const created = await addProfile(runtime.state, name, platform);
       if (created === null) {
         throw new CliError('INVALID_INPUT', `profile ${name} already exists`, 2);
       }
-      printResult(program, created, `added ${created.name} (${created.scope.platform})`);
+      printResult(program, created);
     });
   });
 
@@ -38,24 +33,21 @@ export function registerProfileCommands(program: Command): void {
     .action(async () => {
       await withCliRuntime(program, false, async (runtime) => {
         const profiles = await listProfiles(runtime.state);
-        printResult(program, { profiles }, formatTable(['账号', '平台', 'ID'], profiles.map(item => [item.name, item.scope.platform, item.scope.profileId])));
+        printResult(program, { profiles });
       });
     });
 
   const remove = profile
-    .command('remove [name]')
+    .command('remove <name>')
     .description('删除本地账号及其会话、任务和缓存')
     .option('--yes', '确认删除本地账号');
-  remove.action(async (inputName?: string) => {
-    if (inputName === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '请指定要删除的账号。', 2, ['name']);
+  remove.action(async (name: string) => {
+    requireConfirmation(program, remove.opts<{ yes?: boolean }>().yes);
     await withCliRuntime(program, true, async (runtime) => {
-      const name = inputName ?? String(await createPrompts(getOutput(program).mode).ask({ name: 'name', message: '选择要删除的账号', options: (await listProfiles(runtime.state)).map(item => ({ value: item.name, label: `${item.name} (${item.scope.platform})` })) }));
-      remove.processedArgs[0] = name;
       const existing = await getProfile(runtime.state, name);
       if (existing === null) {
         throw new CliError('INVALID_INPUT', `unknown profile ${name}`, 2);
       }
-      await confirmAction(program, `删除账号 ${name}，清除其会话、任务和缓存；已发生的平台操作不会回滚。`, remove.opts<{ yes?: boolean }>().yes);
       const client = createLearningClient({ scope: existing.scope, runtime });
       try { await client.auth.disconnect(); } finally { await client.close(); }
       const deletions = new Map<string, number>();
@@ -91,6 +83,7 @@ export function registerProfileCommands(program: Command): void {
         deletions.set(row.key, row.record.revision);
         await queue(`cli:resource-kind:${resource.key}`);
         await queue(`cli:resource-title:${resource.key}`);
+        await queue(`cli:resource-path:${resource.key}`);
       }
       for (const row of await all('preview:')) {
         const value = row.record.value;
@@ -113,7 +106,7 @@ export function registerProfileCommands(program: Command): void {
       for (const id of artifactIds) await runtime.artifacts.remove(id);
       if ((await readPreferences(runtime.state)).defaultProfileId === existing.scope.profileId) await savePreferences(runtime.state, { defaultProfileId: null });
       await removeProfile(runtime.state, name);
-      printResult(program, { removed: name }, `removed ${name}`);
+      printResult(program, { removed: name });
     });
   });
 
@@ -124,7 +117,7 @@ export function registerProfileCommands(program: Command): void {
       const dataDir = ensureDataDir(program.opts<{ home?: string }>().home);
       const lockPath = resolve(dataDir, 'learning.lock');
       if (!existsSync(lockPath)) {
-        printResult(program, { unlocked: false }, '当前没有写入锁。');
+        printResult(program, { unlocked: false });
         return;
       }
       const original = readFileSync(lockPath, 'utf8');
@@ -145,6 +138,6 @@ export function registerProfileCommands(program: Command): void {
         throw new CliError('INTERACTION_REQUIRED', 'writer lock changed; retry inspection', 3);
       }
       unlinkSync(lockPath);
-      printResult(program, { unlocked: true }, '已移除确认失效的写入锁。');
+      printResult(program, { unlocked: true });
     });
 }

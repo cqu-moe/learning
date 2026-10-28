@@ -102,7 +102,7 @@ try {
       const secrets = [...proxy.secrets, 'exam-session-fixture', 'crypt-fixture', 'xtx-crypt-fixture', 'xtx-exam-sess'];
       async function run(args, expected = 0, { killed = false, timeout = process.platform === 'win32' ? 75_000 : 15_000 } = {}) {
         const startedAt = Date.now();
-        const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json', '--no-interactive'], proxy.url);
+        const [command, argv] = loopbackCommand(program, ['--home', home, ...args, '--json'], proxy.url);
         const child = spawn(command, argv, { cwd: directory, env, stdio: ['ignore', 'pipe', 'pipe'] });
         activeChild = child;
         children.add(child);
@@ -225,17 +225,46 @@ try {
           continue;
         }
         if (name === 'assessments') {
-          proxy.use(strict(fixture('ykt/exercise-read')));
-          const hw = await command('ykt', ['download', resources.ykt['505'].ref.key, '--types', 'homework', '--output-dir', output]);
+          const homeworkRead = fixture('ykt/exercise-read');
+          homeworkRead[1].response.body.data.problems[0].content.Body += '<img src="/e2e/red.png" alt="示意图">';
+          proxy.use([...strict(homeworkRead),
+            get('www.yuketang.cn', '/fonts/fixture.woff', '', { status: 404 }),
+            asset('www.yuketang.cn', '/e2e/red.png', red, { mime: 'image/png' }),
+          ]);
+          const hw = await command('ykt', ['download', resources.ykt['505'].ref.key, '--types', 'homework', '--output-dir', output], 4);
           proxy.done();
-          await verify(hw, [bytes => {
-            const value = JSON.parse(bytes);
-            assert.equal(value.ref.kind, 'homework');
-            assert.equal(value.questions[0].body.markdown, '<p><span class="textfonts">&#x1234;</span> 选对的</p>');
-            assert.equal(value.questions[0].body.decodeState, 'partial');
-            assert.equal(value.questions[0].options[0].key, 'A');
-            assert.equal(value.questions[0].myAnswer, null);
-          }], 'ykt');
+          const { job: homeworkJob, files: homeworkFiles } = hw.data;
+          assert.equal(homeworkJob.status, 'partial');
+          assert.equal(homeworkJob.items[0].state, 'partial');
+          assert.equal(homeworkFiles.length, 3);
+          const markdownPath = homeworkFiles.find(file => file.endsWith('题面.md'));
+          const yamlPath = homeworkFiles.find(file => file.endsWith('answers.yaml'));
+          const imagePath = homeworkFiles.find(file => file.endsWith('.png'));
+          const markdown = readFileSync(markdownPath, 'utf8');
+          assert.ok(markdown.includes('[不完整]') && markdown.includes('【未解码】'));
+          assert.ok(markdown.includes('A. 甲'));
+          assert.ok(markdown.includes(`assets/${sha256(red)}.png`));
+          assert.ok(readFileSync(imagePath).equals(red));
+          const { parseLearningDraft } = await import('../packages/sdk/dist/services/drafts.js');
+          const homeworkDraft = parseLearningDraft(readFileSync(yamlPath, 'utf8'));
+          assert.equal(homeworkDraft.ref.kind, 'homework');
+          assert.equal(homeworkDraft.entries[0].answer.kind, 'unset');
+          const artifacts = homeworkJob.items[0].artifacts;
+          for (const [file, mimeType] of [[markdownPath, 'text/markdown'], [yamlPath, 'application/yaml'], [imagePath, 'image/png']]) {
+            const bytes = readFileSync(file);
+            const artifact = artifacts.find(value => value.mimeType === mimeType);
+            assert.equal(bytes.length, artifact.bytes);
+            assert.equal(sha256(bytes), artifact.sha256);
+            assert.ok(!relative(output, file).startsWith('..'));
+            record.files.push({ case: stage, filename: basename(file), bytes: bytes.length, sha256: sha256(bytes) });
+          }
+          const manifestPath = resolve(markdownPath, '..', '.hidden', 'manifest.json');
+          const manifestBytes = readFileSync(manifestPath);
+          assert.equal(sha256(manifestBytes), artifacts.find(value => value.mimeType === 'application/vnd.learning.homework+json').sha256);
+          const manifest = JSON.parse(manifestBytes);
+          assert.equal(manifest.questions[0].body.decodeState, 'partial');
+          assert.equal(manifest.questions[0].myAnswer, null);
+          assert.deepEqual(await jobShow(homeworkJob.id, 'ykt'), homeworkJob);
           proxy.use(xtHomework);
           await verify(await run(download('xt', resources.xt['31'])), [bytes => {
             const value = JSON.parse(bytes);
