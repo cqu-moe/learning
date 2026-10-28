@@ -1,5 +1,7 @@
 # learning — SDK + CLI 本期定稿规范
 
+> 阶段说明：本文保留 1.1 阶段的设计、计划或交接。任务选择以当前用户要求、[AGENTS](../AGENTS.md) 和[当前状态](PROGRESS.md) 为准；旧任务编号与停止条件不自动约束后续已授权任务。
+
 版本：1.1 · 日期：2026-09-23 · 本期范围：共享 SDK 与本地 CLI；Web 延期。
 
 **本文件与 SDK、contracts、PLATFORMS、APPS、ACCEPTANCE、PLAN 配套，整体替代最终版 1.0 及更早的 v0.1/v0.2。** 本次是修改设计与实施计划，不是已经实现产品。保留项目/仓库名 `learning / cqu-moe/learning`。

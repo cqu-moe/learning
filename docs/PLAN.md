@@ -1,5 +1,7 @@
 # learning Implementation Plan — SDK + CLI 本期实施计划
 
+> 阶段说明：本文保留 1.1 阶段的设计、计划或交接。任务选择以当前用户要求、[AGENTS](../AGENTS.md) 和[当前状态](PROGRESS.md) 为准；旧任务编号与停止条件不自动约束后续已授权任务。
+
 版本 1.1，2026-09-23。此次只修改实施范围；未执行产品任务。先读当前 SPEC，不再使用最终版1.0或更早稿的 Web 任务。
 
 > **For agentic workers:** 有 superpowers 时按 executing-plans 逐任务实施；没有插件也按本文相同步骤，不另装插件作为前提。一次只完成用户指定任务，不自动多模型并行。
