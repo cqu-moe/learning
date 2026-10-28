@@ -22,7 +22,10 @@ jobs:
           node-version: 24.11.1
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: node scripts/check-source-lock.mjs || true
+      - name: Test reference verification failure controls
+        run: node --test scripts/test-source-lock.mjs
+      - name: Verify reference manifest and available checkouts
+        run: node scripts/check-source-lock.mjs --allow-missing-references
       - run: node scripts/check-boundaries.mjs
       - run: pnpm lint && pnpm typecheck && pnpm test && pnpm build
       - run: pnpm test:e2e
