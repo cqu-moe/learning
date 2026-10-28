@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import jpeg from '../apps/cli/node_modules/jpeg-js/index.js';
-import { PNG } from '../apps/cli/node_modules/pngjs/lib/png.js';
 import qrcode from '../apps/cli/node_modules/qrcode/lib/index.js';
-import { renderImageQrTerminal, renderTextQrTerminal } from '../apps/cli/src/qr-terminal.js';
 import { LocalHeavyRenderer } from '../packages/sdk/dist/runtime/node/render.js';
 import { NodeArtifactStore, NodeFetchTransport, SqliteStateStore } from '../packages/sdk/dist/runtime/node/index.js';
 import { decryptJson, encryptJson } from '../packages/sdk/dist/session/crypto.js';
@@ -52,13 +49,7 @@ try {
   await assert.rejects(socket.send('after-close'));
 
   const png = Buffer.from(await qrcode.toBuffer('learning:bun-runtime', { type: 'png', errorCorrectionLevel: 'M', margin: 4, scale: 8 }));
-  const raster = PNG.sync.read(png);
-  const jpegBytes = Buffer.from(jpeg.encode({ data: raster.data, width: raster.width, height: raster.height }, 95).data);
-  const terminal = renderTextQrTerminal('learning:bun-runtime');
-  assert.equal(renderImageQrTerminal(png), terminal);
-  assert.equal(renderImageQrTerminal(jpegBytes), terminal);
   writeFileSync(join(home, 'qr.png'), png, { mode: 0o600 });
-  writeFileSync(join(home, 'qr.jpg'), jpegBytes, { mode: 0o600 });
 
   const artifacts = new NodeArtifactStore(join(home, 'artifacts'));
   const source = await artifacts.create({ id: 'probe:png', mimeType: 'image/png' });

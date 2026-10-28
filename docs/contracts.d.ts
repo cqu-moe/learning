@@ -44,7 +44,7 @@ export type Answer =
 export type QuestionKind = 'single-choice' | 'multi-choice' | 'judgement' | 'fill-blank' | 'short-answer' | 'unknown';
 export interface AnswerEvidence { origin: 'user' | 'platform-feedback' | 'model'; answer: Answer; sourceId: string; alternatives: { blankId: string; texts: string[] }[] }
 export interface Question { id: string; kind: QuestionKind; rawType: string; body: RichText; options: { key: string; body: RichText }[]; fingerprint: string; attemptsUsed: number | null; maxAttempts: number | null; myAnswer: Answer | null; feedback: AnswerEvidence | null }
-export interface Assessment { ref: AssessmentRef; title: string; state: 'not-started' | 'in-progress' | 'submitted' | 'unknown'; timed: boolean | null; fingerprint: string; questions: Question[] }
+export interface Assessment { ref: AssessmentRef; title: string; state: 'not-started' | 'in-progress' | 'submitted' | 'unknown'; timed: boolean | null; fingerprint: string; questions: Question[]; assets?: Artifact[] }
 export interface AnswerDraft { schemaVersion: 1; id: string; ref: AssessmentRef; fingerprint: string; entries: { questionId: string; fingerprint: string; answer: Answer; evidence: AnswerEvidence | null }[] }
 export interface FeedbackSet { schemaVersion: 1; id: string; ref: AssessmentRef; questions: Question[] }
 export interface Match { questionId: string; state: 'exact' | 'suggested' | 'ambiguous' | 'missing' | 'blocked'; answer: Answer | null; sourceId: string | null; reason: string }
@@ -77,10 +77,10 @@ export interface Receipt { operationId: string; state: 'confirmed' | 'uncertain'
 export type Execution = { type: 'receipt'; receipt: Receipt } | { type: 'job'; job: Job };
 export type ExportInput =
   | { type: 'media'; resources: ResourceRef[]; quality: 'best' | 'hd' | 'sd'; subtitles: boolean }
-  | { type: 'assessments'; refs: AssessmentRef[]; format: 'json' | 'markdown' | 'yaml' }
+  | { type: 'assessments'; refs: AssessmentRef[]; format: 'json' | 'markdown' | 'yaml' | 'homework' }
   | { type: 'slides'; lessons: LessonRef[]; format: 'images' | 'pdf'; liveJobId: string | null };
 export type JobStatus = 'queued' | 'running' | 'waiting' | 'paused' | 'needs-input' | 'uncertain' | 'succeeded' | 'partial' | 'failed' | 'canceled';
-export interface ItemResult { key: string; state: 'succeeded' | 'failed' | 'skipped' | 'needs-input' | 'uncertain'; message: string | null; artifacts: Artifact[] }
+export interface ItemResult { key: string; state: 'succeeded' | 'partial' | 'failed' | 'skipped' | 'needs-input' | 'uncertain'; message: string | null; artifacts: Artifact[] }
 export interface Job { id: string; scope: Scope; kind: 'export' | 'study' | 'homework' | 'live'; status: JobStatus; createdAtMs: number; updatedAtMs: number; nextRunAtMs: number | null; completed: number; total: number | null; items: ItemResult[]; warnings: Warning[] }
 export type JobEvent =
   | { sequence: number; type: 'state'; job: Job }

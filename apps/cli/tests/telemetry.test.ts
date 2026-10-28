@@ -181,13 +181,13 @@ afterAll(async () => {
 });
 
 describe('cli telemetry lifecycle', () => {
-  it('is default-on, notices once on stderr, and sends only allowlisted command facts', async () => {
+  it('is default-on, notices once in the structured result, and sends only allowlisted command facts', async () => {
     const home = freshHome('learning-telemetry-live-');
     const first = await runUserCli(['init'], home);
     expect(first.status).toBe(0);
     expect(existsSync(resolve(home, 'telemetry.json')), `test endpoint ${baseUrl}`).toBe(true);
-    expect(first.stderr).toContain('匿名使用统计');
-    expect(first.stderr.match(/匿名使用统计/g)).toHaveLength(1);
+    expect(first.stderr).toBe('');
+    expect(JSON.parse(first.stdout).warnings.filter((warning: { code: string }) => warning.code === 'TELEMETRY_NOTICE')).toHaveLength(1);
     expect(first.stdout.trim().split('\n')).toHaveLength(1);
     expect(JSON.parse(first.stdout)).toMatchObject({ command: 'init', ok: true, exitCode: 0 });
     expect(statSync(resolve(home, 'telemetry.json')).mode & 0o777).toBe(0o600);
@@ -223,7 +223,7 @@ describe('cli telemetry lifecycle', () => {
       environment: 'production',
       release: pkg.version,
       actor_type: 'installation',
-      trigger: 'user',
+      trigger: 'agent',
       operation: 'init',
       operation_id: events.find(event => event.event === 'cli_command_started')!.properties.operation_id,
       outcome: 'success',
@@ -297,7 +297,8 @@ describe('cli telemetry lifecycle', () => {
     expect(startPayload.body.batch[0]!.event).toBe('cli_command_started');
     expect(stdout.trim().split('\n')).toHaveLength(1);
     expect(JSON.parse(stdout)).toMatchObject({ command: 'init', ok: true, exitCode: 0 });
-    expect(stderr).toContain('匿名使用统计');
+    expect(JSON.parse(stdout).warnings).toContainEqual(expect.objectContaining({ code: 'TELEMETRY_NOTICE' }));
+    expect(stderr).toBe('');
     expect(child.exitCode).toBeNull();
 
     releaseHeldRequest();
@@ -313,7 +314,7 @@ describe('cli telemetry lifecycle', () => {
     const token = 'phc_coalesced_fixture_token_123456789abcdef';
     const previousEnv = process.env;
     process.env = userEnv(home, { token });
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     try {
       // No disk-backed init or subprocess startup between start and finish: those
       // can exceed the batching interval on a loaded runner.
@@ -334,7 +335,7 @@ describe('cli telemetry lifecycle', () => {
     const token = 'phc_long_command_fixture_token_123456789';
     const previousEnv = process.env;
     process.env = userEnv(home, { token });
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     try {
       await startTelemetry(output, home, 'jobs resume');
       const payloads = await waitForTokenPayloads(token, 1);
@@ -356,8 +357,8 @@ describe('cli telemetry lifecycle', () => {
     const before = requests.length;
     const failed = await runUserCli(['init'], home, env);
     expect(failed.status).toBe(0);
-    expect(failed.stderr).toContain('匿名使用统计');
-    expect(JSON.parse(failed.stdout)).toMatchObject({ ok: true, exitCode: 0 });
+    expect(failed.stderr).toBe('');
+    expect(JSON.parse(failed.stdout)).toMatchObject({ ok: true, exitCode: 0, warnings: expect.arrayContaining([expect.objectContaining({ code: 'TELEMETRY_NOTICE' })]) });
     expect(requests).toHaveLength(before);
   });
 
@@ -366,7 +367,7 @@ describe('cli telemetry lifecycle', () => {
     const before = requests.length;
     const first = await runUserCli(['init'], home, userEnv(home, { telemetry: false }));
     expect(first.status).toBe(0);
-    expect(first.stderr).toContain('匿名使用统计');
+    expect(first.stderr).toBe('');
     expect(existsSync(resolve(home, 'telemetry.json'))).toBe(true);
     expect((await runUserCli(['init'], home, userEnv(home, { telemetry: false }))).stderr).toBe('');
     expect(requests).toHaveLength(before);
@@ -395,7 +396,7 @@ describe('cli telemetry lifecycle', () => {
     const previousEnv = process.env;
     const token = 'phc_workflow_fixture_token_1234567890abcdef';
     process.env = userEnv(home, { token });
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     try {
       await startTelemetry(output, home, 'discuss draft');
       trackWorkflowEvent(output, { event: 'discussion_draft_created', properties: { used_ai_suggestion: true } });
@@ -455,7 +456,7 @@ describe('telemetry job outcomes', () => {
     const previousEnv = process.env;
     const jobToken = 'phc_job_outcomes_fixture_token_1234567890abcdef';
     process.env = { ...userEnv(home, { token: jobToken }) };
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     const runtime = Object.assign(createCliRuntime(home), { output });
     await startTelemetry(output, home, 'jobs resume');
     const runner = new JobRunner(runtime.state, runtime.clock);
@@ -702,7 +703,7 @@ describe('diagnostic delivery limits', () => {
     const home = freshHome('learning-telemetry-recovered-');
     const previousEnv = process.env;
     process.env = userEnv(home);
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     let runtime: ReturnType<typeof createCliRuntime> | undefined;
     try {
       await startTelemetry(output, home, 'download');
@@ -750,7 +751,7 @@ describe('diagnostic delivery limits', () => {
     const home = freshHome('learning-telemetry-frames-');
     const previousEnv = process.env;
     process.env = userEnv(home);
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     try {
       await startTelemetry(output, home, 'download');
       const cause = new Error('connection closed; token=SECRET_CREDENTIAL');
@@ -778,7 +779,7 @@ describe('diagnostic delivery limits', () => {
     const home = freshHome('learning-telemetry-retry-');
     const previousEnv = process.env;
     process.env = userEnv(home);
-    const makeOutput = () => createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const makeOutput = () => createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     const first = makeOutput();
     const second = makeOutput();
     const third = makeOutput();
@@ -815,7 +816,7 @@ describe('diagnostic delivery limits', () => {
     const home = freshHome('learning-telemetry-abort-');
     const previousEnv = process.env;
     process.env = userEnv(home);
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     try {
       await startTelemetry(output, home, 'download');
       trackException(output, new DOMException('transport aborted without user cancellation', 'AbortError'), { stage: 'transport' });
@@ -839,7 +840,7 @@ describe('diagnostic delivery limits', () => {
     const home = freshHome('learning-telemetry-canceled-');
     const previousEnv = process.env;
     process.env = userEnv(home);
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     try {
       await startTelemetry(output, home, 'discuss draft');
       output.markCanceled();
@@ -862,7 +863,7 @@ describe('diagnostic delivery limits', () => {
     const home = freshHome('learning-telemetry-stalled-error-');
     const previousEnv = process.env;
     process.env = userEnv(home);
-    const output = createOutput({ format: 'json', interactive: false, quiet: true, color: false, debug: false }, { stdout: sink(), stderr: sink() });
+    const output = createOutput({ format: 'json', debug: false }, { stdout: sink(), stderr: sink() });
     try {
       await startTelemetry(output, home, 'profile list');
       holdNextRequest = true;

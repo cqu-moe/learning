@@ -2,9 +2,11 @@
 
 **公开仓库：cqu-moe/learning。规范版本 1.1；CLI 发行版本见 Releases。**
 
-本分支实现共享 SDK 与本地 CLI；Web 尚未合入。1.1 文档保留初始 SDK/CLI 阶段的设计与证据，新任务以当前用户要求为准。实际能力与验证边界从[当前状态](docs/PROGRESS.md)进入。
+本分支实现共享 SDK 与 Agent 专用本地 CLI，人工终端向导已移除；Web 尚未合入。1.1 文档保留初始 SDK/CLI 阶段的设计与证据，新任务以当前用户要求为准。实际能力与验证边界从[当前状态](docs/PROGRESS.md)进入。
 
 CLI 提供 Windows、macOS、Linux 独立程序，直接下载运行，无需解压或安装 Node/Bun（macOS/Linux 下载后需 `chmod +x`）。访问 [Releases](https://github.com/cqu-moe/learning/releases)，按 [安装指南](docs/INSTALL.md) 下载、校验和初始化；第三方许可作为独立附件提供。源码开发继续使用固定 Node 24.11.1 / pnpm 11.19.0；发行流程见 [CLI 发布](docs/CLI-DISTRIBUTION.md)。
+
+CLI 默认向 stdout 输出一个 `schemaVersion: 1` JSON envelope；`--output-format jsonl` 输出事件流。裸跑和命令组返回命令目录，`schema [path...]` 就近查询参数契约，缺少必填参数直接结构化报错。配套 Agent 指南源码在 [skills/learning-cli/SKILL.md](skills/learning-cli/SKILL.md)。
 
 ## 当前文件
 
@@ -23,6 +25,7 @@ CLI 提供 Windows、macOS、Linux 独立程序，直接下载运行，无需解
 | [Web延期说明](docs/deferred/WEB.md) | 仅保留未来同仓/Cloudflare原生方向，不是可执行待办 |
 | [DELIVERY-CHECK](docs/DELIVERY-CHECK.md) | 本轮文档检查，不冒充产品测试 |
 | [AGENTS](AGENTS.md) | 稳定约束与按任务读取的导航 |
+| [learning-cli Skill](skills/learning-cli/SKILL.md) | 可携带到其他仓库的已安装 CLI 使用指南 |
 
 ## 开发交接
 

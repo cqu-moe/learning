@@ -10,6 +10,12 @@
 - 凭据、个人原始转储和字体留在本机安全文件或环境变量中，不提交到 Git/文档；参考仓库只读。真实平台操作、付费模型和发布按用户已有授权范围执行。
 - 保留用户未提交内容与历史证据，不重置已完成任务。当前任务结束即停止，不自动扩大到其他平台或云部署。
 
+## Agent CLI 契约（当前用户决定）
+
+CLI 只面向软件 Agent，不提供人工向导、pretty/plain、quiet、颜色或交互开关。默认 stdout 输出 `schemaVersion: 1` 单 JSON envelope；仅 `--output-format json|jsonl` 可选，`--json` 是兼容别名。裸跑与命令组返回命令目录，`schema [path...]` 就近返回选项/参数/default/required；缺少必填参数直接返回错误 `fields`。平台真机操作和付费模型仍按上文授权，`--yes` 只是执行确认，不是权限来源。
+
+配套 Skill 源码保存在 `skills/learning-cli/`，供安装到其他环境后使用；它只假设 `learning` 已安装，不假设本仓库路径。雨课堂普通作业下载/YAML/批量能力必须保留：下载需显式课程或资源 key，课程内全选用 `--all`；目录批量 apply 也需 `--all`。实时 CLI 只显式签到并监听事件，不提供直播答题提交入口；SDK `live.answer` 能力仍保留但必须单独授权和验证。详细契约见 `docs/adr/0003-agent-cli.md` 与 `docs/APPS.md`。
+
 ## 按任务读取
 
 - 修改 SDK、DTO 或协议：读 [SDK](docs/SDK.md)、[契约](docs/contracts.d.ts)、相关 [平台说明](docs/PLATFORMS.md) 与 [固定来源](docs/SOURCES.md)。缺失源码只阻塞相关证据，不猜协议。

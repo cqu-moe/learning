@@ -43,7 +43,8 @@ try:
             data += part
         if step < len(spec.get('steps', [])):
             item = spec['steps'][step]
-            if data.decode('utf8', errors='replace').count(item['wait']) >= item.get('occurrences', 1):
+            ready = data.decode('utf8', errors='replace').count(item['wait']) >= item.get('occurrences', 1)
+            if ready:
                 snapshots.append(data.decode('utf8', errors='replace'))
                 if 'signal' in item:
                     process.send_signal(getattr(signal, item['signal']))

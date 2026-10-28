@@ -5,8 +5,8 @@
 ## 已合入的最近工作
 
 - CLI 错误诊断、源码堆栈和 0.2.10 发行：[PR #27](https://github.com/cqu-moe/learning/pull/27)。随后修复了脱敏性能与 Windows 发行清单：[PR #28](https://github.com/cqu-moe/learning/pull/28)、[PR #29](https://github.com/cqu-moe/learning/pull/29)。具体验证环境与缺口见历史记录末尾。
-- 本分支包含 SDK 与本地 CLI。其他工作区的作业流程、Agent CLI 和 Web 工作不据此判定为已合入；当前任务以用户明确要求及当前分支差异为准。
-- 真实平台、付费模型和真实遥测入库的验收逐任务列明。旧的[功能状态表](FEATURE-STATUS.md)是 1.1 阶段快照，使用前与当前代码和相关任务记录核对。
+- [PR #30](https://github.com/cqu-moe/learning/pull/30) 已合入 Agent 专用 CLI、配套 Skill 和普通作业流程；[实现、审查与验证记录](progress/2026-10-28-agent-cli.md)已按任务归档。Web 不据此判定为已合入；当前任务以用户明确要求及分支差异为准。
+- 真实平台、付费模型和真实遥测入库的验收逐任务列明。[功能状态表](FEATURE-STATUS.md)使用前与当前代码和相关任务记录核对。
 
 ## 本次工作
 

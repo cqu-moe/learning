@@ -6,6 +6,8 @@ import { composePdfFromImages } from '../../content/pdf.js';
 import { safeFilename } from '../../services/exports.js';
 import { isCancellation, reportError } from '../diagnostics.js';
 import type { DiagnosticLog } from '../diagnostics.js';
+import { decodeFont } from './font.js';
+import { loadReferenceFont } from './reference-font.js';
 
 const MAX_INPUT_BYTES = 256 * 1024 * 1024;
 const MAX_PAGE_PIXELS = 40_000_000;
@@ -56,11 +58,11 @@ function checkPng(image: Uint8Array): void {
   if (width === 0 || height === 0 || width * height > MAX_PAGE_PIXELS) throw problem('BUDGET', 'PDF page exceeds 40 million pixels');
 }
 
-/** Bounded, local PDF renderer. Font and legacy browser paths fail explicitly until inputs exist. */
+/** Bounded local PDF and font rendering. */
 export class LocalHeavyRenderer implements HeavyRenderer {
   private readonly tasks = new Map<string, Task>();
   constructor(
-    private readonly deps?: { artifacts: ArtifactStore; scope: Scope },
+    private readonly deps?: { artifacts: ArtifactStore; scope: Scope; referenceFontDirectory?: string; referenceFontPath?: string },
     private readonly log?: DiagnosticLog,
   ) {}
 
@@ -79,7 +81,15 @@ export class LocalHeavyRenderer implements HeavyRenderer {
     else options?.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       if (input.deadlineAtMs <= Date.now()) throw problem('BUDGET', 'render deadline passed');
-      if (input.request.type === 'font.decode') throw problem('MISSING_RUNTIME', 'reference font corpus and Canvas renderer are not configured');
+      if (input.request.type === 'font.decode') {
+        if (this.deps?.referenceFontDirectory === undefined) throw problem('MISSING_RUNTIME', 'reference font cache directory is not configured');
+        const font = await readBounded(this.deps.artifacts, input.request.fontArtifactId, 8 * 1024 * 1024, task.controller.signal, input.attempt, this.log);
+        const reference = await loadReferenceFont({ directory: this.deps.referenceFontDirectory, ...(this.deps.referenceFontPath === undefined ? {} : { path: this.deps.referenceFontPath }), signal: task.controller.signal, deadlineAtMs: input.deadlineAtMs });
+        const { mapping, unresolved, rendererVersion } = await decodeFont(font, reference, input.request.characters, { signal: task.controller.signal, deadlineAtMs: input.deadlineAtMs });
+        if (task.canceled || task.controller.signal.aborted) throw problem('CANCELED', 'font decoding canceled');
+        task.state = { status: 'succeeded', result: { type: 'font.decode', decoded: { mapping, unresolved, rendererVersion } } };
+        return;
+      }
       if (input.request.type === 'slides.legacy') throw problem('MISSING_RUNTIME', 'controlled legacy slide browser is not configured');
       if (this.deps === undefined) throw problem('MISSING_RUNTIME', 'PDF artifact store and profile scope are not configured');
       const ids = input.request.imageArtifactIds;
@@ -117,13 +127,14 @@ export class LocalHeavyRenderer implements HeavyRenderer {
         mimeType: 'application/pdf', bytes: written.bytes, sha256: written.sha256, createdAtMs: Date.now(),
       } } };
     } catch (error) {
-      if (!isCancellation(error, task.controller.signal)) {
-        reportError(this.log, `render.task.${input.request.type}`, error, {
+      const failure = task.controller.signal.aborted ? problem('CANCELED', 'render canceled') : error;
+      if (!isCancellation(failure, task.controller.signal)) {
+        reportError(this.log, `render.task.${input.request.type}`, failure, {
           attempt_id: input.attempt,
         });
       }
-      if (!task.canceled) task.state = { status: 'failed', error: error instanceof LearningError ? error.data : {
-        code: 'INTEGRITY', message: error instanceof Error ? error.message : 'render failed', retryAfterMs: null, operationId: null,
+      if (!task.canceled) task.state = { status: 'failed', error: failure instanceof LearningError ? failure.data : {
+        code: 'INTEGRITY', message: failure instanceof Error ? failure.message : 'render failed', retryAfterMs: null, operationId: null,
       } };
     } finally {
       options?.signal?.removeEventListener('abort', onAbort);

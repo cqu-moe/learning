@@ -27,7 +27,8 @@ Bun 内置运行时，用户无需安装 Node/Bun；比把当前含顶层 await 
 - 将实际发行程序单独复制到仓库外的中文/空格路径，按下载后的说明恢复 POSIX 执行权限，清空 PATH 后运行真正的 CLI，验证无 Node/Bun、随附文件时的启动、版本、doctor、中文/空格相对路径、初始化与密钥保留、账号隔离、进程锁、失败清理和 dotenv/bunfig 隔离。
 - 使用同一生产编译参数生成最小真实 TS 崩溃探针，并单独复制到仓库外清空 PATH 运行；断言外层与 `cause` 链的 `Error.stack` 均包含原始 `.ts` 行列和函数名，`uncaughtExceptionMonitor` 会被调用且不阻止默认 fatal exit，且没有伴行 source map。实际发行程序再用公共 fixture token 和仅回环 collector 复现损坏 `master.key` 的 `LearningError`，断言 JSON body 中恰好一条 `$exception`、SDK 原始 TS 帧非空，且属性不包含 token 或本机 home/run 路径；该验收不访问真实 PostHog。
 - 二进制验收读取 `telemetry status`：不得显示 token，必须确认公共 token 已嵌入；CI 环境同时断言自动禁用，因此测试不访问 PostHog，也不代表产出包永久禁用。需要真实发包验收时，父流程可在明确设置 `CI=0`、`LEARNING_TELEMETRY_IS_TEST=1` 的受控进程中发起不带课程参数的命令；事件会带 `is_test:true`，不得执行真实课程操作。
-- macOS/Linux 再做真实 PTY 交互、取消与锁释放；Windows 检查当前用户目录/密钥/数据库 ACL。Windows 原生终端交互不以 POSIX PTY 测试替代。
+- 每个目标程序验证 Agent 契约：裸跑与 `schema` 不建目录/不等待输入，默认单 JSON、JSONL result 顺序、`--help/--version` 成功、旧人工格式选项无效、必填参数 `fields`、stdout 无 ANSI、stderr 诊断分流；同时覆盖扫码文件路径事件/清理、run 显式确认、作业 `--all` 和 live 无答题入口。
+- macOS/Linux 再做进程信号取消与锁释放；Windows 检查当前用户目录/密钥/数据库 ACL。不得以 POSIX PTY 交互测试替代 Windows 原生进程行为。
 - 发布前必须凑齐五个准确版本程序与独立 LICENSES.txt，逐个核对构建任务生成的 SHA256。缺目标、缺许可证、错误版本、多余压缩包或校验失败均拒绝发布。
 
 ## CI 与公开 Release
@@ -59,7 +60,7 @@ node scripts/test-distribution.mjs
 node scripts/test-release.mjs
 ```
 
-`build-cli.mjs` 需要 `POSTHOG_PROJECT_TOKEN`；本地复现官方二进制时从受控环境显式传入，不在 shell 历史、源码或日志中展开 token。CI 的 `test-bun-runtime.mjs` 探针不要求该 token，正式 `build-cli.mjs` 必需。本地复现 PR 构建时，对 `build-cli.mjs` 与 `test-distribution.mjs` 都传 `--without-telemetry`；该模式的产物仅用于测试，不作为正式发行。
+`build-cli.mjs` 需要 `POSTHOG_PROJECT_TOKEN`；本地复现官方二进制时从受控环境显式传入，不在 shell 历史、源码或日志中展开 token。CI 的 `test-bun-runtime.mjs` 探针不要求该 token，正式 `build-cli.mjs` 必需。正式遥测事件使用 `trigger=agent`。本地复现 PR 构建时，对 `build-cli.mjs` 与 `test-distribution.mjs` 都传 `--without-telemetry`；该模式的产物仅用于测试，不作为正式发行。
 
 `BUN_BINARY` 可指定固定 Bun 可执行文件路径。产物在 dist/releases；构建脚本生成当前目标程序与 SHA256，许可证脚本独立生成 LICENSES.txt 与 SHA256。CI 汇总五个原生目标和许可证后生成 SHA256SUMS。本机单系统只能验证对应目标，不能运行完整发布。测试环境与实际命令结果持续记入 [PROGRESS.md](PROGRESS.md)，真实平台账号验收仍单独记录。
 

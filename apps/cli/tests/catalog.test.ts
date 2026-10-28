@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -15,6 +15,12 @@ const preload = resolve(import.meta.dirname, 'fixture-fetch.mjs');
 const fixtureRoot = resolve(import.meta.dirname, '../../../packages/sdk/tests/fixtures');
 const homes: string[] = [];
 
+function readableHomeworkFixture(): Fixture {
+  const fixture = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/exercise-read.json'), 'utf8')) as Fixture;
+  fixture.interactions[1]!.response.body = { success: true, data: { problems: [{ problem_id: 11, content: { ProblemType: 1, Body: '<p>选对的</p>', Options: [{ key: 'A', value: '<p>甲</p>' }] }, user: { my_count: 0 } }] } };
+  return fixture;
+}
+
 function home() {
   const dir = mkdtempSync(resolve(tmpdir(), 'learning-catalog-'));
   homes.push(dir);
@@ -24,8 +30,6 @@ function home() {
 function run(dir: string, args: string[], fixture?: string, expectedCookie?: string, extraEnv: Record<string, string> = {}) {
   const nodeArgs = fixture ? ['--import', preload, cli] : [cli];
   if (args[0] === 'login' && !args.includes('--import') && !args.includes('--qr-file')) args = [...args, '--qr-file', resolve(dir, 'fixture-login-qr.png')];
-  const parity = fixture && (args.includes('--json') || args.includes('jsonl')) ? mkdtempSync(resolve(tmpdir(), 'learning-human-')) : null;
-  if (parity) cpSync(dir, parity, { recursive: true });
   const result = spawnSync(process.execPath, [...nodeArgs, '--home', dir, ...args], {
     cwd: dir,
     env: {
@@ -37,15 +41,6 @@ function run(dir: string, args: string[], fixture?: string, expectedCookie?: str
     },
     encoding: 'utf8',
   });
-  if (parity) {
-    try {
-      const humanArgs = args.flatMap((argument, index) => argument === '--json' ? ['--output-format','plain'] : argument === 'jsonl' && args[index-1] === '--output-format' ? ['plain'] : [argument.startsWith(dir) ? parity + argument.slice(dir.length) : argument]);
-      const human = spawnSync(process.execPath, [...nodeArgs,'--home',parity,...humanArgs,'--no-interactive'], { cwd: parity, encoding: 'utf8', env: { ...process.env, LEARNING_HOME: parity, LEARNING_FIXTURE_FILE: fixture!.startsWith('/') ? fixture! : resolve(fixtureRoot, `${fixture}.json`), ...(expectedCookie ? { LEARNING_ASSERT_COOKIE: expectedCookie } : {}), ...extraEnv } });
-      expect(human.status, `${args.join(' ')} plain: ${human.stderr}`).toBe(result.status);
-      expect(human.stdout + human.stderr).not.toContain('\u001b');
-      if (result.status === 0) expect(human.stdout.trim().length).toBeGreaterThan(0);
-    } finally { rmSync(parity, { recursive: true, force: true }); }
-  }
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -104,54 +99,11 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(JSON.parse(outline.stdout).data.value.roots.length).toBeGreaterThan(0);
   });
 
-  it.each([
-    { format: 'pretty', expired: false },
-    { format: 'plain', expired: false },
-    { format: 'pretty', expired: true },
-    { format: 'plain', expired: true },
-  ])('handles whole-course selection with format=$format expired=$expired', ({ format, expired }) => {
-    const dir = home();
-    expect(run(dir, ['init']).code).toBe(0);
-    expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
-    expect(run(dir, ['profile', 'add', 'beta', '--platform', 'zhs']).code).toBe(0);
-    const cookieFile = resolve(dir, 'cookies.json');
-    writeFileSync(cookieFile, JSON.stringify([{ name: 'sessionid', value: 'fixture-session', domain: 'www.yuketang.cn' }]));
-    expect(run(dir, ['login', '--profile', 'alpha', '--import', cookieFile]).code).toBe(0);
-    const fixture = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/courses-list.json'), 'utf8')) as Fixture;
-    if (expired) fixture.interactions[0]!.response = { status: 401, body: { errcode: 401002 } };
-    const fixtureFile = resolve(dir, 'course-selection.json');
-    writeFileSync(fixtureFile, JSON.stringify(fixture));
-    const result = spawnSync('python3', [resolve(import.meta.dirname, 'helpers/terminal-driver.py'), JSON.stringify({
-      argv: [process.execPath, '--import', preload, cli, '--home', dir, 'run', '--output-format', format],
-      env: { LEARNING_FIXTURE_FILE: fixtureFile, LEARNING_ASSERT_COOKIE: 'sessionid=fixture-session' },
-      steps: [
-        { wait: '选择账号', send: format === 'pretty' ? '\r' : '1\n' },
-        ...(expired ? [] : [{ wait: '学术写作', send: '\u0003' }]),
-      ],
-    })], { encoding: 'utf8', timeout: 15_000 });
-    expect(result.status, result.stderr).toBe(0);
-    const data = JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
-    expect(data.screen).not.toContain('INVALID_INPUT');
-    expect(data.screen).not.toContain('选择操作范围');
-    if (expired) {
-      expect(data.screen).toContain('AUTH_EXPIRED');
-      expect(data.screen).toContain('learning login --profile');
-      expect(data.steps).toBe(1);
-    } else {
-      expect(data.screen).toContain('学术写作');
-      expect(data.steps, data.screen).toBe(2);
-    }
-    expect(data.code).toBe(3);
-    expect(JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs).toEqual([]);
-  }, 20_000);
-
-
-  it('shows a concise whole-course confirmation without resource hash lists', async () => {
+  it('previews an explicit whole-course run and keeps unknown-duration warnings', async () => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);
     expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
     expect(run(dir, ['login', '--profile', 'alpha', '--json'], 'ykt/qr-login').code).toBe(0);
-    const courses = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/courses-list.json'), 'utf8')) as Fixture;
     const outline = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/nested-outline.json'), 'utf8')) as Fixture;
     const outlineBody = outline.interactions[2]!.response.body as { data: { course_chapter: unknown[] } };
     outlineBody.data.course_chapter = [{
@@ -167,39 +119,16 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const articleLeaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/504/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { leaf_type: 3, sku_id: 901, finish: false } } } };
     const fixtureFile = resolve(dir, 'run-confirm.json');
     const playUrl = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/api/open/audiovideo/playurl', query: { video_id: 'CC1', provider: 'cc', file_type: '1', is_single: '0', domain: 'www.yuketang.cn' } }, response: { status: 200, body: { data: { playurl: { sources: {} } } } } };
-    writeFileSync(fixtureFile, JSON.stringify({ interactions: [...courses.interactions, ...outline.interactions, articleLeaf, videoLeaf, videoProgress, playUrl] }));
-    const result = spawnSync('python3', [resolve(import.meta.dirname, 'helpers/terminal-driver.py'), JSON.stringify({
-      argv: [process.execPath, '--import', preload, cli, '--home', dir, 'run', '--profile', 'alpha', '--speed', '1', '--target', '0.5'],
-      env: { LEARNING_FIXTURE_FILE: fixtureFile, LEARNING_ASSERT_COOKIE: 'sessionid=sess-fixture' },
-      steps: [
-        { wait: '搜索并选择课程', send: '\r' },
-        { wait: '确认执行以上操作', send: '\u0003' },
-      ],
-    })], { encoding: 'utf8', timeout: 15_000 });
-    expect(result.status, result.stderr).toBe(0);
-    const data = JSON.parse(result.stdout) as { code: number; screen: string; steps: number };
-    expect(data.steps, data.screen).toBe(2);
-    expect(data.screen).not.toContain('选择操作范围');
-    const summary = data.screen.slice(data.screen.indexOf('课程：'));
-    expect(summary).toContain('课程：学术写作');
-    expect(summary).toContain('账号：alpha');
-    expect(summary).toContain('视频：1 个');
-    expect(summary).toContain('图文：1 个');
-    expect(summary).toContain('本次可处理：1 / 2 个资源');
-    expect(summary).toContain('暂不处理：1 个视频（未能读取时长）');
-    expect(summary).toContain('小节视频');
-    expect(summary).toContain('官方网页播放后重试');
-    expect(data.screen).not.toContain('video duration is unknown');
-    expect(summary).toContain('倍速：1×');
-    expect(summary).toContain('目标进度：50%');
-    expect(data.code).toBe(3);
-    expect(JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs).toEqual([]);
-    const state = new SqliteStateStore(resolve(dir, 'state.db'));
-    try {
-      const cached = await state.list('cli:resource:', null, 100);
-      for (const row of cached.items) expect(summary).not.toContain(String((row.record.value as { key: string }).key));
-    } finally { state.close(); }
     const courseKey = JSON.parse(run(dir, ['courses', '--profile', 'alpha', '--json'], 'ykt/courses-list').stdout).data.items[0].ref.key as string;
+    writeFileSync(fixtureFile, JSON.stringify({ interactions: [...outline.interactions, articleLeaf, videoLeaf, videoProgress, playUrl] }));
+    const dry = run(dir, ['run', courseKey, '--profile', 'alpha', '--speed', '1', '--target', '0.5', '--dry-run', '--json'], fixtureFile);
+    expect(dry.code, dry.stderr).toBe(0);
+    expect(JSON.parse(dry.stdout)).toMatchObject({
+      status: 'preview',
+      warnings: expect.arrayContaining([expect.objectContaining({ code: 'SKIPPED_UNKNOWN_DURATION' })]),
+      data: { kind: 'study' },
+    });
+    expect(JSON.parse(run(dir, ['jobs', 'list', '--json']).stdout).data.jobs).toEqual([]);
     articleLeaf.response.body.data.finish = true;
     writeFileSync(fixtureFile, JSON.stringify({ interactions: [...outline.interactions, articleLeaf, videoLeaf, videoProgress, playUrl, articleLeaf] }));
     const executed = run(dir, ['run', courseKey, '--profile', 'alpha', '--yes', '--json'], fixtureFile);
@@ -270,11 +199,13 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(await state.commit({ expected: [{ key: 'cli:resource:fixture-homework', revision: null }], changes: [{ key: 'cli:resource:fixture-homework', value: ref }] })).toBe(true);
     state.close();
     const output = resolve(dir, 'draft.yaml');
-    const first = run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha', '--json'], 'ykt/exercise-read');
+    const fixture = resolve(dir, 'readable-homework.json');
+    writeFileSync(fixture, JSON.stringify(readableHomeworkFixture()));
+    const first = run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha', '--json'], fixture);
     expect(first.code, first.stderr).toBe(0);
     expect(JSON.parse(first.stdout).data.questions).toBe(1);
     expect(readFileSync(output, 'utf8')).toContain('schemaVersion: 1');
-    const second = run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha', '--json'], 'ykt/exercise-read');
+    const second = run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha', '--json'], fixture);
     expect(second.code).toBe(3);
     expect(JSON.parse(second.stdout)).toMatchObject({ ok: false, exitCode: second.code });
   });
@@ -291,15 +222,17 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(await state.commit({ expected: [{ key: 'cli:resource:fixture-homework', revision: null }], changes: [{ key: 'cli:resource:fixture-homework', value: ref }] })).toBe(true);
     state.close();
     const output = resolve(dir, 'answer.yaml');
-    expect(run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha'], 'ykt/exercise-read').code).toBe(0);
-    writeFileSync(output, readFileSync(output, 'utf8').replace('kind: unset', 'kind: choice\n      keys:\n        - A'));
-    const original = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/exercise-read.json'), 'utf8')) as { interactions: unknown[] };
+    const original = readableHomeworkFixture();
+    const draftFixture = resolve(dir, 'readable-homework.json');
+    writeFileSync(draftFixture, JSON.stringify(original));
+    expect(run(dir, ['homework', 'draft', 'fixture-homework', '-o', output, '--profile', 'alpha'], draftFixture).code).toBe(0);
+    writeFileSync(output, readFileSync(output, 'utf8').replace('"11": null', '"11": A'));
     const read = original.interactions[1];
     const write = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/exercise/problem_apply/', headers: { xtbz: 'ykt', 'xt-agent': 'web', 'classroom-id': '28930736', 'content-type': 'application/json;charset=utf-8' }, body: { classroom_id: '28930736', problem_id: '11', answer: ['A'] } }, response: { status: 200, body: { success: true, data: { submitted: true } } } };
     const dryFixture = resolve(dir, 'dry.json');
     const applyFixture = resolve(dir, 'apply.json');
-    writeFileSync(dryFixture, JSON.stringify({ interactions: [read] }));
-    writeFileSync(applyFixture, JSON.stringify({ interactions: [read, write] }));
+    writeFileSync(dryFixture, JSON.stringify({ interactions: [read, read] }));
+    writeFileSync(applyFixture, JSON.stringify({ interactions: [read, read, read, write] }));
     const dry = run(dir, ['homework', 'apply', output, '--profile', 'alpha', '--dry-run', '--json'], dryFixture);
     expect(dry.code, dry.stderr).toBe(0);
     expect(JSON.parse(dry.stdout).data.receipts).toEqual([]);
@@ -515,15 +448,13 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     expect(missingResult.error).toMatchObject({ code: 'INVALID_INPUT' });
     expect(missingResult.error).toMatchObject({ fields: ['resource'] });
     expect(missingResult.error.message).toContain('找不到课程或资源 key');
-    const single = run(dir, ['run', '--resource', 'study-video', '--target', '0.5', '--speed', '1', '--dry-run', '--profile', 'alpha', '--output-format', 'plain'], dryFixture);
+    const single = run(dir, ['run', '--resource', 'study-video', '--target', '0.5', '--speed', '1', '--dry-run', '--profile', 'alpha', '--json'], dryFixture);
     expect(single.code, single.stderr).toBe(0);
-    expect(single.stdout).toContain('课程：课程名称暂不可用');
-    expect(single.stdout).toContain('范围：单个资源');
-    expect(single.stdout).toContain('视频：1 个');
+    expect(JSON.parse(single.stdout)).toMatchObject({ status: 'preview', data: { kind: 'study' } });
     expect(single.stdout).not.toContain('study-video');
   });
 
-  it('runs a Yuketang study job with the default preset: max speed and full target', async () => {
+  it('runs a Yuketang study job with agent defaults: speed one and full target', async () => {
     const dir = home();
     expect(run(dir, ['init']).code).toBe(0);
     expect(run(dir, ['profile', 'add', 'alpha', '--platform', 'ykt']).code).toBe(0);
@@ -536,7 +467,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     state.close();
     const leaf = { request: { method: 'GET', host: 'www.yuketang.cn', path: '/mooc-api/v1/lms/learn/leaf_info/28930736/502/', query: { classroom_id: '28930736' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { success: true, data: { course_id: 5184094, user_id: 424242, sku_id: 901, content_info: { media: { ccid: 'CC1' } } } } } };
     const progress = (rate: number, point: number) => ({ request: { method: 'GET', host: 'www.yuketang.cn', path: '/video-log/get_video_watch_progress/', query: { cid: '5184094', user_id: '424242', classroom_id: '28930736', video_type: 'video', vtype: 'rate', video_id: '502', snapshot: '1', no_loading: 'true' }, headers: { xtbz: 'ykt' } }, response: { status: 200, body: { data: { '502': { rate, completed: 0, video_length: 10, last_point: point } } } } });
-    const row = { i: 5, et: 'heartbeat', p: 'web', n: 'ali-cdn.xuetangx.com', lob: 'ykt', cp: 10, fp: 0, tp: 10, sp: 5,
+    const row = { i: 5, et: 'heartbeat', p: 'web', n: 'ali-cdn.xuetangx.com', lob: 'ykt', cp: 5, fp: 0, tp: 10, sp: 1,
       ts: '__NOW_MS__', u: '424242', uip: '', c: '5184094', v: '502', skuid: '901', classroomid: '28930736', cc: 'CC1', d: 10,
       pg: '__JOB_PG_502__', sq: 1, t: 'video', cards_id: 0, slide: 0 };
     const write = { request: { method: 'POST', host: 'www.yuketang.cn', path: '/video-log/heartbeat/', headers: { xtbz: 'ykt', 'classroom-id': '28930736', 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json;charset=utf-8' }, body: { heart_data: [row] } }, response: { status: 200, body: {} } };
@@ -585,8 +516,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const ref = { course: { scope, key: 'fixture-course', native: { kind: 'ykt', classroomId: '28930736' } }, key: 'fixture-homework', native: { kind: 'ykt', leafId: '505', leafInfoId: null } };
     expect(await state.commit({ expected: [{ key: 'cli:resource:fixture-homework', revision: null }], changes: [{ key: 'cli:resource:fixture-homework', value: ref }] })).toBe(true);
     state.close();
-    const original = JSON.parse(readFileSync(resolve(fixtureRoot, 'ykt/exercise-read.json'), 'utf8')) as { interactions: Array<{ response: { body: { data: { font?: string } } } }> };
-    delete original.interactions[1]!.response.body.data.font;
+    const original = readableHomeworkFixture();
     const draftFixture = resolve(dir, 'draft-fixture.json');
     const matchFixture = resolve(dir, 'match-fixture.json');
     writeFileSync(draftFixture, JSON.stringify(original));
@@ -594,7 +524,7 @@ describe('CLI auth and catalog against strict offline fixtures', () => {
     const draftFile = resolve(dir, 'draft.yaml');
     expect(run(dir, ['homework', 'draft', 'fixture-homework', '-o', draftFile, '--profile', 'alpha'], draftFixture).code).toBe(0);
     const feedbackFile = resolve(dir, 'feedback.json');
-    writeFileSync(feedbackFile, JSON.stringify({ problems: [{ problem_id: 11, content: { ProblemType: 1, Body: '<p><span class="textfonts">&#x1234;</span> 选对的</p>', Options: [{ key: 'A', value: '<p>甲</p>' }], Answers: ['A'] } }] }));
+    writeFileSync(feedbackFile, JSON.stringify({ problems: [{ problem_id: 11, content: { ProblemType: 1, Body: '<p>选对的</p>', Options: [{ key: 'A', value: '<p>甲</p>' }], Answers: ['A'] } }] }));
     const matchedFile = resolve(dir, 'matched.yaml');
     const matched = run(dir, ['answers', 'match', draftFile, '--source', feedbackFile, '-o', matchedFile, '--profile', 'alpha', '--json'], matchFixture);
     expect(matched.code, matched.stderr).toBe(0);

@@ -1,4 +1,4 @@
-import { confirmAction, requireConfirmation } from '../prompts.js';
+import { requireConfirmation } from '../input.js';
 import { readPreferences, setJobOutputRoot } from '../preferences.js';
 import { resolve } from 'node:path';
 import { CliError, getOutput } from '../output.js';
@@ -34,7 +34,7 @@ export function registerExamCommands(program: Command): void {
           throw error;
         }
         trackWorkflowEvent(getOutput(program), { event: 'exam_draft_created', properties: { question_count: draft.entries.length } });
-        printResult(program, { path: output, draftId: draft.id, questions: draft.entries.length }, `${output}: ${draft.entries.length} questions`);
+        printResult(program, { path: output, draftId: draft.id, questions: draft.entries.length });
       } finally { await client.close(); }
     });
   });
@@ -54,11 +54,10 @@ export function registerExamCommands(program: Command): void {
         const draft = unwrapResult(program, await client.assessments.importDraft(await readFile(path, 'utf8'), 'learning'));
         if (draft.ref.kind !== 'exam') throw new LearningError({ code: 'INVALID_INPUT', message: 'draft is not an exam', retryAfterMs: null, operationId: null });
         const preview = await client.actions.prepare({ kind: 'exam.save', draft });
-        if (options.dryRun) { printResult(program, preview, `exam ${draft.ref.assessmentId} save previewed; no final submission`); return; }
-        await confirmAction(program, `账号：${profile.name}，保存试卷 ${draft.ref.assessmentId} 的答案，不交卷。`, options.yes);
+        if (options.dryRun) { getOutput(program).set(preview, 'preview'); return; }
         const receipt = await executeAction(getOutput(program), client, preview.id);
         trackWorkflowEvent(getOutput(program), { event: 'exam_answers_saved', properties: { result_type: receipt.type } });
-        printResult(program, receipt, `exam answers saved: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
+        printResult(program, receipt);
       } finally { await client.close(); }
     });
   });
@@ -80,11 +79,10 @@ export function registerExamCommands(program: Command): void {
         const refs = (await client.assessments.resolve(resource)).filter((ref) => ref.kind === 'exam');
         if (refs.length !== 1) throw new LearningError({ code: 'UNSUPPORTED', message: 'expected one exam for this resource', retryAfterMs: null, operationId: null });
         const preview = await client.actions.prepare({ kind: 'exam.start', ref: refs[0]! });
-        if (options.dryRun) { printResult(program, preview, `exam ${refs[0]!.assessmentId} start previewed; timer may begin`); return; }
-        await confirmAction(program, `账号：${profile.name}，打开试卷 ${refs[0]!.assessmentId}，可能开始计时。`, options.yes);
+        if (options.dryRun) { getOutput(program).set(preview, 'preview'); return; }
         const receipt = await executeAction(getOutput(program), client, preview.id);
         trackWorkflowEvent(getOutput(program), { event: 'exam_started', properties: { result_type: receipt.type } });
-        printResult(program, receipt, `exam start: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
+        printResult(program, receipt);
       } finally { await client.close(); }
     });
   });
@@ -109,20 +107,19 @@ export function registerExamCommands(program: Command): void {
           if (finished.status === 'partial') process.exitCode = 4;
           else if (finished.status === 'uncertain') process.exitCode = 5;
           else if (finished.status !== 'succeeded') process.exitCode = 3;
-          printResult(program, { job: finished, files }, `${finished.status}: ${files.join(', ')}`);
+          printResult(program, { job: finished, files });
         } finally { await client.close(); }
       });
     });
   const submit = exam.command('submit <draft>')
-    .description('最终交卷，非交互需要 --yes --final')
+    .description('最终交卷，必须显式提供 --yes --final')
     .option('--yes', '确认当前操作')
     .option('--final', '明确执行最终交卷')
     .option('--dry-run', '查看交卷预览及阻塞原因，不发送');
   submit.action(async (path: string) => {
       const options = submit.opts<{ yes?: boolean; final?: boolean; dryRun?: boolean }>();
-      if ((!options.yes || !options.final) && !options.dryRun && !getOutput(program).mode.interactive) {
-        throw new CliError('INVALID_INPUT', 'exam submit requires --yes --final', 2);
-      }
+      getOutput(program).assertActive();
+      if ((!options.yes || !options.final) && !options.dryRun) throw new CliError('INVALID_INPUT', 'exam submit requires --yes --final', 2, [...(!options.yes ? ['yes'] : []), ...(!options.final ? ['final'] : [])]);
       await withCliRuntime(program, true, async (runtime) => {
         const profile = await selectProfile(program, runtime);
           const info = await lstat(path);
@@ -135,15 +132,13 @@ export function registerExamCommands(program: Command): void {
           if (preview.blockers.length > 0) {
             process.exitCode = 3;
             await getOutput(program).warning('BLOCKED', preview.blockers.join('; '));
-            printResult(program, preview, `final submission blocked: ${preview.blockers.join('; ')}`);
+            getOutput(program).set(preview, 'preview');
             return;
           }
-          if (options.dryRun) { printResult(program, preview, 'final submission previewed'); return; }
-          await confirmAction(program, `账号：${profile.name}，最终提交试卷 ${draft.ref.assessmentId}，提交后不能视为普通保存。`, options.yes);
-          if (!options.final) await confirmAction(program, '再次确认：最终交卷，结束本次考试？此确认等价于 --final。', false);
+          if (options.dryRun) { getOutput(program).set(preview, 'preview'); return; }
           const receipt = await executeAction(getOutput(program), client, preview.id);
           trackWorkflowEvent(getOutput(program), { event: 'exam_submitted', properties: { result_type: receipt.type } });
-          printResult(program, receipt, `final submission: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
+          printResult(program, receipt);
         } finally { await client.close(); }
       });
     });

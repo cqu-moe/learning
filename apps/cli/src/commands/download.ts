@@ -1,13 +1,11 @@
 import { resolve } from 'node:path';
 import { CliError, getOutput } from '../output.js';
-import { createPrompts, askDefaults } from '../prompts.js';
-import { isWizard } from '../wizard.js';
 import { readPreferences, setJobOutputRoot } from '../preferences.js';
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { AssessmentRef, CourseRef, ResourceRef, OutlineNode } from '@learning/sdk/public';
 import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
-import { resourceCacheKey, resourceKindCacheKey, chooseTarget } from './catalog.js';
+import { cacheResources, resourceCacheKey, resourceKindCacheKey } from './catalog.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 import { trackWorkflowEvent } from '../telemetry.js';
 
@@ -20,20 +18,15 @@ function flatten(nodes: OutlineNode[]): Array<{ kind: string; ref: ResourceRef }
 }
 
 export function registerDownloadCommands(program: Command): void {
-  const download = program.command('download [course-or-resource]')
+  const download = program.command('download <course-or-resource>')
     .description('导出可读取的视频、作业和试卷')
     .option('--types <types>', '资源类型：video,homework,exam，逗号分隔', 'video,homework,exam')
-    .option('--quality <quality>', '视频质量：best、hd 或 sd', 'best')
+    .addOption(new Option('--quality <quality>', '视频质量：best、hd 或 sd').default('best').choices(['best', 'hd', 'sd']))
     .option('--subtitles', '同时导出可用字幕')
-    .option('--output-dir <dir>', '导出目标根目录，每个任务使用唯一子目录')
+    .option('--output-dir <dir>', '导出目标根目录，普通雨课堂作业按课程和章节归档')
     .option('--dry-run', '只查看导出计划，不下载');
   download.action(async (key?: string) => {
-    if (key === undefined && !getOutput(program).mode.interactive) throw new CliError('INVALID_INPUT', '缺少课程或资源。', 2, ['course-or-resource']);
-    await askDefaults(download, [
-      { name: 'types', message: '资源类型，逗号分隔 video,homework,exam', initialValue: 'video,homework,exam', validate: value => { const kinds = String(value).split(',').map(kind => kind.trim()); return kinds.every(kind => TYPES.has(kind)) && new Set(kinds).size === kinds.length ? undefined : '请输入不重复的 video、homework 或 exam。'; } },
-      { name: 'quality', message: '视频质量', options: ['best','hd','sd'].map(value => ({ value, label: value })) },
-      { name: 'subtitles', message: '同时导出可用字幕？', confirm: true },
-    ], isWizard(program));
+    if (key === undefined) throw new CliError('INVALID_INPUT', '缺少课程或资源。', 2, ['course-or-resource']);
     const options = download.opts<{ types: string; quality: string; subtitles?: boolean; dryRun?: boolean; outputDir?: string }>();
     const types = options.types.split(',').map((item) => item.trim());
     if (types.length === 0 || types.some((item) => !TYPES.has(item)) || new Set(types).size !== types.length) {
@@ -44,10 +37,7 @@ export function registerDownloadCommands(program: Command): void {
       const profile = await selectProfile(program, runtime);
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
-        key ??= await chooseTarget(client, runtime, createPrompts(getOutput(program).mode), ['video', 'homework', 'exam']);
-        download.processedArgs[0] = key;
         const outputRoot = resolve(options.outputDir ?? (await readPreferences(runtime.state)).downloadDir ?? resolve(dataDir, 'exports'));
-        if (options.outputDir === undefined) download.setOptionValueWithSource('outputDir', outputRoot, 'inferred');
         const cachedResource = await runtime.state.get(resourceCacheKey(key));
         let resources: Array<{ kind: string; ref: ResourceRef }>;
         if (cachedResource !== null) {
@@ -66,7 +56,9 @@ export function registerDownloadCommands(program: Command): void {
             course = CourseSchema.parse(cachedCourse.value).ref;
           }
           if (course.scope.profileId !== profile.scope.profileId) throw new LearningError({ code: 'FORBIDDEN', message: 'course belongs to another profile', retryAfterMs: null, operationId: null });
-          resources = flatten(unwrapResult(program, await client.catalog.outline(course)).roots).filter((item) => types.includes(item.kind));
+          const outline = unwrapResult(program, await client.catalog.outline(course));
+          await cacheResources(runtime, outline.roots);
+          resources = flatten(outline.roots).filter((item) => types.includes(item.kind));
         }
         if (resources.some((item) => item.ref.course.scope.profileId !== profile.scope.profileId)) throw new LearningError({ code: 'FORBIDDEN', message: 'resource belongs to another profile', retryAfterMs: null, operationId: null });
         const media = resources.filter((item) => item.kind === 'video').map((item) => item.ref);
@@ -77,7 +69,7 @@ export function registerDownloadCommands(program: Command): void {
         if (media.length === 0 && assessments.length === 0) throw new LearningError({ code: 'UNSUPPORTED', message: 'no matching downloadable resources', retryAfterMs: null, operationId: null });
         if (options.dryRun) {
           const plan = { media: media.map((ref) => ref.key), assessments: assessments.map((ref) => ref.assessmentId) };
-          getOutput(program).set(plan, `${plan.media.length} 个视频，${plan.assessments.length} 份作业/试卷`, 'preview');
+          getOutput(program).set(plan, 'preview');
           return;
         }
         const jobs = [];
@@ -90,8 +82,11 @@ export function registerDownloadCommands(program: Command): void {
           jobs.push(job);
           files.push(...await publishJobArtifacts(runtime, job, dataDir));
         }
-        if (assessments.length > 0 && !getOutput(program).signal.aborted) {
-          const created = await client.jobs.createExport({ type: 'assessments', refs: assessments, format: 'json' });
+        const homework = assessments.filter(ref => ref.kind === 'homework' && ref.resource.course.scope.platform === 'ykt');
+        const other = assessments.filter(ref => !homework.includes(ref));
+        for (const group of [{ refs: homework, format: 'homework' as const }, { refs: other, format: 'json' as const }]) {
+          if (!group.refs.length || getOutput(program).signal.aborted) continue;
+          const created = await client.jobs.createExport({ type: 'assessments', ...group });
           await setJobOutputRoot(runtime.state, created.id, outputRoot);
           const job = await runJobForeground(client, runtime, created.id);
           jobs.push(job);
@@ -105,7 +100,7 @@ export function registerDownloadCommands(program: Command): void {
           event: 'download_completed',
           properties: { job_statuses: jobs.map(job => job.status), exported_file_count: files.length, media_count: media.length, assessment_count: assessments.length },
         });
-        printResult(program, result, `${getOutput(program).signal.aborted ? '已取消，保留任务记录与已完成文件。\n' : ''}${jobs.map((job) => `${job.id}: ${job.status}`).join('\n')}\n${files.join('\n')}`);
+        printResult(program, result);
       } finally { await client.close(); }
     });
   });

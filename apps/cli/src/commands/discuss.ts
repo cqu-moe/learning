@@ -1,6 +1,5 @@
-import { confirmAction, requireConfirmation, askDefaults } from '../prompts.js';
+import { requireConfirmation } from '../input.js';
 import { getOutput } from '../output.js';
-import { isWizard } from '../wizard.js';
 import type { Command } from 'commander';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { createLearningClient, DiscussionDraftSchema, LearningError, ResourceRefSchema } from '@learning/sdk';
@@ -15,7 +14,6 @@ export function registerDiscussCommands(program: Command): void {
     .requiredOption('-o, --output <file>', '新输出文件路径')
     .option('--ai', '明确请求已配置的模型生成建议，可能产生费用');
   draft.action(async (key: string) => {
-    await askDefaults(draft, [{ name: 'ai', message: '使用已配置的模型生成建议？可能产生费用。', confirm: true }], isWizard(program));
     const options = draft.opts<{ output: string; ai?: boolean }>();
     await withCliRuntime(program, true, async (runtime) => {
       const profile = await selectProfile(program, runtime);
@@ -33,7 +31,7 @@ export function registerDiscussCommands(program: Command): void {
           throw error;
         }
         trackWorkflowEvent(getOutput(program), { event: 'discussion_draft_created', properties: { used_ai_suggestion: options.ai === true } });
-        printResult(program, { path: options.output, draft: result }, `draft saved to ${options.output}`);
+        printResult(program, { path: options.output, draft: result });
       } finally { await client.close(); }
     });
   });
@@ -58,13 +56,12 @@ export function registerDiscussCommands(program: Command): void {
       const client = createLearningClient({ scope: profile.scope, runtime });
       try {
         const preview = await client.actions.prepare({ kind: 'discussion.post', draft: discussion.data });
-        const summary = `账号：${profile.name}\n向主题 ${discussion.data.ref.topicId} 发布以下内容：\n${discussion.data.text}`;
-        if (options.dryRun) { getOutput(program).set(preview, summary, 'preview'); return; }
-        getOutput(program).set(preview, '', 'preview');
-        await confirmAction(program, summary, options.yes);
+        const summary = { profile: profile.name, topicId: discussion.data.ref.topicId, text: discussion.data.text };
+        getOutput(program).set({ ...preview, summary }, 'preview');
+        if (options.dryRun) return;
         const receipt = await executeAction(getOutput(program), client, preview.id);
         trackWorkflowEvent(getOutput(program), { event: 'discussion_posted', properties: { result_type: receipt.type } });
-        printResult(program, receipt, `discussion post: ${receipt.type === 'receipt' ? receipt.receipt.state : 'job'}`);
+        printResult(program, receipt);
       } finally { await client.close(); }
     });
   });

@@ -75,10 +75,15 @@ Cloudflare/workerd/R2/DO/Containers/Web登录/页面/E2E/部署全部为deferred
 
 T31最终离线命令：`pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e`。只含当前两包与本地CLI集成，不需要云密钥或Docker。
 
-## CLI 0.2 体验补充验收
+## Agent CLI 补充验收
 
-- UX01–UX08 对应的输出、提示、偏好、课程选择、登录、进度、确认及恢复测试位于 apps/cli/tests；真实 PTY 覆盖补参、Clack、取消、quiet 预览和进程 SIGINT 后的独立状态读回。
-- 33 条叶子命令以实际 Commander 注册树核对；包括原帮助矩阵漏掉的 exam draft、operations reconcile，以及三个 config 命令。
-- 严格业务 fixture 在独立的合成状态副本中分别运行机器格式与 plain，比较退出结果，保留原业务断言和未登记请求拒绝。
+- 裸跑与命令组返回命令目录，不创建数据目录、不等待终端输入；`schema [path...]` 精确返回参数、选项、default、required 与 choices。缺少必填参数的 exit 2 结果包含 `error.fields`。
+- 默认输出是无 ANSI 的 `schemaVersion: 1` 单 JSON envelope；`--output-format jsonl` 事件按 `sequence` 排序并以 result 结束。`--json` 兼容别名可用，pretty/plain/quiet/no-color/no-interactive 全部按无效输入处理。
+- `--help` 与 `--version` 均为成功结果且文本位于 `data.text`；遥测首次告知为 `TELEMETRY_NOTICE` warning，后发诊断警告为 stderr JSON，遥测共同字段 `trigger=agent`。
+- `courses --cursor` 能翻页且与 `--all-profiles` 冲突报错；profile add 保留 `<name> --platform`，不接受 `--name`。
+- `login --qr-file` 只接受新路径，JSONL 自动路径唯一；auth 事件不泄露二维码内容、Cookie 或票据，退出清理成功且清理失败可见。
+- 常规写操作验证 `--dry-run/--yes`；交卷仍被未验证 SDK 闸门拒绝。`run` 默认 speed/target 为 1 并受平台限制，未知答案暂停。
+- `live --dry-run` 只预览，`live --yes` 只显式签到并输出事件；CLI 无 `live.answer` 提交入口，SDK live.answer 另按原验收覆盖。
+- 雨课堂普通作业保留下载/YAML/批量：download 显式 key、课程 `--all`；apply 单文件和目录 `--all`；重复下载保留草稿，uncertain 不重交。
 - packed E2E 使用 pnpm 11 的真实离线 tarball 安装，并核对 SDK/CLI 各自版本。
 - 实际门禁结果记在 PROGRESS；此节为验收项，不提升旧任务中真实平台、字体或硬工作片的证据等级。
