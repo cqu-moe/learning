@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { CliError, getOutput } from '../output.js';
 import { readPreferences, setJobOutputRoot } from '../preferences.js';
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { CourseSchema, ResourceRefSchema, createLearningClient, LearningError } from '@learning/sdk';
 import type { AssessmentRef, CourseRef, ResourceRef, OutlineNode } from '@learning/sdk/public';
 import { printResult, selectProfile, withCliRuntime, unwrapResult } from '../context.js';
@@ -21,7 +21,7 @@ export function registerDownloadCommands(program: Command): void {
   const download = program.command('download <course-or-resource>')
     .description('导出可读取的视频、作业和试卷')
     .option('--types <types>', '资源类型：video,homework,exam，逗号分隔', 'video,homework,exam')
-    .option('--quality <quality>', '视频质量：best、hd 或 sd', 'best')
+    .addOption(new Option('--quality <quality>', '视频质量：best、hd 或 sd').default('best').choices(['best', 'hd', 'sd']))
     .option('--subtitles', '同时导出可用字幕')
     .option('--output-dir <dir>', '导出目标根目录，普通雨课堂作业按课程和章节归档')
     .option('--dry-run', '只查看导出计划，不下载');

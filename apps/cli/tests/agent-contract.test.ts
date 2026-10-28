@@ -41,6 +41,32 @@ it('exposes the required inputs of a command without invoking it', () => {
   expect(existsSync(resolve(home, 'state.db'))).toBe(false);
 });
 
+it.each([
+  { path: [], field: 'options', flags: '--output-format <format>', choices: ['json', 'jsonl'] },
+  { path: ['profile', 'add'], field: 'options', flags: '--platform <platform>', choices: ['ykt', 'xuetang', 'zhs'] },
+  { path: ['login'], field: 'options', flags: '--variant <variant>', choices: ['default', 'native'] },
+  { path: ['slide'], field: 'options', flags: '--format <format>', choices: ['pdf', 'images'] },
+  { path: ['download'], field: 'options', flags: '--quality <quality>', choices: ['best', 'hd', 'sd'] },
+] as const)('discovers choices for $flags from the command tree', ({ path, field, flags, choices }) => {
+  const result = run('schema', ...path);
+  expect(result.status, result.stderr).toBe(0);
+  const body = JSON.parse(result.stdout);
+  expect(body.data[field]).toContainEqual(expect.objectContaining({ flags, choices }));
+});
+
+it.each([
+  { args: ['--output-format', 'yaml'], flags: '--output-format' },
+  { args: ['profile', 'add', 'alpha', '--platform', 'nope'], flags: '--platform' },
+  { args: ['login', '--variant', 'nope'], flags: '--variant' },
+  { args: ['slide', 'https://example.test/lesson', '--format', 'nope'], flags: '--format' },
+  { args: ['download', 'course', '--quality', 'nope'], flags: '--quality' },
+] as const)('enforces the choices for $flags', ({ args }) => {
+  const result = run(...args);
+  expect(result.status, result.stderr).toBe(2);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+  expect(existsSync(resolve(home, 'state.db'))).toBe(false);
+});
+
 it('wraps nested command help in the same JSON result without invoking it', () => {
   const result = run('homework', 'draft', '--help');
   expect(result.status, result.stderr).toBe(0);

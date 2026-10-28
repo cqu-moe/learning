@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { readPreferences, setJobOutputRoot } from '../preferences.js';
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { createLearningClient } from '@learning/sdk';
 import { printResult, selectProfile, withCliRuntime } from '../context.js';
 import { publishJobArtifacts, runJobForeground } from '../foreground.js';
@@ -9,7 +9,7 @@ import { publishJobArtifacts, runJobForeground } from '../foreground.js';
 export function registerSlideCommand(program: Command): void {
   const slide = program.command('slide <lesson-url>').description('导出已有课件')
     .option('--output-dir <dir>', '导出目标根目录')
-    .option('--format <format>', '课件格式：pdf 或 images', 'pdf');
+    .addOption(new Option('--format <format>', '课件格式：pdf 或 images').default('pdf').choices(['pdf', 'images']));
   slide.action(async (value: string) => {
     const { url, format } = z.object({ url: z.url(), format: z.enum(['pdf', 'images']) }).parse({ url: value, format: slide.opts<{ format: string }>().format });
     await withCliRuntime(program, true, async (runtime, dataDir) => {

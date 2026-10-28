@@ -1,5 +1,27 @@
 # learning — SDK + CLI 本期实施状态
 
+### 2026-10-28 · PR #30 五项审查修复与门禁验证
+
+- 用户明确要求修复五项发现、推送当前 PR 并确保 CI 全过。复用 `learning-agent-cli/learning`、`codex/agent-cli`，起点 `a817b61`；远端 main 与 PR 分支重新 fetch 后仍分别为 `d2b39c5` / `a817b61`，没有覆盖其他更新。保留前一轮本地审查记录，一并纳入本次提交。
+- `profile.ts` 删除账号时补齐 `cli:resource-path:*` 清理，现有回归同时验证另一账号的缓存保留。Commander 真实注册 output-format、platform、variant、format、quality 五组 choices，由 schema 与参数校验共用；没有将逗号分隔的 types 或自由文本错误建模为枚举。
+- `homework.ts` 的目录批量导入隔离非法 YAML、非本账号等本地草稿错误，收集 skipped 并继续验证有效答案；部分预览及全部文件失败都保留逐项结果。课程 `--all` 在解析阶段收集 failed，继续有效资源，全部解析失败不创建空 job。单文件原错误退出码保留；取消、权限/会话错误及 uncertain 继续停止。YKT-HOMEWORK 补充结果字段和退出码约定。
+- 终端信号验收等待目标 job 的 JSONL progress，移除 200ms 定时触发；保留真实 PTY、暂停状态和锁释放断言，并给 Node 预加载加入 500ms 启动延迟，覆盖原 CI 竞态。没有放大超时、重试碰运气或删断言。
+- RED：新增/扩展的 homework-batch、profile、agent-contract 三文件在旧 dist 上实际 **12 failed / 16 passed，exit 1**，分别复现批量中止、缓存残留和 choices:null；原信号用例的 CI 及慢启动失败证据见前一节。首次 GREEN **39/42**：两处新断言误把现有 PRECONDITION_CHANGED 写为 CONTENT_UNREADABLE，另一个 HTTP400 fixture 未触发 body 错误；核对 SDK 后改为准确错误码及 success:false 响应，不改 SDK、不放宽断言。最终五文件 **42/42，exit 0**。日志：`dist/agent-review-red.log`、`agent-review-green.log`、`agent-review-targeted.log`。
+- macOS arm64 / Node24.11.1 / pnpm11.19.0：`pnpm build`、`pnpm lint`、`pnpm typecheck`、完整 CLI Vitest **218/218**、`pnpm test:e2e` **7/7**、check-boundaries、check-source-lock、test-release 均 exit 0（`dist/agent-review-checks.log`）。SDK 产品未改，本轮本机不重复 SDK 全套；PR CI 仍执行完整 SDK 测试。
+- 最后保留单文件全部答案失效时的原 exit2/INVALID_INPUT：重新 build 后 homework-batch/workflow **8/8**；固定 Bun1.4.3 重新编译 macOS arm64 独立程序，`test-binary-writes --case homework,uncertain` 两轮严格 loopback 及清理通过，`test-binary-terminal` 真实 PTY 通过，均 exit 0（`dist/agent-review-native.log`、`dist/e2e/writes-journey-1793162231076-31557.json`）。单文件旧错误边界和 uncertain 不重交由实际程序验收，未改发行脚本的保护断言。
+- 获授权的 `zhipu/glm-5.3` / `max` 负责独立文件集及后续只读复核，主线程审阅并统一构建；没有并发修改运行中的 Vitest 源码。有效 Git 身份已核对并沿用配置；版本保持 0.2.10，不合并、不发布、不替换已安装 CLI。
+- 本次交付要求 [PR #30 最新提交的 verify 与五个 binary 检查](https://github.com/cqu-moe/learning/pull/30/checks) 全部成功；远端检查由 PR 记录，不以本机通过替代。未操作真实平台、付费模型或真实遥测，未扩展 Web。下一当前事项仅为本 PR 的远端门禁和失败处理。
+
+### 2026-10-28 · PR #30 双轴代码审查（审查完成，发现待修复）
+
+- 用户调用 `mattpocock-skills:code-review`。范围固定为 `git diff d2b39c5d74a7d0a992b3661f0bacc72ab66a847e...a817b6167c90bdafc4586255f454ba57ee289265`，118 个文件；独立 Standards / Spec 子审查均使用获授权的 `zhipu/glm-5.3` / `max`，主线程分别复核。此次未修改产品、测试或 Skill，仅更新本条审查记录，未提交、推送或发布远端 review。
+- Standards 两项：新增 `cli:resource-path:*` 没有随 `profile remove --yes` 清理，违反 APPS 的关联记录删除约定；`terminal.test.ts:132` 用启动后 200ms 发送信号，可能早于 CLI 就绪，导致取消验收依赖机器速度。没有把缓存键重复另计为 smell，也不将测试竞态说成产品信号处理缺陷。
+- Spec 三项：目录批量 apply 遇到非法 YAML 会整体失败，有效草稿不进入预览/跳过结果；课程批量 download 在作业 ref 解析阶段遇到一份缺少 `leaf_type_id` 的响应就中止，后续有效作业不处理；`schema profile add` / `schema login` 的 platform、variant、output-format 等受限选项均返回 `choices: null`。前两项不满足 YKT-HOMEWORK 的单份失败隔离约定，第三项不满足 ADR 0003 的枚举发现契约。
+- 本机 macOS arm64 / Node v24.11.1，以 `node --input-type=module` 内联脚本、独立临时目录和现有构建产物复现，脚本均 exit 0；无真实平台请求。信号探针给启动加入 500ms 延迟：原 200ms 触发下 SIGINT/SIGTERM 为 -2/-15、无 result、job 仍 waiting；同一探针等待 JSONL progress 后均 exit 3、result canceled、job paused、锁已释放。缓存探针调用真实 cacheResources，再执行真实 profile remove：resource/kind/title 均删除，path 仍保留。最初用 CJS require.resolve 装配 ESM-only SDK 的探针 exit 1，改用实际构建模块的 ESM import 后完成上述验证，未改 SDK。
+- 严格离线 `fixture-fetch.mjs` 探针先验证正例：两份普通作业课程下载 exit 0，两个 item 均 succeeded；有效已填草稿单独 dry-run exit 0、1 个 preview。加入排序靠前的非法 YAML 后，目录 apply exit 2 / INVALID_INPUT / data:null；一份 leaf_info 缺少 leaf_type_id 后，课程下载同样 exit 2 / INVALID_INPUT / data:null，后续请求没有发生。所有 fixture 被按预期消费，stderr 无 fixture 错误。两个 schema 探针 exit 0，并确认相关 choices 为 null。临时目录已清理。
+- 读取 PR 最新 head `a817b61` 的 [CI 40629319806](https://github.com/cqu-moe/learning/actions/runs/40629319806)：五个原生程序目标均 success；verify failure。SDK 为 343 passed / 2 skipped（远端无本机字体样本）；CLI 为 202 passed / 2 failed，失败正是上述 SIGINT/SIGTERM 退出码。E2E 等后续 verify 步骤没有运行，不能记为通过。`git diff --check` exit 0。
+- 未重跑全套本机 SDK/CLI/E2E，未访问真实平台、付费模型或真实遥测；未修复、合并或发布。下一事项是修复本次五项审查发现并重新验证 PR，不推进 Web 或其他 PLAN。
+
 ### 2026-10-28 · Agent CLI PR 交付（完成）
 
 - 用户明确要求开 PR，授权提交与推送本次实现。PR [#30](https://github.com/cqu-moe/learning/pull/30) 已创建，`codex/agent-cli` → `main`，非草稿；包含 Agent 专用 CLI、配套 Skill 和已确认保留的雨课堂作业功能。主实现提交为 `0f1835d`（`feat(cli)!: expose an agent-only interface and usage skill`），使用已有 Git 身份，未修改身份配置。

@@ -1,5 +1,5 @@
 import { CliError, getOutput } from '../output.js';
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import type { LearningClient, SessionView } from '@learning/sdk';
 import type { Output } from '../output.js';
 import { createLearningClient, LearningError } from '@learning/sdk';
@@ -90,7 +90,7 @@ export function registerLoginCommands(program: Command): void {
   const login = program.command('login').description('扫码登录或导入本地 Cookie 文件')
     .option('--import <file>', '导入指定 Cookie 数组文件')
     .option('--qr-file <file>', '二维码图片的新文件路径；JSON 模式必填，JSONL 可自动生成')
-    .option('--variant <variant>', '智慧树二维码：default 或 native', 'default');
+    .addOption(new Option('--variant <variant>', '智慧树二维码：default 或 native').default('default').choices(['default', 'native']));
   login.action(async () => {
     const output = getOutput(program);
     const options = login.opts<{ import?: string; qrFile?: string; variant: string }>();

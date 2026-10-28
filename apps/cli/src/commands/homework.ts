@@ -15,6 +15,7 @@ import type {
   AnswerDraft,
   Assessment,
   AssessmentRef,
+  Job,
   OutlineNode,
   Resource,
 } from '@learning/sdk';
@@ -32,6 +33,7 @@ const MAX_DRAFT_BYTES = 4 * 1024 * 1024;
 const MAX_DRAFT_FILES = 100;
 const MAX_SCAN_DEPTH = 16;
 const ISOLATED_PREPARE_CODES = new Set(['CONTENT_UNREADABLE', 'PRECONDITION_CHANGED', 'UNSUPPORTED']);
+const ISOLATED_RESOLVE_CODES = new Set(['INVALID_INPUT', 'PROTOCOL', 'NETWORK', 'TIMEOUT', 'CONTENT_UNREADABLE', 'PRECONDITION_CHANGED', 'UNSUPPORTED', 'BUDGET']);
 
 type HomeworkPlanItem = { key: string; title: string; path: string };
 type DraftFile = { path: string; text: string; directory: boolean };
@@ -201,16 +203,6 @@ async function ordinaryHomeworkResources(program: Command, runtime: CliRuntime, 
   }
 }
 
-async function resolveOrdinaryRefs(client: ReturnType<typeof createLearningClient>, resources: Resource[]): Promise<AssessmentRef[]> {
-  const refs: AssessmentRef[] = [];
-  for (const resource of resources) {
-    const resolved = (await client.assessments.resolve(resource.ref)).filter(ref => ref.kind === 'homework');
-    if (resolved.length !== 1) invalid(`expected one ordinary homework for resource ${resource.ref.key}`);
-    refs.push(resolved[0]!);
-  }
-  return refs;
-}
-
 export function registerHomeworkCommands(program: Command): void {
   const homework = program.command('homework').description('下载、填写和提交普通作业');
 
@@ -232,20 +224,39 @@ export function registerHomeworkCommands(program: Command): void {
           return;
         }
         const client = createLearningClient({ scope: profile.scope, runtime });
-        let files: string[];
+        const output = getOutput(program);
+        const failed: Array<{ resourceKey: string; title: string; code: string; message: string }> = [];
+        const result: { job: Job | null; files: string[]; failed: typeof failed } = { job: null, files: [], failed };
+        output.set(result);
         try {
-          const refs = await resolveOrdinaryRefs(client, selection.resources);
-          if (refs.length === 0) invalid('no ordinary homework resolved');
+          const refs: AssessmentRef[] = [];
+          for (const resource of selection.resources) {
+            output.assertActive();
+            try {
+              const resolved = (await client.assessments.resolve(resource.ref)).filter(ref => ref.kind === 'homework');
+              if (resolved.length !== 1) invalid(`expected one ordinary homework for resource ${resource.ref.key}`);
+              refs.push(resolved[0]!);
+            } catch (error) {
+              output.assertActive();
+              if (!options.all || !(error instanceof LearningError) || !ISOLATED_RESOLVE_CODES.has(error.data.code)) throw error;
+              failed.push({ resourceKey: resource.ref.key, title: resource.title, code: error.data.code, message: error.data.message });
+              output.recordWarning(error.data.code, `${resource.title}: ${error.data.message}`);
+            }
+          }
+          if (refs.length === 0) { process.exitCode = 4; return; }
+          output.assertActive();
           const created = await client.jobs.createExport({ type: 'assessments', refs, format: 'homework' });
           const outputRoot = resolve(options.outputDir ?? (await readPreferences(runtime.state)).downloadDir ?? resolve(homeDir, 'exports'));
           await setJobOutputRoot(runtime.state, created.id, outputRoot);
           const job = await runJobForeground(client, runtime, created.id);
-          files = await publishJobArtifacts(runtime, job, homeDir);
+          result.job = job;
+          result.files = await publishJobArtifacts(runtime, job, homeDir);
           if (job.status === 'partial') process.exitCode = 4;
           else if (job.status === 'uncertain') process.exitCode = 5;
           else if (job.status !== 'succeeded') process.exitCode = 3;
-          trackWorkflowEvent(getOutput(program), { event: 'download_completed', properties: { job_statuses: [job.status], exported_file_count: files.length, homework_count: refs.length } });
-          printResult(program, { job, files });
+          else if (failed.length > 0) process.exitCode = 4;
+          trackWorkflowEvent(output, { event: 'download_completed', properties: { job_statuses: [job.status], exported_file_count: result.files.length, homework_count: refs.length } });
+          printResult(program, result);
         } finally {
           await client.close();
         }
@@ -307,23 +318,28 @@ export function registerHomeworkCommands(program: Command): void {
         try {
           const previews: ReadablePreview[] = [];
           const skipped: SkippedItem[] = [];
+          const receipts: Awaited<ReturnType<typeof client.actions.execute>>[] = [];
+          const result = { files: files.map(file => file.path), previews, skipped, receipts };
+          getOutput(program).set(result, 'preview');
           const isolatedPreviews = new Set<string>();
           for (const draftFile of files) {
+            getOutput(program).assertActive();
             const isolateFile = draftFile.directory || isSimplifiedDraft(draftFile.text);
             let draft: AnswerDraft;
+            let ordinaryYkt: boolean;
             try {
               draft = unwrapResult(program, await client.assessments.importDraft(draftFile.text, 'learning'));
+              ordinaryYkt = draft.ref.kind === 'homework' && draft.ref.resource.course.scope.platform === 'ykt' && draft.ref.resource.native.kind === 'ykt' && draft.ref.resource.course.native.kind === 'ykt';
+              if (draft.ref.kind !== 'homework' && draft.ref.kind !== 'embedded') invalid('draft is not homework or embedded exercise');
+              if (draftFile.directory && !ordinaryYkt) invalid(`directory batch mode supports ordinary Yuketang homework only: ${draftFile.path}`);
             } catch (error) {
-              if (isolateFile && isolatable(error)) {
+              if (isolateFile && (isolatable(error) || draftFile.directory && error instanceof LearningError && ['INVALID_INPUT', 'FORBIDDEN'].includes(error.data.code))) {
                 skipped.push({ file: draftFile.path, questionId: null, code: error.data.code, message: error.data.message });
                 getOutput(program).recordWarning(error.data.code, `${draftFile.path}: ${error.data.message}`);
                 continue;
               }
               throw error;
             }
-            const ordinaryYkt = draft.ref.kind === 'homework' && draft.ref.resource.course.scope.platform === 'ykt' && draft.ref.resource.native.kind === 'ykt' && draft.ref.resource.course.native.kind === 'ykt';
-            if (draft.ref.kind !== 'homework' && draft.ref.kind !== 'embedded') invalid('draft is not homework or embedded exercise');
-            if (draftFile.directory && !ordinaryYkt) invalid(`directory batch mode supports ordinary Yuketang homework only: ${draftFile.path}`);
             const answered = draft.entries.filter(entry => entry.answer.kind !== 'unset');
             if (answered.length === 0) {
               if (!draftFile.directory) throw new LearningError({ code: 'INVALID_INPUT', message: 'draft contains no answers to submit', retryAfterMs: null, operationId: null });
@@ -362,13 +378,9 @@ export function registerHomeworkCommands(program: Command): void {
               }
             }
           }
-          if (previews.length === 0) {
-            throw new LearningError({ code: 'INVALID_INPUT', message: skipped.length ? 'no submittable answers remain after validation' : 'draft contains no answers to submit', retryAfterMs: null, operationId: null });
-          }
-          const receipts: Awaited<ReturnType<typeof client.actions.execute>>[] = [];
-          const result = { files: files.map(file => file.path), previews, skipped, receipts };
-          getOutput(program).set(result, 'preview');
-          if (options.dryRun) {
+          if (previews.length === 0 && !files[0]?.directory) invalid(skipped.length ? 'no submittable answers remain after validation' : 'draft contains no answers to submit');
+          if (previews.length === 0 || options.dryRun) {
+            if (skipped.length > 0) process.exitCode = 4;
             return;
           }
           for (const preview of previews) {

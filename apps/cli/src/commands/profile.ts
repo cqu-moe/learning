@@ -1,7 +1,7 @@
 import { readPreferences, savePreferences } from '../preferences.js';
 import { z } from 'zod';
 import { CliError } from '../output.js';
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ensureDataDir } from '../data-dir.js';
@@ -15,7 +15,7 @@ export function registerProfileCommands(program: Command): void {
   const add = profile
     .command('add <name>')
     .description('添加本地平台账号')
-    .requiredOption('--platform <platform>', '平台：ykt、xuetang 或 zhs');
+    .addOption(new Option('--platform <platform>', '平台：ykt、xuetang 或 zhs').choices(['ykt', 'xuetang', 'zhs']).makeOptionMandatory());
   add.action(async (name: string) => {
     const { platform } = z.object({ name: z.string().refine(validName), platform: PlatformSchema }).parse({ name, ...add.opts() });
     await withCliRuntime(program, true, async (runtime) => {
@@ -83,6 +83,7 @@ export function registerProfileCommands(program: Command): void {
         deletions.set(row.key, row.record.revision);
         await queue(`cli:resource-kind:${resource.key}`);
         await queue(`cli:resource-title:${resource.key}`);
+        await queue(`cli:resource-path:${resource.key}`);
       }
       for (const row of await all('preview:')) {
         const value = row.record.value;

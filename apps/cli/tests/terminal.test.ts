@@ -11,12 +11,12 @@ const driver = resolve(import.meta.dirname, 'helpers/terminal-driver.py');
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-type TerminalStep = { wait?: string; send?: string; signal?: string; occurrences?: number; delayMs?: number };
+type TerminalStep = { wait: string; send?: string; signal?: string; occurrences?: number };
 type TerminalResult = { code: number; screen: string; steps: number };
 
-function terminal(args: string[], steps: TerminalStep[] = [], bare = false) {
+function terminal(args: string[], steps: TerminalStep[] = [], bare = false, preload?: string) {
   const result = spawnSync('python3', [driver, JSON.stringify({
-    argv: [process.execPath, cli, ...(bare ? [] : ['--home', root]), ...args],
+    argv: [process.execPath, ...(preload ? ['--import', preload] : []), cli, ...(bare ? [] : ['--home', root]), ...args],
     steps,
     columns: 32,
     env: bare
@@ -129,10 +129,12 @@ describe('terminal signal safety', () => {
   it.each(['SIGINT', 'SIGTERM'])('persists cancellation and releases the lock on %s', async signal => {
     const name = `terminal-${signal.toLowerCase()}`;
     await seedJob(name);
-    const result = terminal(['jobs', 'resume', name, '--output-format', 'jsonl'], [{ delayMs: 200, signal }]);
+    const result = terminal(['jobs', 'resume', name, '--output-format', 'jsonl'], [{ wait: `"jobId":"${name}"`, signal }], false,
+      'data:text/javascript,await new Promise(resolve => setTimeout(resolve, 500))');
     expect(result.code, result.screen).toBe(3);
     const lines = result.screen.replaceAll('\r', '').trim().split('\n').filter(line => line.startsWith('{'));
     const events = lines.map(line => JSON.parse(line));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'progress', data: expect.objectContaining({ jobId: name, status: 'waiting' }) }));
     expect(events.at(-1)).toMatchObject({ type: 'result', data: { status: 'canceled', exitCode: 3, error: { code: 'CANCELED' } } });
     const saved = spawnSync(process.execPath, [cli, '--home', root, 'jobs', 'show', name, '--json'], { encoding: 'utf8' });
     expect(saved.status, saved.stderr).toBe(0);

@@ -43,9 +43,7 @@ try:
             data += part
         if step < len(spec.get('steps', [])):
             item = spec['steps'][step]
-            delay = item.get('delayMs', 0)
-            elapsed = time.monotonic() - start
-            ready = delay > 0 and elapsed * 1000 >= delay or 'wait' in item and data.decode('utf8', errors='replace').count(item['wait']) >= item.get('occurrences', 1)
+            ready = data.decode('utf8', errors='replace').count(item['wait']) >= item.get('occurrences', 1)
             if ready:
                 snapshots.append(data.decode('utf8', errors='replace'))
                 if 'signal' in item:

@@ -1,7 +1,7 @@
 import { getOutput, CliError } from './output.js';
 import { inferTargetScope } from './context.js';
 import { registerConfigCommands } from './commands/config.js';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { registerInitCommand } from './commands/init.js';
 import { registerDoctorCommand } from './commands/doctor.js';
@@ -27,7 +27,7 @@ export function createProgram(): Command {
   program.option('--home <dir>', '指定本地数据目录');
   program.option('--profile <name>', '选择本地账号');
   program.option('--json', '输出单个 JSON 结果（默认）');
-  program.option('--output-format <format>', '输出格式：json 或 jsonl，默认 json', 'json');
+  program.addOption(new Option('--output-format <format>', '输出格式：json 或 jsonl，默认 json').default('json').choices(['json', 'jsonl']));
   program.option('--debug', '在 stderr 输出脱敏诊断');
   registerInitCommand(program);
   registerDoctorCommand(program);
